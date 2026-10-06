@@ -4,8 +4,11 @@ import Security
 /// Where the Hermes key lives on the phone.
 ///
 /// This is the one asset worth protecting: whoever holds it can act as you
-/// through your agent. It is available from Keychain while the device is
-/// unlocked; reading it does not request a separate biometric prompt.
+/// through your agent. It is readable from the Keychain once the phone has been
+/// unlocked after a restart (`AfterFirstUnlock`), not only while it is unlocked:
+/// a place trigger or a background refresh runs with the phone locked, and with
+/// `WhenUnlocked` it could not read the dashboard password, so «when I arrive…»
+/// silently never happened. Reading it does not request a biometric prompt.
 /// It is never written to `UserDefaults`, never logged, and never leaves
 /// the device except in the `Authorization` header of a request to the address
 /// you configured.
@@ -43,6 +46,7 @@ enum KeyStore {
 
         let update: [String: Any] = [
             kSecValueData as String: data,
+            kSecAttrAccessible as String: accessible,
         ]
         let updateStatus = SecItemUpdate(
             lookup as CFDictionary,
@@ -55,12 +59,13 @@ enum KeyStore {
 
         var add = lookup
         add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] =
-            kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        add[kSecAttrAccessible as String] = accessible
 
         let addStatus = SecItemAdd(add as CFDictionary, nil)
         guard addStatus == errSecSuccess else { throw Failure.keychain(addStatus) }
     }
+
+    private static var accessible: CFString { kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly }
 
     static func read(account: String = gatewayAccount) -> String? {
         let query: [String: Any] = [
@@ -74,7 +79,21 @@ enum KeyStore {
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data
         else { return nil }
+        migrate(account: account)
         return String(data: data, encoding: .utf8)
+    }
+
+    /// Items saved by earlier builds were `WhenUnlocked`; moved once, the first time they are read.
+    private static func migrate(account: String) {
+        let key = "keystore.migrated.\(account)"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        let lookup: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        let status = SecItemUpdate(lookup as CFDictionary, [kSecAttrAccessible as String: accessible] as CFDictionary)
+        if status == errSecSuccess { UserDefaults.standard.set(true, forKey: key) }
     }
 
     @discardableResult

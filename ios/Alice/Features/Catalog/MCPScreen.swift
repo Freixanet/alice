@@ -57,7 +57,7 @@ struct MCPScreen: View {
                         systemImage: "arrow.clockwise.circle"
                     )
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.warning(scheme))
                     .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -68,7 +68,7 @@ struct MCPScreen: View {
                 Section {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -257,7 +257,7 @@ struct MCPScreen: View {
                         Label("Authenticate", systemImage: "key")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .controlSize(.small)
                 }
 
@@ -284,7 +284,7 @@ struct MCPScreen: View {
             VStack(alignment: .leading, spacing: 3) {
                 Label("Connected · \(result.tools.count) tool\(result.tools.count == 1 ? "" : "s")", systemImage: "checkmark.circle.fill")
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.success(scheme))
                 if !result.tools.isEmpty {
                     Text(result.tools.prefix(8).map(\.name).joined(separator: ", "))
                         .font(.caption2.monospaced())
@@ -300,7 +300,7 @@ struct MCPScreen: View {
         } else {
             Label(result.error ?? "Connection failed", systemImage: "exclamationmark.triangle.fill")
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(Palette.danger(scheme))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -335,7 +335,7 @@ struct MCPScreen: View {
             ForEach(diagnostics) { item in
                 Label(item.message, systemImage: "exclamationmark.triangle")
                     .font(.caption2)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.warning(scheme))
             }
 
             if entry.installURL != nil || !entry.bootstrap.isEmpty || !entry.postInstall.isEmpty {
@@ -374,7 +374,7 @@ struct MCPScreen: View {
                     if installing.contains(entry.name) { ProgressView() }
                     else { Label("Install", systemImage: "square.and.arrow.down") }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).onAccentLabel()
                 .controlSize(.small)
                 .disabled(installing.contains(entry.name))
             }
@@ -673,7 +673,7 @@ private struct AddMCPServerSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
                         .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -801,7 +801,7 @@ private struct InstallMCPCatalogSheet: View {
                         }
                         Text("Hermes runs these commands on the host. Review them before installing.")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                     }
                     .listRowBackground(Palette.card(scheme))
                 }
@@ -812,7 +812,7 @@ private struct InstallMCPCatalogSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
                         .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -891,7 +891,7 @@ private struct MCPOAuthSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
                         .listRowBackground(Palette.card(scheme))
                 }
 

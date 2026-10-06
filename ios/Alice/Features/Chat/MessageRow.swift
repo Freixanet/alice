@@ -26,6 +26,9 @@ struct MessageRow: View {
     var errandRefs: [ErrandRef] = []
     /// This reply was written by another model than the reply before it (`ModelChange`).
     var modelChange: ModelChange? = nil
+    /// The lessons Alice kept after this reply (`LessonNotice`); tapped, they say what she learned.
+    var learned: [AgentAction] = []
+    @State private var showingLessons = false
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
@@ -413,11 +416,27 @@ struct MessageRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if !learned.isEmpty {
+                    Button { showingLessons = true } label: {
+                        Label(LessonNotice.said(in: ChatLanguage.of(message.content)), systemImage: "graduationcap")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 4)
+                    .accessibilityHint("Shows what was learned.")
+                    .sheet(isPresented: $showingLessons) { LessonSheet(lessons: learned, reply: message.content) }
+                }
             }
         }
         .sheet(isPresented: $showingModelPicker) {
             ModelPicker(onChanged: { label in rememberModelChoice(label) })
         }
+        // The same rule for links SwiftUI opens (Markdown in Text): none of these from a reply.
+        .environment(\.openURL, OpenURLAction { url in
+            AgentLinks.refused(url) && message.role == .assistant ? .discarded : .systemAction
+        })
         .sheet(isPresented: $selectingText) {
             SelectableTextSheet(text: message.role == .user ? PurchaseChoice.display(message.content) : message.content)
         }
@@ -644,7 +663,7 @@ private struct MessageActions: View {
             Button {
                 UIPasteboard.general.string = message.content
                 Haptic.success.play()
-                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = true }
+                withMotion(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = true }
                 copyFeedbackID &+= 1
             } label: {
                 ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
@@ -691,7 +710,7 @@ private struct MessageActions: View {
             guard copyFeedbackID > 0 else { return }
             do { try await Task.sleep(for: .seconds(1.5)) }
             catch { return }
-            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = false }
+            withMotion(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = false }
         }
         .onChange(of: message.id) {
             copied = false
@@ -893,10 +912,10 @@ private struct SentAttachments: View {
 
     var body: some View {
         // Every image in the message, so the viewer can swipe between them.
-        let images = attachments.compactMap { $0.kind == .image ? UIImage(data: $0.data) : nil }
+        let images = attachments.compactMap { $0.kind == .image ? AttachmentImages.image($0) : nil }
         HStack(spacing: 8) {
             ForEach(attachments) { attachment in
-                if attachment.kind == .image, let image = UIImage(data: attachment.data) {
+                if attachment.kind == .image, let image = AttachmentImages.image(attachment) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
@@ -1111,7 +1130,7 @@ private struct RunApprovalCard: View {
             if approval.smartDenied == true {
                 Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.warning(scheme))
             }
 
             ViewThatFits(in: .horizontal) {
@@ -1301,7 +1320,7 @@ private struct ModelConfirmationCard: View {
     @ViewBuilder
     private var buttons: some View {
         Button("Use this model") { store.confirmHomeModel() }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).onAccentLabel()
             .controlSize(.small)
         Button("Not now", role: .cancel) { store.declineHomeModel() }
             .buttonStyle(.bordered)
@@ -1430,6 +1449,8 @@ private struct SlashChoiceFlow: Layout {
 }
 
 struct ApprovalChoiceButton: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let title: String
     var deny = false
     var disabled = false
@@ -1441,7 +1462,8 @@ struct ApprovalChoiceButton: View {
         if deny {
             control.buttonStyle(.bordered).tint(.secondary)
         } else {
-            control.buttonStyle(.borderedProminent).tint(tint)
+            // The label on the accent fill: white on the dark theme's light accents was unreadable.
+            control.buttonStyle(.borderedProminent).tint(tint).foregroundStyle(store.accent.onControl(scheme))
         }
     }
 
@@ -1572,5 +1594,25 @@ struct FeedContextCard: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("From your feed: \(post.headline)")
+    }
+}
+
+
+/// Decoded once per attachment: the transcript redraws about ten times a second while a reply
+/// streams, and each redraw decoded every sent picture twice.
+@MainActor
+enum AttachmentImages {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    static func image(_ attachment: Attachment) -> UIImage? {
+        let key = attachment.id as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let image = UIImage(data: attachment.data) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
     }
 }

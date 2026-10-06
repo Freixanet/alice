@@ -57,7 +57,7 @@ struct LearningScreen: View {
 
             if let failure {
                 Section("Last error") {
-                    Text(failure).font(.footnote).foregroundStyle(.red)
+                    Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme))
                 }
             }
         }
@@ -172,7 +172,7 @@ private struct LearningNodeSheet: View {
                                 }
                             }
                         }
-                        if let failure { Section { Text(failure).foregroundStyle(.red) } }
+                        if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)) } }
                     }
                 }
             }

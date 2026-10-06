@@ -530,11 +530,11 @@ private struct GalleryCheckout: View {
             CheckoutApprovalCard(
                 checkout: GalleryFixtures.checkout(language), language: language, phase: now, compact: true,
                 onOpenPage: {}, cards: [SavedCard.demo(origin: nil)], chosenCard: SavedCard.demo(origin: nil),
-                paid: true, onRefresh: { withAnimation(.snappy) { phase = .pending } },
-                onAllow: { withAnimation(.snappy) { phase = .approved } },
-                onDeny: { withAnimation(.snappy) { phase = .denied } })
+                paid: true, onRefresh: { withMotion(.snappy) { phase = .pending } },
+                onAllow: { withMotion(.snappy) { phase = .approved } },
+                onDeny: { withMotion(.snappy) { phase = .denied } })
             if now != start {
-                Button(language.pick("Reset", "Restablecer")) { withAnimation(.snappy) { phase = nil } }
+                Button(language.pick("Reset", "Restablecer")) { withMotion(.snappy) { phase = nil } }
                     .font(.footnote)
             }
         }

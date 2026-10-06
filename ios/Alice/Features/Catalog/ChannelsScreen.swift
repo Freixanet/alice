@@ -72,7 +72,7 @@ struct ChannelsScreen: View {
                 Section {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -161,7 +161,7 @@ struct ChannelsScreen: View {
             if restartNeeded {
                 Label("Changes are saved. Restart the gateway to apply them.", systemImage: "arrow.clockwise.circle")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.warning(scheme))
             } else if !gatewayRunning, !snapshot.gatewayStartCommand.isEmpty {
                 Text(snapshot.gatewayStartCommand)
                     .font(.caption.monospaced())
@@ -208,7 +208,7 @@ struct ChannelsScreen: View {
                     if let error = platform.errorMessage, !error.isEmpty {
                         Text(error)
                             .font(.caption2)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Palette.danger(scheme))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -253,7 +253,7 @@ struct ChannelsScreen: View {
                     } label: {
                         Label("Quick setup", systemImage: "paperplane")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .controlSize(.small)
                 } else if platform.id == "whatsapp" {
                     Button {
@@ -261,7 +261,7 @@ struct ChannelsScreen: View {
                     } label: {
                         Label("Pair QR", systemImage: "qrcode")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .controlSize(.small)
                 }
             }
@@ -485,12 +485,12 @@ private struct ChannelConfigurationSheet: View {
                         VStack(alignment: .leading, spacing: 7) {
                             HStack {
                                 Text(field.prompt).font(.subheadline.weight(.medium))
-                                if field.required { Text("Required").font(.caption2).foregroundStyle(.orange) }
+                                if field.required { Text("Required").font(.caption2).foregroundStyle(Palette.warning(scheme)) }
                                 Spacer()
                                 if field.isSet && !clears.contains(field.key) {
                                     Label("Set", systemImage: "checkmark.circle.fill")
                                         .font(.caption2)
-                                        .foregroundStyle(.green)
+                                        .foregroundStyle(Palette.success(scheme))
                                 }
                             }
                             if !field.detail.isEmpty {
@@ -499,7 +499,7 @@ private struct ChannelConfigurationSheet: View {
                             if clears.contains(field.key) {
                                 Label("This saved value will be removed.", systemImage: "trash")
                                     .font(.caption)
-                                    .foregroundStyle(.red)
+                                    .foregroundStyle(Palette.danger(scheme))
                                 Button("Undo clear") { clears.remove(field.key) }
                             } else {
                                 input(field)
@@ -529,7 +529,7 @@ private struct ChannelConfigurationSheet: View {
 
                 if let failure {
                     Section {
-                        Text(failure).font(.footnote).foregroundStyle(.red)
+                        Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme))
                     }
                 }
             }
@@ -645,7 +645,7 @@ private struct TelegramChannelSetup: View {
                                 status?.botUsername.map { "@\($0) is ready" } ?? "Telegram bot is ready",
                                 systemImage: "checkmark.circle.fill"
                             )
-                            .foregroundStyle(.green)
+                            .foregroundStyle(Palette.success(scheme))
                             .listRowBackground(Palette.card(scheme))
                         } else {
                             HStack(spacing: 10) {
@@ -690,7 +690,7 @@ private struct TelegramChannelSetup: View {
 
                 if let failure {
                     Section {
-                        Text(failure).font(.footnote).foregroundStyle(.red)
+                        Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme))
                             .listRowBackground(Palette.card(scheme))
                     }
                 }
@@ -857,7 +857,7 @@ private struct WhatsAppChannelSetup: View {
 
                 if let failure {
                     Section {
-                        Text(failure).font(.footnote).foregroundStyle(.red)
+                        Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme))
                             .listRowBackground(Palette.card(scheme))
                     }
                 }
@@ -889,9 +889,9 @@ private struct WhatsAppChannelSetup: View {
     private func statusRow(_ session: WhatsAppOnboardingSession) -> some View {
         HStack(spacing: 10) {
             if session.status == "connected" {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.success(scheme))
             } else if session.status == "error" {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Palette.danger(scheme))
             } else {
                 ProgressView()
             }

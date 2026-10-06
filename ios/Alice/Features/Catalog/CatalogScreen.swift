@@ -234,7 +234,7 @@ struct CatalogScreen: View {
                 if row.configured == false {
                     Text("Needs keys")
                         .font(.caption2)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning(scheme))
                 } else if !row.tools.isEmpty {
                     Text(capabilityLine(row.tools))
                         .font(.caption2)

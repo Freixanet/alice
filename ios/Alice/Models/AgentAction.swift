@@ -28,6 +28,9 @@ struct AgentAction: Identifiable, Hashable, Sendable, Codable {
     let routineKey: String?
     /// Alice's own conversation, for one done on this phone.
     var conversationID: String? = nil
+    /// A lesson Alice kept: what she will do differently, in plain words, and the lesson itself.
+    var summary: String? = nil
+    var text: String? = nil
 
     static func parse(_ row: [String: Any]) -> AgentAction? {
         guard let id = row["id"] as? String, let kind = row["kind"] as? String, !kind.isEmpty,
@@ -45,7 +48,9 @@ struct AgentAction: Identifiable, Hashable, Sendable, Codable {
             ok: (row["ok"] as? Bool) ?? true,
             place: routine ? .routine : .chat,
             originTitle: (origin?["title"] as? String) ?? "",
-            routineKey: routine ? origin?["routine"] as? String : nil
+            routineKey: routine ? origin?["routine"] as? String : nil,
+            summary: (row["summary"] as? String).flatMap { $0.isEmpty ? nil : $0 },
+            text: (row["text"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         )
     }
 
@@ -75,6 +80,9 @@ struct AgentAction: Identifiable, Hashable, Sendable, Codable {
         case "skill.created": return String(localized: "Learned a new skill: \(t)")
         case "skill.changed": return String(localized: "Improved the skill \(t)")
         case "skill.removed": return String(localized: "Removed the skill \(t)")
+        case "skill.learned": return String(localized: "Learned from experience: \(t)")
+        case "skill.held": return String(localized: "Held back a lesson about \(t) for you to check")
+        case "skill.proposed": return String(localized: "Proposed a lesson: \(t)")
         case "file.written": return String(localized: "Saved \(t)")
         case "file.deleted": return String(localized: "Deleted \(t)")
         case "home.controlled": return String(localized: "Used \(t) at home")
@@ -124,7 +132,7 @@ struct AgentAction: Identifiable, Hashable, Sendable, Codable {
     /// Actions that reach other people or undo something: worth a second look.
     var weighty: Bool {
         ["email.sent", "message.sent", "file.deleted", "calendar.removed", "routine.removed",
-         "skill.removed", "memory.forgot", "login.used", "web.sent", "phone.calendar.cancelled"].contains(kind)
+         "skill.removed", "skill.held", "memory.forgot", "login.used", "web.sent", "phone.calendar.cancelled"].contains(kind)
     }
 }
 

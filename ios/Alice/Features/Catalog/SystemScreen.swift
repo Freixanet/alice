@@ -66,7 +66,7 @@ struct SystemScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -265,12 +265,12 @@ struct SystemScreen: View {
                                 .foregroundStyle(.tertiary)
                         }
                         if let reason = status.gatewayExitReason, !reason.isEmpty {
-                            Text(reason).font(.caption2).foregroundStyle(.red).lineLimit(3)
+                            Text(reason).font(.caption2).foregroundStyle(Palette.danger(scheme)).lineLimit(3)
                         }
                     }
                     Spacer(minLength: 8)
                     if status.gatewayBusy {
-                        Text("BUSY").font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                        Text("BUSY").font(.caption2.weight(.bold)).foregroundStyle(Palette.warning(scheme))
                     }
                 }
                 .listRowBackground(Palette.card(scheme))
@@ -378,7 +378,7 @@ struct SystemScreen: View {
                 .listRowBackground(Palette.card(scheme))
             }
             if let actionFailure {
-                Text(actionFailure).font(.caption).foregroundStyle(.red)
+                Text(actionFailure).font(.caption).foregroundStyle(Palette.danger(scheme))
                     .listRowBackground(Palette.card(scheme))
             }
         }

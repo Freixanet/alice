@@ -18,7 +18,7 @@ struct TaskPlanCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Button {
-                withAnimation(.snappy(duration: 0.25)) { manual = !expanded }
+                withMotion(.snappy(duration: 0.25)) { manual = !expanded }
             } label: {
                 header
             }

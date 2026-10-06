@@ -93,14 +93,14 @@ private struct PurchaseWalkthrough: View {
                         Text(said("Sin confirmar", "Unconfirmed")).tag("unknown")
                     }
                     if canAdvance && !automatic {
-                        Button(said("Siguiente paso", "Next step")) { next() }.buttonStyle(.borderedProminent)
+                        Button(said("Siguiente paso", "Next step")) { next() }.buttonStyle(.borderedProminent).onAccentLabel()
                     }
                     Text(said("Simulación aislada: nada llega a Hermes, se guarda o se cobra. Se detiene para tu elección y aprobación.",
                               "Isolated simulation: nothing reaches Hermes, is saved or charged. It waits for your choice and approval."))
                         .font(.footnote).foregroundStyle(.secondary).id("end")
                 }.padding(20)
             }
-            .onChange(of: step) { _, _ in withAnimation { proxy.scrollTo("end", anchor: .bottom) } }
+            .onChange(of: step) { _, _ in withMotion { proxy.scrollTo("end", anchor: .bottom) } }
         }
         .background(Palette.background(scheme))
         .navigationTitle(said("Compra en 12 pasos", "12-step purchase"))
@@ -126,7 +126,7 @@ private struct PurchaseWalkthrough: View {
         step != .clarify && step != .options && step != .approve && step != .result && step != .denied && step != .stuck
     }
     private func next() { if let next = Step(rawValue: step.rawValue + 1), next <= .result { advance(next) } }
-    private func advance(_ next: Step) { withAnimation(.snappy) { step = next } }
+    private func advance(_ next: Step) { withMotion(.snappy) { step = next } }
     private func restart() { selected = nil; step = .clarify; run += 1; started = Date() }
     private func decide(_ allow: Bool) {
         guard step == .approve else { return }

@@ -1604,7 +1604,11 @@ private struct SelectableReplyText: UIViewRepresentable {
         func textView(
             _ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction
         ) -> UIAction? {
-            guard case let .link(url) = textItem.content, RichReceipt(url: url) != nil else { return defaultAction }
+            guard case let .link(url) = textItem.content else { return defaultAction }
+            // An agent's reply can quote a hostile page: a link there must not pair Alice with another
+            // server, type into a chat or change what opens. Those links do nothing from a reply.
+            if AgentLinks.refused(url) { return nil }
+            guard RichReceipt(url: url) != nil else { return defaultAction }
             return UIAction { _ in
                 NotificationCenter.default.post(name: .aliceOpenReceipt, object: url)
             }
@@ -1915,7 +1919,7 @@ private struct RichReplyButtonsView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, minHeight: 50)
-                .foregroundStyle(.white)
+                .foregroundStyle(store.accent.onFill(scheme))
                 .background(tint, in: .capsule)
                 .contentShape(.capsule)
         }
@@ -1997,5 +2001,14 @@ struct ReplyBubble<Content: View>: View {
                 .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
             Spacer(minLength: 32)
         }
+    }
+}
+
+
+/// alice:// links that only the system (the Camera, the Mac's notifier, the share sheet) may open.
+enum AgentLinks {
+    static func refused(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "alice" else { return false }
+        return ["pair", "compose", "open"].contains(url.host?.lowercased() ?? "")
     }
 }

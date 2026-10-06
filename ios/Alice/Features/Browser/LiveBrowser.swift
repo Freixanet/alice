@@ -318,14 +318,16 @@ struct BrowserStatusIcon: View {
 /// A small red dot that breathes: live.
 struct LivePulse: View {
     var color: Color = .red
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var on = false
 
     var body: some View {
         Circle()
             .fill(color)
             .frame(width: 8, height: 8)
-            .opacity(on ? 1 : 0.35)
-            .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
+            // With Reduce Motion, a steady dot: the «live» label beside it says the same.
+            .opacity(on || reduceMotion ? 1 : 0.35)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: on)
             .onAppear { on = true }
             .accessibilityHidden(true)
     }
@@ -403,6 +405,7 @@ struct LiveBrowserScreen: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .semibold))
                     .frame(width: 36, height: 36)
+                    .contentShape(Rectangle().inset(by: -4))
             }
             .accessibilityLabel("Close")
 
@@ -451,6 +454,7 @@ struct LiveBrowserScreen: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(editingAddress ? .secondary : .primary)
                     .frame(width: 36, height: 36)
+                    .contentShape(Rectangle().inset(by: -4))
             }
             .accessibilityLabel(editingAddress ? "Cancel" : "Reload")
         }
@@ -476,7 +480,7 @@ struct LiveBrowserScreen: View {
                 }
                 Spacer(minLength: 0)
                 Button("Hand Back") { Task { await live.handBack() } }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .buttonBorderShape(.capsule)
                     .controlSize(.small)
                     .accessibilityIdentifier("browser.handBack")
@@ -549,7 +553,7 @@ struct LiveBrowserScreen: View {
             } actions: {
                 if state.available {
                     Button("Start Browser") { Task { await live.turnOn() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).onAccentLabel()
                 }
             }
             .frame(maxHeight: .infinity)

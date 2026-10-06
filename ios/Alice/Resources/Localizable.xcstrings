@@ -11,12 +11,42 @@
         }
       }
     },
+    "Your Mac writes posts here about what interests you. Ask for the first ones now, or wait for the next round.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac escribe aquí publicaciones sobre lo que te interesa. Pide las primeras ahora o espera a la siguiente tanda."
+          }
+        }
+      }
+    },
     "Your agent connection": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "La conexión con tu agente"
+          }
+        }
+      }
+    },
+    "Status of this session": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estado de esta sesión"
+          }
+        }
+      }
+    },
+    "Stock returns": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vuelva a haber existencias"
           }
         }
       }
@@ -51,6 +81,16 @@
         }
       }
     },
+    "View configuration": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver la configuración"
+          }
+        }
+      }
+    },
     "Violet": {
       "localizations": {
         "es": {
@@ -77,6 +117,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ámbar"
+          }
+        }
+      }
+    },
+    "Artifacts": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Artefactos"
           }
         }
       }
@@ -151,6 +201,16 @@
         }
       }
     },
+    "CVC": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "CVC"
+          }
+        }
+      }
+    },
     "Calendar": {
       "localizations": {
         "es": {
@@ -201,6 +261,26 @@
         }
       }
     },
+    "Not available here": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No disponible aquí"
+          }
+        }
+      }
+    },
+    "Not completed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin completar"
+          }
+        }
+      }
+    },
     "Not connected": {
       "localizations": {
         "es": {
@@ -217,6 +297,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Avisos por Bark"
+          }
+        }
+      }
+    },
+    "Anything changes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambie algo"
           }
         }
       }
@@ -361,6 +451,26 @@
         }
       }
     },
+    "%@ because of a file error (%lld).": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ por un error de archivo (%lld)."
+          }
+        }
+      }
+    },
+    "%@ because of a system error (%lld).": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ por un error del sistema (%lld)."
+          }
+        }
+      }
+    },
     "%@ is connected": {
       "localizations": {
         "es": {
@@ -461,6 +571,36 @@
         }
       }
     },
+    "%@: iOS didn’t allow access to that file.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: iOS no permitió acceder a ese archivo."
+          }
+        }
+      }
+    },
+    "%@: the file isn’t there any more.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: el archivo ya no está."
+          }
+        }
+      }
+    },
+    "%@: this iPhone is out of storage space.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@: este iPhone no tiene espacio."
+          }
+        }
+      }
+    },
     "%lld": {
       "localizations": {
         "es": {
@@ -503,10 +643,40 @@
     },
     "%lld messages · read only": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld message · read only"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld messages · read only"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld mensajes · solo lectura"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mensaje · solo lectura"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld mensajes · solo lectura"
+                }
+              }
+            }
           }
         }
       }
@@ -563,10 +733,40 @@
     },
     "%lld routines": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld routine"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld routines"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld rutinas"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld rutina"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld rutinas"
+                }
+              }
+            }
           }
         }
       }
@@ -583,20 +783,80 @@
     },
     "%lld sessions": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld session"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sessions"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sesiones"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld chat"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld chats"
+                }
+              }
+            }
           }
         }
       }
     },
     "%lld times": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld time"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld times"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld veces"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld vez"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld veces"
+                }
+              }
+            }
           }
         }
       }
@@ -761,6 +1021,16 @@
         }
       }
     },
+    "A fast, low-cost model. You can change it later.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un modelo rápido y barato. Puedes cambiarlo después."
+          }
+        }
+      }
+    },
     "A key Alice needs.": {
       "localizations": {
         "es": {
@@ -857,6 +1127,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "ALICE"
+          }
+        }
+      }
+    },
+    "AMEX": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AMEX"
           }
         }
       }
@@ -987,6 +1267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Límite de la cuenta"
+          }
+        }
+      }
+    },
+    "Act without asking": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actuar sin preguntar"
           }
         }
       }
@@ -1221,6 +1511,36 @@
         }
       }
     },
+    "Add to Home": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir a Inicio"
+          }
+        }
+      }
+    },
+    "Add your Hermes dashboard in Connect to see notes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecta tu Mac en Conectar para ver las notas."
+          }
+        }
+      }
+    },
+    "Add your Hermes dashboard in Connect to see this.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecta tu Mac en Conectar para ver esto."
+          }
+        }
+      }
+    },
     "Added “%@” to the calendar": {
       "localizations": {
         "es": {
@@ -1247,6 +1567,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Dirección"
+          }
+        }
+      }
+    },
+    "Adds Settings › Developer — checks that everything works, a live performance meter and tools — and shows the model, tokens and tool calls under each reply.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añade Ajustes › Desarrollador —comprobaciones de que todo funciona, un medidor de rendimiento en directo y herramientas— y muestra el modelo, los tokens y las llamadas a herramientas bajo cada respuesta."
           }
         }
       }
@@ -1441,6 +1771,16 @@
         }
       }
     },
+    "Agents running": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agentes en marcha"
+          }
+        }
+      }
+    },
     "Agents use it": {
       "localizations": {
         "es": {
@@ -1471,6 +1811,26 @@
         }
       }
     },
+    "Alice and your agents": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice y tus agentes"
+          }
+        }
+      }
+    },
+    "Alice and your agents will run commands, change files and use your accounts without asking first, including risky actions. Send /yolo again to turn it off.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice y tus agentes ejecutarán comandos, cambiarán archivos y usarán tus cuentas sin preguntarte antes, incluidas las acciones arriesgadas. Envía /yolo otra vez para desactivarlo."
+          }
+        }
+      }
+    },
     "Alice can use this browser": {
       "localizations": {
         "es": {
@@ -1481,12 +1841,82 @@
         }
       }
     },
+    "Alice cannot reach the dashboard. It only listens on your own network.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no llega a tu Mac. Solo responde en tu propia red o por Tailscale."
+          }
+        }
+      }
+    },
+    "Alice could not sign in to the dashboard. Open Connect and check the username and password.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no pudo iniciar sesión en tu Mac. Abre Conectar y revisa el usuario y la contraseña."
+          }
+        }
+      }
+    },
+    "Alice couldn’t %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no pudo %@"
+          }
+        }
+      }
+    },
+    "Alice couldn’t %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no pudo %@."
+          }
+        }
+      }
+    },
+    "Alice couldn’t finish": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no pudo terminar"
+          }
+        }
+      }
+    },
     "Alice displays the first 300,000 characters to keep very large diffs responsive on iPhone.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Alice muestra los primeros 300.000 caracteres para que los diffs muy grandes sigan siendo fluidos en el iPhone."
+          }
+        }
+      }
+    },
+    "Alice has not sent your question yet.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice todavía no ha enviado tu pregunta."
+          }
+        }
+      }
+    },
+    "Alice installs the page watcher on your Mac when you ask. Setup can take a few minutes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice instala el vigilante de páginas en tu Mac cuando se lo pides. La instalación puede tardar unos minutos."
           }
         }
       }
@@ -1551,6 +1981,16 @@
         }
       }
     },
+    "Alice needs the microphone and speech recognition. Turn them on in iOS Settings.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice necesita el micrófono y el reconocimiento de voz. Actívalos en los Ajustes de iOS."
+          }
+        }
+      }
+    },
     "Alice needs your account to continue.": {
       "localizations": {
         "es": {
@@ -1571,6 +2011,16 @@
         }
       }
     },
+    "Alice reads when and what from the sentence and fills in the fields below. You can change any of them.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice saca de la frase cuándo y qué, y rellena los campos de abajo. Puedes cambiar cualquiera."
+          }
+        }
+      }
+    },
     "Alice shows the next two weeks from the calendars on this iPhone. She changes nothing.": {
       "localizations": {
         "es": {
@@ -1587,6 +2037,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alice muestra los calendarios y recordatorios de este iPhone, y les añade cosas cuando se lo pides."
+          }
+        }
+      }
+    },
+    "Alice uses these to fill in checkouts and sign-ups, so she does not have to ask. They stay on your Mac.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice los usa para rellenar compras y registros sin tener que preguntarte. Se quedan en tu Mac."
           }
         }
       }
@@ -1637,6 +2097,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Todos"
+          }
+        }
+      }
+    },
+    "All Agents": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todos los agentes"
           }
         }
       }
@@ -1777,6 +2247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Responder que sí"
+          }
+        }
+      }
+    },
+    "Answered": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respondida"
           }
         }
       }
@@ -1951,6 +2431,16 @@
         }
       }
     },
+    "Attachment not added": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El adjunto no se añadió"
+          }
+        }
+      }
+    },
     "Attachments": {
       "localizations": {
         "es": {
@@ -2101,6 +2591,16 @@
         }
       }
     },
+    "Available tools": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramientas disponibles"
+          }
+        }
+      }
+    },
     "BUSY": {
       "localizations": {
         "es": {
@@ -2127,6 +2627,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Volver a los resultados"
+          }
+        }
+      }
+    },
+    "Background task": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarea en segundo plano"
           }
         }
       }
@@ -2201,6 +2711,16 @@
         }
       }
     },
+    "Blue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azul"
+          }
+        }
+      }
+    },
     "Blueprints": {
       "localizations": {
         "es": {
@@ -2271,6 +2791,16 @@
         }
       }
     },
+    "Branch this chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear una rama de este chat"
+          }
+        }
+      }
+    },
     "Branches": {
       "localizations": {
         "es": {
@@ -2287,6 +2817,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ramas (%lld)"
+          }
+        }
+      }
+    },
+    "Brown": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marrón"
           }
         }
       }
@@ -2471,6 +3011,16 @@
         }
       }
     },
+    "Cancels this send and whatever is queued": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancela este envío y lo que haya en cola"
+          }
+        }
+      }
+    },
     "Capabilities": {
       "localizations": {
         "es": {
@@ -2497,6 +3047,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Captura HEAD antes de un turno de código y este ámbito mostrará todo lo cambiado desde esa revisión exacta."
+          }
+        }
+      }
+    },
+    "Cards, passwords and keys are only sent over an encrypted connection. Connect to your Mac through Tailscale or HTTPS to save this.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las tarjetas, contraseñas y claves solo se envían por una conexión cifrada. Conéctate a tu Mac por Tailscale o HTTPS para guardar esto."
           }
         }
       }
@@ -2551,6 +3111,16 @@
         }
       }
     },
+    "Change the tone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar el tono"
+          }
+        }
+      }
+    },
     "Changed a connection: %@": {
       "localizations": {
         "es": {
@@ -2597,6 +3167,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Los cambios están guardados. Reinicia el gateway para aplicarlos."
+          }
+        }
+      }
+    },
+    "Changing model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiando de modelo"
           }
         }
       }
@@ -2701,6 +3281,16 @@
         }
       }
     },
+    "Checkout": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pago"
+          }
+        }
+      }
+    },
     "Choose Agents": {
       "localizations": {
         "es": {
@@ -2721,12 +3311,42 @@
         }
       }
     },
+    "Choose a document": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir un documento"
+          }
+        }
+      }
+    },
+    "Choose a model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elegir un modelo"
+          }
+        }
+      }
+    },
     "Choose one model for all tasks": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Elegir un modelo para todas las tareas"
+          }
+        }
+      }
+    },
+    "Choose your time zone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elige tu zona horaria"
           }
         }
       }
@@ -2757,6 +3377,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Limpiar"
+          }
+        }
+      }
+    },
+    "Clear Alice’s activity record?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Borrar el registro de actividad de Alice?"
           }
         }
       }
@@ -2797,6 +3427,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "¿Limpiar todas las solicitudes pendientes?"
+          }
+        }
+      }
+    },
+    "Clear and start over": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrar y empezar de nuevo"
           }
         }
       }
@@ -3051,6 +3691,36 @@
         }
       }
     },
+    "Configured provider": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proveedor configurado"
+          }
+        }
+      }
+    },
+    "Confirm model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar modelo"
+          }
+        }
+      }
+    },
+    "Confirm model change": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirmar el cambio de modelo"
+          }
+        }
+      }
+    },
     "Confirming this pairing replaces the current Hermes connection. If the new gateway cannot be reached, Alice restores the current connection automatically.": {
       "localizations": {
         "es": {
@@ -3091,6 +3761,16 @@
         }
       }
     },
+    "Connect or disconnect a provider": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conectar o desconectar un proveedor"
+          }
+        }
+      }
+    },
     "Connect this provider first in Models & Providers.": {
       "localizations": {
         "es": {
@@ -3107,6 +3787,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Conectar con Hermes"
+          }
+        }
+      }
+    },
+    "Connect your Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conecta tu Hermes"
           }
         }
       }
@@ -3201,6 +3891,16 @@
         }
       }
     },
+    "Continue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar"
+          }
+        }
+      }
+    },
     "Continue silently": {
       "localizations": {
         "es": {
@@ -3211,12 +3911,32 @@
         }
       }
     },
+    "Continues this conversation on this iPhone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continúa esta conversación en este iPhone"
+          }
+        }
+      }
+    },
     "Conversation": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Conversación"
+          }
+        }
+      }
+    },
+    "Conversations": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conversaciones"
           }
         }
       }
@@ -3281,6 +4001,16 @@
         }
       }
     },
+    "Copy file reference": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar la referencia del archivo"
+          }
+        }
+      }
+    },
     "Copy it, edit it, select part of it or share it.": {
       "localizations": {
         "es": {
@@ -3291,12 +4021,32 @@
         }
       }
     },
+    "Copy link": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar enlace"
+          }
+        }
+      }
+    },
     "Copy name": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Copiar nombre"
+          }
+        }
+      }
+    },
+    "Copy path on Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar la ruta en Hermes"
           }
         }
       }
@@ -3331,12 +4081,42 @@
         }
       }
     },
+    "Could not deliver the secure answer. Check the connection and try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo entregar la respuesta segura. Comprueba la conexión e inténtalo de nuevo; por seguridad, el campo se ha vaciado."
+          }
+        }
+      }
+    },
     "Could not save": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo guardar"
+          }
+        }
+      }
+    },
+    "Couldn’t load": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo cargar"
+          }
+        }
+      }
+    },
+    "Couldn’t move chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo mover el chat"
           }
         }
       }
@@ -3377,6 +4157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Crear copia de seguridad de Hermes"
+          }
+        }
+      }
+    },
+    "Create Inbox Agent": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Crear el agente Inbox"
           }
         }
       }
@@ -3527,6 +4317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Credenciales: %@"
+          }
+        }
+      }
+    },
+    "Cron": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cron"
           }
         }
       }
@@ -3821,12 +4621,32 @@
         }
       }
     },
+    "Degraded references": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Referencias degradadas"
+          }
+        }
+      }
+    },
     "Delete": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Eliminar"
+          }
+        }
+      }
+    },
+    "Delete Agent": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrar agente"
           }
         }
       }
@@ -3857,6 +4677,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Eliminar canal"
+          }
+        }
+      }
+    },
+    "Delete Chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Borrar chat"
           }
         }
       }
@@ -4031,6 +4861,26 @@
         }
       }
     },
+    "Delete this local model?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Borrar este modelo local?"
+          }
+        }
+      }
+    },
+    "Delete this note now?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Borrar esta nota ahora?"
+          }
+        }
+      }
+    },
     "Delete this reminder?": {
       "localizations": {
         "es": {
@@ -4047,6 +4897,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "¿Eliminar esta rutina?"
+          }
+        }
+      }
+    },
+    "Delete webhook?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Borrar el webhook?"
           }
         }
       }
@@ -4111,6 +4971,16 @@
         }
       }
     },
+    "Delivery details": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Datos de entrega"
+          }
+        }
+      }
+    },
     "Dependencies": {
       "localizations": {
         "es": {
@@ -4157,6 +5027,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Detalles"
+          }
+        }
+      }
+    },
+    "Developer": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desarrollador"
+          }
+        }
+      }
+    },
+    "Developer details": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalles de desarrollo"
+          }
+        }
+      }
+    },
+    "Developer mode": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Modo desarrollador"
           }
         }
       }
@@ -4341,6 +5241,26 @@
         }
       }
     },
+    "Documents": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Documentos"
+          }
+        }
+      }
+    },
+    "Documents for agents": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Documentos para los agentes"
+          }
+        }
+      }
+    },
     "Don't allow": {
       "localizations": {
         "es": {
@@ -4397,6 +5317,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Descargar archivo"
+          }
+        }
+      }
+    },
+    "Download this GGUF?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Descargar este GGUF?"
+          }
+        }
+      }
+    },
+    "Download this model?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Descargar este modelo?"
           }
         }
       }
@@ -4571,6 +5511,36 @@
         }
       }
     },
+    "Enable/disable changes take effect on the next gateway or agent session.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar o desactivar se aplica en la próxima sesión del gateway o del agente."
+          }
+        }
+      }
+    },
+    "Enabled": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activado"
+          }
+        }
+      }
+    },
+    "End voice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminar la voz"
+          }
+        }
+      }
+    },
     "Endpoint": {
       "localizations": {
         "es": {
@@ -4607,6 +5577,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Escribe un nombre nuevo para esta sección."
+          }
+        }
+      }
+    },
+    "Enter plan mode": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Entrar en modo plan"
           }
         }
       }
@@ -4791,12 +5771,32 @@
         }
       }
     },
+    "Fallback": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alternativo"
+          }
+        }
+      }
+    },
     "Family": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Familia"
+          }
+        }
+      }
+    },
+    "Fanout cadence": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frecuencia de reparto"
           }
         }
       }
@@ -4821,12 +5821,32 @@
         }
       }
     },
+    "Faster replies": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respuestas más rápidas"
+          }
+        }
+      }
+    },
     "Faster with a QR": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Más rápido con un QR"
+          }
+        }
+      }
+    },
+    "File changed on Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El archivo cambió en Hermes"
           }
         }
       }
@@ -4847,6 +5867,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Archivos"
+          }
+        }
+      }
+    },
+    "Files and links your agents share in a chat with Alice appear here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí aparecen los archivos y enlaces que tus agentes comparten en un chat con Alice."
           }
         }
       }
@@ -4941,6 +5971,16 @@
         }
       }
     },
+    "Folder not changed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La carpeta no cambió"
+          }
+        }
+      }
+    },
     "Folders": {
       "localizations": {
         "es": {
@@ -5007,6 +6047,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Olvidar"
+          }
+        }
+      }
+    },
+    "Forget this memory?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Olvidar este recuerdo?"
           }
         }
       }
@@ -5081,6 +6131,16 @@
         }
       }
     },
+    "Gateway and dashboard": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gateway y dashboard"
+          }
+        }
+      }
+    },
     "Gateway restart": {
       "localizations": {
         "es": {
@@ -5097,6 +6157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "General"
+          }
+        }
+      }
+    },
+    "Get posts now": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir publicaciones ahora"
           }
         }
       }
@@ -5151,6 +6221,16 @@
         }
       }
     },
+    "Go to": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ir a"
+          }
+        }
+      }
+    },
     "Goal not found": {
       "localizations": {
         "es": {
@@ -5191,12 +6271,42 @@
         }
       }
     },
+    "Green": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verde"
+          }
+        }
+      }
+    },
+    "Grey": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gris"
+          }
+        }
+      }
+    },
     "Group By Date": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Agrupar por fecha"
+          }
+        }
+      }
+    },
+    "Groups": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grupos"
           }
         }
       }
@@ -5271,6 +6381,16 @@
         }
       }
     },
+    "Hermes Desktop": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hermes Desktop"
+          }
+        }
+      }
+    },
     "Hermes Files": {
       "localizations": {
         "es": {
@@ -5281,12 +6401,32 @@
         }
       }
     },
+    "Hermes answered with an unexpected status (%lld).": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac respondió con un estado inesperado (%lld)."
+          }
+        }
+      }
+    },
     "Hermes applies its managed-file sensitive-path policy here.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Hermes aplica aquí su política de rutas sensibles para archivos gestionados."
+          }
+        }
+      }
+    },
+    "Hermes asked for a login this iPhone couldn’t provide.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac pidió un acceso que este iPhone no pudo dar."
           }
         }
       }
@@ -5307,6 +6447,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hermes comprime el contexto antiguo de la conversación una vez se usa la fracción configurada de la ventana del modelo."
+          }
+        }
+      }
+    },
+    "Hermes could not be reached.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo llegar a tu Mac."
           }
         }
       }
@@ -5341,6 +6491,16 @@
         }
       }
     },
+    "Hermes did not answer.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac no respondió."
+          }
+        }
+      }
+    },
     "Hermes did not find a repository at this path. Its worktree endpoint can initialize a plain project folder with an empty root commit, without silently committing existing files.": {
       "localizations": {
         "es": {
@@ -5357,6 +6517,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hermes no reportó ningún proveedor de inferencia."
+          }
+        }
+      }
+    },
+    "Hermes didn’t accept the request: something in it was not what it expected.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac no aceptó la petición: algo no era lo que esperaba."
+          }
+        }
+      }
+    },
+    "Hermes didn’t answer in time. It may be asleep, busy or on a network this iPhone can’t reach.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac no respondió a tiempo. Puede que esté en reposo, ocupado o en una red a la que este iPhone no llega."
           }
         }
       }
@@ -5381,12 +6561,32 @@
         }
       }
     },
+    "Hermes doesn’t have that any more. It may have been moved, renamed or deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eso ya no está en tu Mac. Puede que se haya movido, renombrado o borrado."
+          }
+        }
+      }
+    },
     "Hermes groups sessions into this Project by their working directory. You can leave it empty and add folders later.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Hermes agrupa sesiones en este proyecto por su directorio de trabajo. Puedes dejarlo vacío y añadir carpetas después."
+          }
+        }
+      }
+    },
+    "Hermes hit an internal error (%lld). Its logs on the computer say why.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac tuvo un error interno (%lld). Sus registros en el ordenador dicen por qué."
           }
         }
       }
@@ -5407,6 +6607,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hermes está conectado, pero algunas funciones no terminaron de conectar."
+          }
+        }
+      }
+    },
+    "Hermes is getting too many requests at once. Wait a moment and try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac está recibiendo demasiadas peticiones a la vez. Espera un momento e inténtalo de nuevo."
           }
         }
       }
@@ -5441,12 +6651,42 @@
         }
       }
     },
+    "Hermes needs you to sign in again. Check the dashboard login in Connect.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac necesita que vuelvas a iniciar sesión. Revisa el acceso en Conectar."
+          }
+        }
+      }
+    },
+    "Hermes profiles": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Perfiles de Hermes"
+          }
+        }
+      }
+    },
     "Hermes recommendation": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Recomendación de Hermes"
+          }
+        }
+      }
+    },
+    "Hermes refused this: your login isn’t allowed to do it, or the file is private.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac lo rechazó: tu acceso no tiene permiso para esto, o el archivo es privado."
           }
         }
       }
@@ -5491,6 +6731,16 @@
         }
       }
     },
+    "Hermes says something else changed this first. Reload and try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algo más cambió esto antes. Vuelve a cargar e inténtalo de nuevo."
+          }
+        }
+      }
+    },
     "Hermes says: %@": {
       "localizations": {
         "es": {
@@ -5501,12 +6751,72 @@
         }
       }
     },
+    "Hermes sent an answer Alice couldn’t read.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac envió una respuesta que Alice no pudo leer."
+          }
+        }
+      }
+    },
+    "Hermes sent an answer in a shape Alice doesn’t understand. Updating Alice or Hermes usually fixes this.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac respondió de una forma que Alice no entiende. Suele arreglarse actualizando Alice o Hermes."
+          }
+        }
+      }
+    },
+    "Hermes stopped after every model it tried failed. Continue retries the same question; picking another model avoids this chain.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice se detuvo porque fallaron todos los modelos que probó. Continuar vuelve a intentar la misma pregunta; elegir otro modelo evita esta cadena."
+          }
+        }
+      }
+    },
     "Hermes stores the token in this profile’s .env; config keeps only a reference.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Hermes guarda el token en el .env de este perfil; la configuración solo guarda una referencia."
+          }
+        }
+      }
+    },
+    "Hermes took too long to answer.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac tardó demasiado en responder."
+          }
+        }
+      }
+    },
+    "Hermes took too long to answer. It may be busy; try again in a moment.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac tardó demasiado en responder. Puede que esté ocupado; inténtalo de nuevo en un momento."
+          }
+        }
+      }
+    },
+    "Hermes understood the request but couldn’t apply it as written.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac entendió la petición pero no pudo aplicarla tal cual."
           }
         }
       }
@@ -5673,10 +6983,40 @@
     },
     "Hermes' own accounting for this profile over the last %lld days.": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Hermes' own accounting for this profile over the last day."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Hermes' own accounting for this profile over the last %lld days."
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "La contabilidad propia de Hermes para este perfil en los últimos %lld días."
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "La contabilidad de Hermes para este perfil en el último día."
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "La contabilidad de Hermes para este perfil en los últimos %lld días."
+                }
+              }
+            }
           }
         }
       }
@@ -5737,6 +7077,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Historial y uso"
+          }
+        }
+      }
+    },
+    "History of this chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Historial de este chat"
+          }
+        }
+      }
+    },
+    "Hold for actions.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantén pulsado para ver acciones."
           }
         }
       }
@@ -5841,12 +7201,42 @@
         }
       }
     },
+    "How much context is in use": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuánto contexto se está usando"
+          }
+        }
+      }
+    },
+    "How this agent looks everywhere.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cómo se ve este agente en todas partes."
+          }
+        }
+      }
+    },
     "How this agent's mark looks everywhere.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Cómo se ve la marca de este agente en todas partes."
+          }
+        }
+      }
+    },
+    "How to ask for permission": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cómo pedir permiso"
           }
         }
       }
@@ -5941,6 +7331,66 @@
         }
       }
     },
+    "Shows what was learned.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Muestra lo que aprendió."
+          }
+        }
+      }
+    },
+    "Learned from experience: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprendió de la experiencia: %@"
+          }
+        }
+      }
+    },
+    "Health and operations": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estado y funcionamiento"
+          }
+        }
+      }
+    },
+    "Health is not available on this device.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salud no está disponible en este dispositivo."
+          }
+        }
+      }
+    },
+    "Held back a lesson about %@ for you to check": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Frenó una lección sobre %@ para que la revises"
+          }
+        }
+      }
+    },
+    "Proposed a lesson: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Propuso una lección: %@"
+          }
+        }
+      }
+    },
     "Improved the skill %@": {
       "localizations": {
         "es": {
@@ -5953,10 +7403,40 @@
     },
     "In %lld days": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "In %lld day"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "In %lld days"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "En %lld días"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "En %lld día"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "En %lld días"
+                }
+              }
+            }
           }
         }
       }
@@ -6001,12 +7481,32 @@
         }
       }
     },
+    "Indigo": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Índigo"
+          }
+        }
+      }
+    },
     "Insights": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Insights"
+          }
+        }
+      }
+    },
+    "Insights unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estadísticas no disponibles"
           }
         }
       }
@@ -6121,6 +7621,16 @@
         }
       }
     },
+    "Install provider dependencies?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Instalar las dependencias del proveedor?"
+          }
+        }
+      }
+    },
     "Install the declared dependencies first.": {
       "localizations": {
         "es": {
@@ -6191,6 +7701,26 @@
         }
       }
     },
+    "Instructions unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Instrucciones no disponibles"
+          }
+        }
+      }
+    },
+    "Integrations": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Integraciones"
+          }
+        }
+      }
+    },
     "Integrations (MCP)": {
       "localizations": {
         "es": {
@@ -6201,12 +7731,32 @@
         }
       }
     },
+    "It can’t be recovered afterwards.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Después no se podrá recuperar."
+          }
+        }
+      }
+    },
     "It is removed from the notes store, with what its agent made of it. This can’t be undone.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Se quita del almacén de notas, con lo que su agente hizo de ella. No se puede deshacer."
+          }
+        }
+      }
+    },
+    "It is removed from the notes store, with what its agent made of it. You can recover it from Recently Deleted for 30 days.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se quita de las notas, junto con lo que su agente sacó de ella. Puedes recuperarla desde Eliminadas recientemente durante 30 días."
           }
         }
       }
@@ -6331,6 +7881,16 @@
         }
       }
     },
+    "Learn a skill": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aprender una habilidad"
+          }
+        }
+      }
+    },
     "Learned a new skill: %@": {
       "localizations": {
         "es": {
@@ -6411,6 +7971,16 @@
         }
       }
     },
+    "Light blue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Azul claro"
+          }
+        }
+      }
+    },
     "Linked account": {
       "localizations": {
         "es": {
@@ -6461,6 +8031,16 @@
         }
       }
     },
+    "List commands": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ver los comandos"
+          }
+        }
+      }
+    },
     "Lists": {
       "localizations": {
         "es": {
@@ -6477,6 +8057,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La Live Activity no pudo empezar"
+          }
+        }
+      }
+    },
+    "Load average": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Carga media"
           }
         }
       }
@@ -6881,6 +8471,16 @@
         }
       }
     },
+    "Mac": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mac"
+          }
+        }
+      }
+    },
     "Main model": {
       "localizations": {
         "es": {
@@ -6927,6 +8527,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hacer predeterminado del perfil"
+          }
+        }
+      }
+    },
+    "Manage Hermes from chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestionar Hermes desde el chat"
+          }
+        }
+      }
+    },
+    "Managed files": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Archivos gestionados"
           }
         }
       }
@@ -6981,6 +8601,46 @@
         }
       }
     },
+    "Marks it as completed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo marca como completado."
+          }
+        }
+      }
+    },
+    "Marks it as not completed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lo marca como no completado."
+          }
+        }
+      }
+    },
+    "Marks this step as done.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marca este paso como hecho."
+          }
+        }
+      }
+    },
+    "Marks this step as not done.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Marca este paso como no hecho."
+          }
+        }
+      }
+    },
     "Matcher (optional)": {
       "localizations": {
         "es": {
@@ -6997,6 +8657,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Matcher: %@"
+          }
+        }
+      }
+    },
+    "Max output": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salida máxima"
+          }
+        }
+      }
+    },
+    "Medication": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Medicación"
           }
         }
       }
@@ -7047,6 +8727,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Presión de memoria"
+          }
+        }
+      }
+    },
+    "Messages": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mensajes"
+          }
+        }
+      }
+    },
+    "Messaging platforms": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Plataformas de mensajería"
           }
         }
       }
@@ -7131,6 +8831,16 @@
         }
       }
     },
+    "Model change needs attention": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El cambio de modelo necesita tu atención"
+          }
+        }
+      }
+    },
     "Model changed": {
       "localizations": {
         "es": {
@@ -7147,6 +8857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Modelo o proveedor"
+          }
+        }
+      }
+    },
+    "Model providers": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Proveedores de modelos"
           }
         }
       }
@@ -7241,6 +8961,16 @@
         }
       }
     },
+    "More detail from tools": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Más detalle de las herramientas"
+          }
+        }
+      }
+    },
     "More diagnostics": {
       "localizations": {
         "es": {
@@ -7331,6 +9061,16 @@
         }
       }
     },
+    "Moving routines and chat to the new model…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pasando las rutinas y el chat al nuevo modelo…"
+          }
+        }
+      }
+    },
     "Mute Notifications": {
       "localizations": {
         "es": {
@@ -7357,6 +9097,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre"
+          }
+        }
+      }
+    },
+    "Name (optional)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nombre (opcional)"
           }
         }
       }
@@ -7641,6 +9391,16 @@
         }
       }
     },
+    "New session": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nuevo chat"
+          }
+        }
+      }
+    },
     "New text file": {
       "localizations": {
         "es": {
@@ -7791,6 +9551,16 @@
         }
       }
     },
+    "No bots": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay agentes"
+          }
+        }
+      }
+    },
     "No branches reported.": {
       "localizations": {
         "es": {
@@ -7861,6 +9631,16 @@
         }
       }
     },
+    "No named projects": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay proyectos con nombre"
+          }
+        }
+      }
+    },
     "No notes": {
       "localizations": {
         "es": {
@@ -7871,12 +9651,62 @@
         }
       }
     },
+    "No notes agent": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No hay agente de notas"
+          }
+        }
+      }
+    },
+    "No notes in this folder yet. Open it and tap + to write one.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay notas en esta carpeta. Ábrela y toca + para escribir una."
+          }
+        }
+      }
+    },
+    "No notes yet. Tap + to write one; it is kept by the notes agent and shows up here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay notas. Toca + para escribir una; la guarda el agente de notas y aparece aquí."
+          }
+        }
+      }
+    },
+    "No pages watched yet.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no vigilas ninguna página."
+          }
+        }
+      }
+    },
     "No pending pairing requests.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "No hay solicitudes de emparejamiento pendientes."
+          }
+        }
+      }
+    },
+    "No posts yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay publicaciones"
           }
         }
       }
@@ -7927,6 +9757,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Sin escáner"
+          }
+        }
+      }
+    },
+    "No sessions yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todavía no hay chats"
           }
         }
       }
@@ -8031,6 +9871,26 @@
         }
       }
     },
+    "Not done": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin hacer"
+          }
+        }
+      }
+    },
+    "Not in any project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En ningún proyecto"
+          }
+        }
+      }
+    },
     "Not listed yet": {
       "localizations": {
         "es": {
@@ -8047,6 +9907,46 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nota"
+          }
+        }
+      }
+    },
+    "Note mid-reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nota a mitad de respuesta"
+          }
+        }
+      }
+    },
+    "Note not deleted": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La nota no se borró"
+          }
+        }
+      }
+    },
+    "Note not recovered": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La nota no se recuperó"
+          }
+        }
+      }
+    },
+    "Note not saved": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La nota no se guardó"
           }
         }
       }
@@ -8081,6 +9981,16 @@
         }
       }
     },
+    "Notes need the latest Alice plugin on your Hermes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las notas necesitan la última versión del complemento de Alice en tu Mac."
+          }
+        }
+      }
+    },
     "Nothing in the next two weeks": {
       "localizations": {
         "es": {
@@ -8097,6 +10007,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nada este día"
+          }
+        }
+      }
+    },
+    "Nothing to total yet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no hay nada que sumar"
           }
         }
       }
@@ -8271,6 +10191,16 @@
         }
       }
     },
+    "Opciones comprobadas": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opciones comprobadas"
+          }
+        }
+      }
+    },
     "Open": {
       "localizations": {
         "es": {
@@ -8357,6 +10287,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abrir en Telegram"
+          }
+        }
+      }
+    },
+    "Open link": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir enlace"
+          }
+        }
+      }
+    },
+    "Open or create a bot": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abrir o crear un agente"
           }
         }
       }
@@ -8521,6 +10471,26 @@
         }
       }
     },
+    "Or start from an idea": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "O empieza con una idea"
+          }
+        }
+      }
+    },
+    "Orange": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Naranja"
+          }
+        }
+      }
+    },
     "Overdue": {
       "localizations": {
         "es": {
@@ -8551,6 +10521,16 @@
         }
       }
     },
+    "PDF forms and bank statement CSV files can be read by your agents. The file is copied to your Hermes Mac only when you choose it here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus agentes pueden leer formularios PDF y extractos bancarios en CSV. El archivo solo se copia a tu Mac con Hermes cuando lo eliges aquí."
+          }
+        }
+      }
+    },
     "PINNED": {
       "localizations": {
         "es": {
@@ -8567,6 +10547,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "PR #%lld"
+          }
+        }
+      }
+    },
+    "Page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Página"
+          }
+        }
+      }
+    },
+    "Page watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Páginas vigiladas"
           }
         }
       }
@@ -8651,6 +10651,16 @@
         }
       }
     },
+    "Paste this reference into a chat and tell Alice what you want done with the file.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pega esta referencia en un chat y dile a Alice qué quieres hacer con el archivo."
+          }
+        }
+      }
+    },
     "Pause": {
       "localizations": {
         "es": {
@@ -8731,12 +10741,32 @@
         }
       }
     },
+    "Photos, files and links in these notes show up here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí aparecen las fotos, archivos y enlaces de estas notas."
+          }
+        }
+      }
+    },
     "Pin": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Fijar"
+          }
+        }
+      }
+    },
+    "Pink": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosa"
           }
         }
       }
@@ -8781,6 +10811,16 @@
         }
       }
     },
+    "Playback position": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Posición de reproducción"
+          }
+        }
+      }
+    },
     "Plugin": {
       "localizations": {
         "es": {
@@ -8817,6 +10857,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Script de preprocesado (opcional)"
+          }
+        }
+      }
+    },
+    "Prepare the project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparar el proyecto"
           }
         }
       }
@@ -8901,6 +10951,26 @@
         }
       }
     },
+    "Price drops": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Baje el precio"
+          }
+        }
+      }
+    },
+    "Price limit (optional)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Precio máximo (opcional)"
+          }
+        }
+      }
+    },
     "Primary": {
       "localizations": {
         "es": {
@@ -8931,6 +11001,16 @@
         }
       }
     },
+    "No Attachments": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin adjuntos"
+          }
+        }
+      }
+    },
     "No Cards": {
       "localizations": {
         "es": {
@@ -8947,6 +11027,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Añadir tarjeta"
+          }
+        }
+      }
+    },
+    "Not now": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ahora no"
           }
         }
       }
@@ -9033,10 +11123,40 @@
     },
     "%lld sites": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld site"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sites"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld sitios"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sitio"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%lld sitios"
+                }
+              }
+            }
           }
         }
       }
@@ -9111,6 +11231,16 @@
         }
       }
     },
+    "Projects group an agent’s work by folder. Create one here, or promote a workspace Hermes already found.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los proyectos agrupan el trabajo de un agente por carpeta. Crea uno aquí o convierte en proyecto un espacio de trabajo que Hermes ya encontró."
+          }
+        }
+      }
+    },
     "Projects, Memory and Usage": {
       "localizations": {
         "es": {
@@ -9181,6 +11311,16 @@
         }
       }
     },
+    "Prune all rollback checkpoints?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Eliminar todos los puntos de restauración?"
+          }
+        }
+      }
+    },
     "Prune checkpoints": {
       "localizations": {
         "es": {
@@ -9197,6 +11337,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Pull request creada"
+          }
+        }
+      }
+    },
+    "Purple": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Morado"
           }
         }
       }
@@ -9277,6 +11427,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Python"
+          }
+        }
+      }
+    },
+    "QR unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "QR no disponible"
+          }
+        }
+      }
+    },
+    "Queue the next message": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poner en cola el siguiente mensaje"
           }
         }
       }
@@ -9367,6 +11537,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Leyendo hardware…"
+          }
+        }
+      }
+    },
+    "Ready for Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listo para Alice"
+          }
+        }
+      }
+    },
+    "Reasoning effort": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esfuerzo de razonamiento"
+          }
+        }
+      }
+    },
+    "Reasoning level": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nivel de razonamiento"
           }
         }
       }
@@ -9467,6 +11667,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Historial recuperado"
+          }
+        }
+      }
+    },
+    "Red": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rojo"
           }
         }
       }
@@ -9621,6 +11831,16 @@
         }
       }
     },
+    "Remote development": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desarrollo remoto"
+          }
+        }
+      }
+    },
     "Remote divergence": {
       "localizations": {
         "es": {
@@ -9671,6 +11891,16 @@
         }
       }
     },
+    "Remove MCP server?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Quitar el servidor MCP?"
+          }
+        }
+      }
+    },
     "Remove credential": {
       "localizations": {
         "es": {
@@ -9701,6 +11931,16 @@
         }
       }
     },
+    "Remove from Home": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar de Inicio"
+          }
+        }
+      }
+    },
     "Remove key": {
       "localizations": {
         "es": {
@@ -9711,12 +11951,32 @@
         }
       }
     },
+    "Remove the last turn": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitar el último turno"
+          }
+        }
+      }
+    },
     "Remove this key?": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "¿Quitar esta clave?"
+          }
+        }
+      }
+    },
+    "Remove worktree?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Quitar el worktree?"
           }
         }
       }
@@ -9757,6 +12017,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Renombrar"
+          }
+        }
+      }
+    },
+    "Rename Channel": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renombrar canal"
+          }
+        }
+      }
+    },
+    "Rename Section": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renombrar sección"
           }
         }
       }
@@ -9807,6 +12087,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Repetir"
+          }
+        }
+      }
+    },
+    "Replace the parts in [brackets] with your own details.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambia lo que va [entre corchetes] por tus datos."
           }
         }
       }
@@ -9981,6 +12271,16 @@
         }
       }
     },
+    "Reset every auxiliary task to Auto?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Volver a poner todas las tareas auxiliares en Automático?"
+          }
+        }
+      }
+    },
     "Reset to default": {
       "localizations": {
         "es": {
@@ -10017,6 +12317,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Reiniciar el gateway de Hermes"
+          }
+        }
+      }
+    },
+    "Restart Hermes gateway?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Reiniciar el gateway de Hermes?"
           }
         }
       }
@@ -10071,6 +12381,16 @@
         }
       }
     },
+    "Restore this Hermes backup?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Restaurar esta copia de seguridad de Hermes?"
+          }
+        }
+      }
+    },
     "Result": {
       "localizations": {
         "es": {
@@ -10101,6 +12421,16 @@
         }
       }
     },
+    "Resume a previous chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retomar un chat anterior"
+          }
+        }
+      }
+    },
     "Resumed the routine “%@”": {
       "localizations": {
         "es": {
@@ -10121,6 +12451,16 @@
         }
       }
     },
+    "Retry the last message": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reintentar el último mensaje"
+          }
+        }
+      }
+    },
     "Review": {
       "localizations": {
         "es": {
@@ -10133,10 +12473,50 @@
     },
     "Review every %lld hours": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Review every hour"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Review every %lld hours"
+                }
+              }
+            }
+          }
+        },
+        "es": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Revisar cada hora"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Revisar cada %lld horas"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "Review recent work": {
+      "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Revisar cada %lld horas"
+            "value": "Revisar el trabajo reciente"
           }
         }
       }
@@ -10157,6 +12537,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Revocar"
+          }
+        }
+      }
+    },
+    "Revoke access for %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Revocar el acceso de %@"
           }
         }
       }
@@ -10231,6 +12621,16 @@
         }
       }
     },
+    "Routines run, and your agents tell the date, in this zone. Your agents’ chats follow at once; routines and messaging apps after Hermes next restarts.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las rutinas se ejecutan, y tus agentes dicen la fecha, en esta zona. Los chats de tus agentes cambian al momento; las rutinas y las apps de mensajería, cuando Hermes se reinicie."
+          }
+        }
+      }
+    },
     "Routines unavailable": {
       "localizations": {
         "es": {
@@ -10257,6 +12657,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ejecutar ahora"
+          }
+        }
+      }
+    },
+    "Run, pause or resume a routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ejecutar, pausar o reanudar una rutina"
           }
         }
       }
@@ -10301,6 +12711,16 @@
         }
       }
     },
+    "Same as /new": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Igual que /new"
+          }
+        }
+      }
+    },
     "Save": {
       "localizations": {
         "es": {
@@ -10327,6 +12747,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Guardar y reiniciar"
+          }
+        }
+      }
+    },
+    "Save the conversation": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar la conversación"
+          }
+        }
+      }
+    },
+    "Save to Files": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar en Archivos"
+          }
+        }
+      }
+    },
+    "Save, copy or open": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar, copiar o abrir"
           }
         }
       }
@@ -10421,6 +12871,16 @@
         }
       }
     },
+    "Say it in one sentence": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dilo en una frase"
+          }
+        }
+      }
+    },
     "Scan pairing QR": {
       "localizations": {
         "es": {
@@ -10457,6 +12917,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Programado"
+          }
+        }
+      }
+    },
+    "Scheduled jobs": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tareas programadas"
           }
         }
       }
@@ -10621,6 +13091,16 @@
         }
       }
     },
+    "Search your conversations": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Buscar en tus conversaciones"
+          }
+        }
+      }
+    },
     "Search…": {
       "localizations": {
         "es": {
@@ -10667,6 +13147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre de la sección"
+          }
+        }
+      }
+    },
+    "Sections": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Secciones"
           }
         }
       }
@@ -10757,6 +13247,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Enviar respuesta"
+          }
+        }
+      }
+    },
+    "Send this phone's diagnostic summary": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar el resumen de diagnóstico de este teléfono"
           }
         }
       }
@@ -10881,6 +13381,26 @@
         }
       }
     },
+    "Session": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chat"
+          }
+        }
+      }
+    },
+    "Session goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Objetivo de la sesión"
+          }
+        }
+      }
+    },
     "Sessions": {
       "localizations": {
         "es": {
@@ -10901,6 +13421,16 @@
         }
       }
     },
+    "Sessions unavailable": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Chats no disponibles"
+          }
+        }
+      }
+    },
     "Set": {
       "localizations": {
         "es": {
@@ -10917,6 +13447,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hacer predeterminado"
+          }
+        }
+      }
+    },
+    "Set the chat title": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Poner título al chat"
+          }
+        }
+      }
+    },
+    "Set up this local model?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Configurar este modelo local?"
           }
         }
       }
@@ -11023,10 +13573,40 @@
     },
     "Show %lld earlier messages": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld earlier message"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Show %lld earlier messages"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar %lld mensajes anteriores"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostrar %lld mensaje anterior"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Mostrar %lld mensajes anteriores"
+                }
+              }
+            }
           }
         }
       }
@@ -11201,6 +13781,16 @@
         }
       }
     },
+    "Skill bundles": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Paquetes de habilidades"
+          }
+        }
+      }
+    },
     "Skills": {
       "localizations": {
         "es": {
@@ -11291,6 +13881,26 @@
         }
       }
     },
+    "Something in Alice failed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Algo falló en Alice."
+          }
+        }
+      }
+    },
+    "Sort": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ordenar"
+          }
+        }
+      }
+    },
     "Sort By": {
       "localizations": {
         "es": {
@@ -11307,6 +13917,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ordenado como"
+          }
+        }
+      }
+    },
+    "Speech recognition is not available right now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El reconocimiento de voz no está disponible ahora mismo."
+          }
+        }
+      }
+    },
+    "Spending": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gastos"
           }
         }
       }
@@ -11357,6 +13987,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Iniciar configuración de Telegram"
+          }
+        }
+      }
+    },
+    "Start a background task": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar una tarea en segundo plano"
+          }
+        }
+      }
+    },
+    "Start a new chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Empezar un chat nuevo"
           }
         }
       }
@@ -11461,6 +14111,16 @@
         }
       }
     },
+    "Stop Hermes gateway?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Detener el gateway de Hermes?"
+          }
+        }
+      }
+    },
     "Stop gateway": {
       "localizations": {
         "es": {
@@ -11497,6 +14157,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Checkpoints guardados"
+          }
+        }
+      }
+    },
+    "Subagent": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Subagente"
           }
         }
       }
@@ -11551,12 +14221,32 @@
         }
       }
     },
+    "Summarize the context": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resumir el contexto"
+          }
+        }
+      }
+    },
     "Summary": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Resumen"
+          }
+        }
+      }
+    },
+    "Swipe a page to stop watching it. Pull down to refresh prices and status.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desliza una página para dejar de vigilarla. Tira hacia abajo para actualizar precios y estado."
           }
         }
       }
@@ -11597,6 +14287,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cambiar"
+          }
+        }
+      }
+    },
+    "Switch branch?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Cambiar de rama?"
+          }
+        }
+      }
+    },
+    "Switch model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cambiar de modelo"
           }
         }
       }
@@ -11761,12 +14471,32 @@
         }
       }
     },
+    "Tell me when": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avísame cuando"
+          }
+        }
+      }
+    },
     "Templates": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Plantillas"
+          }
+        }
+      }
+    },
+    "Terminal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Terminal"
           }
         }
       }
@@ -11791,6 +14521,16 @@
         }
       }
     },
+    "Text appears": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aparezca un texto"
+          }
+        }
+      }
+    },
     "That conversation is no longer on this Hermes, or the Alice plugin on your Mac needs updating.": {
       "localizations": {
         "es": {
@@ -11807,6 +14547,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ese evento ya no está en tu calendario."
+          }
+        }
+      }
+    },
+    "That file isn’t on this iPhone any more.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ese archivo ya no está en este iPhone."
+          }
+        }
+      }
+    },
+    "That is too big for Hermes to accept.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Es demasiado grande para que tu Mac lo acepte."
           }
         }
       }
@@ -11881,6 +14641,16 @@
         }
       }
     },
+    "That was cancelled before it finished.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se canceló antes de terminar."
+          }
+        }
+      }
+    },
     "The URL is resolved by the Hermes host, not by the iPhone. API keys are sent directly to Hermes and are never written to Alice preferences.": {
       "localizations": {
         "es": {
@@ -11911,12 +14681,32 @@
         }
       }
     },
+    "The browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El navegador"
+          }
+        }
+      }
+    },
     "The connection key is stored in Keychain on this iPhone.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "La clave de conexión se guarda en el Llavero de este iPhone."
+          }
+        }
+      }
+    },
+    "The fallback is used when this model is unavailable or at its limit. What happens if you send while this agent is busy is Hermes’ `busy_input_mode` (steer, queue or interrupt), not a setting in Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo alternativo se usa cuando este no está disponible o llega a su límite. Lo que pasa si escribes mientras el agente está ocupado lo decide Hermes (`busy_input_mode`: reconducir, poner en cola o interrumpir), no un ajuste de Alice."
           }
         }
       }
@@ -11941,6 +14731,16 @@
         }
       }
     },
+    "The network connection to Hermes was lost.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se perdió la conexión con tu Mac."
+          }
+        }
+      }
+    },
     "The new preset starts as a copy of the currently selected preset.": {
       "localizations": {
         "es": {
@@ -11957,6 +14757,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "La entrada del proveedor y su credencial dedicada guardada se eliminarán. Si es la ruta de modelo activa, Hermes también la desvincula."
+          }
+        }
+      }
+    },
+    "The secure connection to Hermes failed.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falló la conexión segura con tu Mac."
+          }
+        }
+      }
+    },
+    "The secure connection to Hermes failed: this iPhone doesn’t trust its certificate.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falló la conexión segura con tu Mac: este iPhone no confía en su certificado."
           }
         }
       }
@@ -12171,6 +14991,36 @@
         }
       }
     },
+    "This iPhone can’t find the address of your Hermes. If it uses a .local or Tailscale name, make sure you are on that network.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este iPhone no encuentra la dirección de tu Mac. Si usa un nombre .local o de Tailscale, comprueba que estás en esa red."
+          }
+        }
+      }
+    },
+    "This iPhone can’t reach Hermes. It may be switched off, or you are on a different network.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este iPhone no llega a tu Mac. Puede que esté apagado o que estés en otra red."
+          }
+        }
+      }
+    },
+    "This iPhone has no internet connection right now.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este iPhone no tiene conexión a internet ahora mismo."
+          }
+        }
+      }
+    },
     "This is what the last provider Hermes tried said — it may not be the model you picked. Its own fallbacks are tried in order, and only the final failure comes back.": {
       "localizations": {
         "es": {
@@ -12187,6 +15037,26 @@
           "stringUnit": {
             "state": "translated",
             "value": "Esta lista viene de tu agente."
+          }
+        }
+      }
+    },
+    "This model needs confirmation before Alice sends your question": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este modelo necesita confirmación antes de que Alice envíe tu pregunta"
+          }
+        }
+      }
+    },
+    "This model needs your OK": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este modelo necesita tu permiso"
           }
         }
       }
@@ -12251,6 +15121,16 @@
         }
       }
     },
+    "This phone is offline.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este teléfono no tiene conexión."
+          }
+        }
+      }
+    },
     "This provider exposes no editable dashboard settings.": {
       "localizations": {
         "es": {
@@ -12267,6 +15147,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Este valor guardado se eliminará."
+          }
+        }
+      }
+    },
+    "This server is on the internet, not on your network or Tailscale. Connect only if it is yours.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este servidor está en internet, no en tu red ni en Tailscale. Conéctate solo si es tuyo."
           }
         }
       }
@@ -12297,6 +15187,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Hora"
+          }
+        }
+      }
+    },
+    "Time zone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zona horaria"
           }
         }
       }
@@ -12441,6 +15341,16 @@
         }
       }
     },
+    "Total": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total"
+          }
+        }
+      }
+    },
     "Transport": {
       "localizations": {
         "es": {
@@ -12487,6 +15397,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ajuste fino"
+          }
+        }
+      }
+    },
+    "Turn off locking for Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desactivar el bloqueo de Alice."
           }
         }
       }
@@ -12671,12 +15591,32 @@
         }
       }
     },
+    "Update Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualizar Hermes"
+          }
+        }
+      }
+    },
     "Update the Alice plugin on your Mac to see what your agents do.": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Actualiza el plugin de Alice en tu Mac para ver lo que hacen tus agentes."
+          }
+        }
+      }
+    },
+    "Update the plugin to sync attachments.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actualiza el complemento para sincronizar los adjuntos."
           }
         }
       }
@@ -12741,6 +15681,16 @@
         }
       }
     },
+    "Usage and cost": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Uso y coste"
+          }
+        }
+      }
+    },
     "Use": {
       "localizations": {
         "es": {
@@ -12791,6 +15741,16 @@
         }
       }
     },
+    "Use built-in memory?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Usar la memoria integrada?"
+          }
+        }
+      }
+    },
     "Use for this profile": {
       "localizations": {
         "es": {
@@ -12831,12 +15791,32 @@
         }
       }
     },
+    "Use or create a Project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar o crear un proyecto"
+          }
+        }
+      }
+    },
     "Use recommended default": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Usar el valor predeterminado recomendado"
+          }
+        }
+      }
+    },
+    "Use this model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usar este modelo"
           }
         }
       }
@@ -12871,6 +15851,16 @@
         }
       }
     },
+    "Used when the agent’s model is unavailable or at its limit.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usa cuando el modelo del agente no está disponible o llega a su límite."
+          }
+        }
+      }
+    },
     "User profile memory": {
       "localizations": {
         "es": {
@@ -12887,6 +15877,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Nombre de usuario"
+          }
+        }
+      }
+    },
+    "VISA": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VISA"
           }
         }
       }
@@ -12997,6 +15997,36 @@
           "stringUnit": {
             "state": "translated",
             "value": "Quiere %@"
+          }
+        }
+      }
+    },
+    "Watch a page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vigilar una página"
+          }
+        }
+      }
+    },
+    "Watching": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vigilando"
+          }
+        }
+      }
+    },
+    "Web": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Web"
           }
         }
       }
@@ -13211,6 +16241,16 @@
         }
       }
     },
+    "Where the result goes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dónde va el resultado"
+          }
+        }
+      }
+    },
     "Why it matters (optional)": {
       "localizations": {
         "es": {
@@ -13227,6 +16267,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Por qué: %@."
+          }
+        }
+      }
+    },
+    "Words to look for": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Palabras que buscar"
           }
         }
       }
@@ -13337,6 +16387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cada año"
+          }
+        }
+      }
+    },
+    "Yellow": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Amarillo"
           }
         }
       }
@@ -13461,6 +16521,16 @@
         }
       }
     },
+    "Your events are deleted from your Hermes and your agents stop seeing them. Calendar access for Alice stays in iOS Settings until you turn it off there.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus eventos se borran de tu Hermes y tus agentes dejan de verlos. El acceso de Alice al calendario sigue en los Ajustes de iOS hasta que lo quites allí."
+          }
+        }
+      }
+    },
     "Your iPhone's calendar and every connector Hermes offers — Notion, Linear, Figma and more — to connect or disconnect.": {
       "localizations": {
         "es": {
@@ -13471,12 +16541,52 @@
         }
       }
     },
+    "Your sessions": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus sesiones"
+          }
+        }
+      }
+    },
     "a routine": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "una rutina"
+          }
+        }
+      }
+    },
+    "add the MCP server": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "añadir el servidor MCP"
+          }
+        }
+      }
+    },
+    "add this connector": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "añadir esta conexión"
+          }
+        }
+      }
+    },
+    "add this goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "añadir este objetivo"
           }
         }
       }
@@ -13535,12 +16645,202 @@
         }
       }
     },
+    "ask your Mac for new posts": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "pedir publicaciones nuevas a tu Mac"
+          }
+        }
+      }
+    },
     "auth": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "auth"
+          }
+        }
+      }
+    },
+    "carry the model change": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "aplicar el cambio de modelo"
+          }
+        }
+      }
+    },
+    "change the fallback model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cambiar el modelo alternativo"
+          }
+        }
+      }
+    },
+    "change the model": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cambiar el modelo"
+          }
+        }
+      }
+    },
+    "change the routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cambiar la rutina"
+          }
+        }
+      }
+    },
+    "change this goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cambiar este objetivo"
+          }
+        }
+      }
+    },
+    "check the plugin": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "comprobar el complemento"
+          }
+        }
+      }
+    },
+    "clear the chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vaciar el chat"
+          }
+        }
+      }
+    },
+    "config.yaml": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "config.yaml"
+          }
+        }
+      }
+    },
+    "connect": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "conectar"
+          }
+        }
+      }
+    },
+    "connect Health": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "conectar Salud"
+          }
+        }
+      }
+    },
+    "connect to Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "conectar con tu Mac"
+          }
+        }
+      }
+    },
+    "copy the note": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "copiar la nota"
+          }
+        }
+      }
+    },
+    "create the agent": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear el agente"
+          }
+        }
+      }
+    },
+    "create the commit": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear el commit"
+          }
+        }
+      }
+    },
+    "create the project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear el proyecto"
+          }
+        }
+      }
+    },
+    "create the routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear la rutina"
+          }
+        }
+      }
+    },
+    "create the webhook": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear el webhook"
+          }
+        }
+      }
+    },
+    "create the worktree": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "crear el worktree"
           }
         }
       }
@@ -13555,12 +16855,152 @@
         }
       }
     },
+    "delete the node": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "borrar el nodo"
+          }
+        }
+      }
+    },
+    "delete the note": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "borrar la nota"
+          }
+        }
+      }
+    },
+    "delete the project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "borrar el proyecto"
+          }
+        }
+      }
+    },
+    "delete this goal": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "borrar este objetivo"
+          }
+        }
+      }
+    },
+    "disconnect": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "desconectar"
+          }
+        }
+      }
+    },
+    "disconnect Health": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "desconectar Salud"
+          }
+        }
+      }
+    },
+    "disconnect your calendar": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "desconectar tu calendario"
+          }
+        }
+      }
+    },
+    "done": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hecho"
+          }
+        }
+      }
+    },
+    "dropped": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "descartado"
+          }
+        }
+      }
+    },
     "e.g. every monday 9am or 0 9 * * *": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "p. ej. cada lunes a las 9am o 0 9 * * *"
+          }
+        }
+      }
+    },
+    "fetch this file": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "traer este archivo"
+          }
+        }
+      }
+    },
+    "finish the OAuth sign-in": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "terminar el inicio de sesión"
+          }
+        }
+      }
+    },
+    "finish the model change": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "terminar el cambio de modelo"
+          }
+        }
+      }
+    },
+    "get the reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recibir la respuesta"
+          }
+        }
+      }
+    },
+    "hand the browser back": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "devolver el navegador"
           }
         }
       }
@@ -13585,12 +17025,32 @@
         }
       }
     },
+    "https://example.com/page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "https://example.com/pagina"
+          }
+        }
+      }
+    },
     "https://host.example/v1": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "https://host.example/v1"
+          }
+        }
+      }
+    },
+    "iOS refused an unencrypted connection to that address.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iOS rechazó una conexión sin cifrar a esa dirección."
           }
         }
       }
@@ -13605,12 +17065,42 @@
         }
       }
     },
+    "in progress": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en curso"
+          }
+        }
+      }
+    },
     "in “%@”": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "en «%@»"
+          }
+        }
+      }
+    },
+    "install": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "instalar"
+          }
+        }
+      }
+    },
+    "install the plugin": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "instalar el complemento"
           }
         }
       }
@@ -13625,6 +17115,136 @@
         }
       }
     },
+    "load": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar"
+          }
+        }
+      }
+    },
+    "load page watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar las páginas vigiladas"
+          }
+        }
+      }
+    },
+    "load project folders": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar las carpetas del proyecto"
+          }
+        }
+      }
+    },
+    "load projects": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar los proyectos"
+          }
+        }
+      }
+    },
+    "load run history": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar el historial"
+          }
+        }
+      }
+    },
+    "load the diff": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar los cambios"
+          }
+        }
+      }
+    },
+    "load the learning graph": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar el mapa de aprendizaje"
+          }
+        }
+      }
+    },
+    "load the library": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar la biblioteca"
+          }
+        }
+      }
+    },
+    "load the model list": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar la lista de modelos"
+          }
+        }
+      }
+    },
+    "load the node": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar el nodo"
+          }
+        }
+      }
+    },
+    "load the notes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar las notas"
+          }
+        }
+      }
+    },
+    "load your cards": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar tus tarjetas"
+          }
+        }
+      }
+    },
+    "load your goals": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cargar tus objetivos"
+          }
+        }
+      }
+    },
     "on this iPhone": {
       "localizations": {
         "es": {
@@ -13635,12 +17255,102 @@
         }
       }
     },
+    "open the conversation": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abrir la conversación"
+          }
+        }
+      }
+    },
+    "open the routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abrir la rutina"
+          }
+        }
+      }
+    },
+    "pair with Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "emparejar con tu Mac"
+          }
+        }
+      }
+    },
     "push, issue.opened, deployment": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "push, issue.opened, deployment"
+          }
+        }
+      }
+    },
+    "reach the dashboard": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "llegar a tu Mac"
+          }
+        }
+      }
+    },
+    "reach your Mac": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "llegar a tu Mac"
+          }
+        }
+      }
+    },
+    "read the commit": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "leer el commit"
+          }
+        }
+      }
+    },
+    "rename the card": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "renombrar la tarjeta"
+          }
+        }
+      }
+    },
+    "restore the note": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "recuperar la nota"
+          }
+        }
+      }
+    },
+    "retry the message": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "reintentar el mensaje"
           }
         }
       }
@@ -13791,6 +17501,256 @@
         }
       }
     },
+    "run the Git command": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ejecutar el comando de Git"
+          }
+        }
+      }
+    },
+    "run the routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ejecutar la rutina"
+          }
+        }
+      }
+    },
+    "save the brief": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar el encargo"
+          }
+        }
+      }
+    },
+    "save the card": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar la tarjeta"
+          }
+        }
+      }
+    },
+    "save the channel": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar el canal"
+          }
+        }
+      }
+    },
+    "save the credential": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar la credencial"
+          }
+        }
+      }
+    },
+    "save the endpoint": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar la dirección"
+          }
+        }
+      }
+    },
+    "save the hook": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar el hook"
+          }
+        }
+      }
+    },
+    "save the key": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar la clave"
+          }
+        }
+      }
+    },
+    "save the node": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar el nodo"
+          }
+        }
+      }
+    },
+    "save the note": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar la nota"
+          }
+        }
+      }
+    },
+    "save the project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar el proyecto"
+          }
+        }
+      }
+    },
+    "save this routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "guardar esta rutina"
+          }
+        }
+      }
+    },
+    "send that answer": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "enviar esa respuesta"
+          }
+        }
+      }
+    },
+    "send the reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "enviar la respuesta"
+          }
+        }
+      }
+    },
+    "send your answer": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "enviar tu respuesta"
+          }
+        }
+      }
+    },
+    "send your calendar to Hermes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "enviar tu calendario a tu Mac"
+          }
+        }
+      }
+    },
+    "set the time zone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cambiar la zona horaria"
+          }
+        }
+      }
+    },
+    "set up Telegram": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "configurar Telegram"
+          }
+        }
+      }
+    },
+    "set up WhatsApp": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "configurar WhatsApp"
+          }
+        }
+      }
+    },
+    "set up page watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "configurar la vigilancia de páginas"
+          }
+        }
+      }
+    },
+    "show the browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "mostrar el navegador"
+          }
+        }
+      }
+    },
+    "sign in to": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "iniciar sesión en"
+          }
+        }
+      }
+    },
+    "start a new chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "empezar un chat nuevo"
+          }
+        }
+      }
+    },
+    "start the browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "abrir el navegador"
+          }
+        }
+      }
+    },
     "stdio": {
       "localizations": {
         "es": {
@@ -13801,12 +17761,142 @@
         }
       }
     },
+    "stop": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "detener"
+          }
+        }
+      }
+    },
+    "stop watching the page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "dejar de vigilar la página"
+          }
+        }
+      }
+    },
+    "take over the browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "tomar el control del navegador"
+          }
+        }
+      }
+    },
+    "talk to the MCP server": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hablar con el servidor MCP"
+          }
+        }
+      }
+    },
+    "talk to the dashboard": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hablar con tu Mac"
+          }
+        }
+      }
+    },
+    "talk to the local model server": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hablar con el servidor de modelos locales"
+          }
+        }
+      }
+    },
+    "talk to the webhook service": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "hablar con el servicio de webhooks"
+          }
+        }
+      }
+    },
+    "to do": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "por hacer"
+          }
+        }
+      }
+    },
+    "update the project": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "actualizar el proyecto"
+          }
+        }
+      }
+    },
+    "upload the document": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "subir el documento"
+          }
+        }
+      }
+    },
+    "use the browser": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usar el navegador"
+          }
+        }
+      }
+    },
+    "use the card": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "usar la tarjeta"
+          }
+        }
+      }
+    },
     "v%@": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "v%@"
+          }
+        }
+      }
+    },
+    "watch the page": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "vigilar la página"
           }
         }
       }
@@ -13823,10 +17913,40 @@
     },
     "· %lld calls": {
       "localizations": {
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "· %lld call"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "· %lld calls"
+                }
+              }
+            }
+          }
+        },
         "es": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "· %lld llamadas"
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "· %lld llamada"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "· %lld llamadas"
+                }
+              }
+            }
           }
         }
       }
@@ -13981,6 +18101,36 @@
         }
       }
     },
+    "Stop watching": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dejar de vigilar"
+          }
+        }
+      }
+    },
+    "Stop what’s running": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Parar lo que está en marcha"
+          }
+        }
+      }
+    },
+    "Stopped before Hermes answered.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se paró antes de que tu Mac respondiera."
+          }
+        }
+      }
+    },
     "Stopped before finishing": {
       "localizations": {
         "es": {
@@ -14021,6 +18171,76 @@
         }
       }
     },
+    "The connection to Hermes failed (network error %lld).": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falló la conexión con tu Mac (error de red %lld)."
+          }
+        }
+      }
+    },
+    "The dashboard did not accept that username and password.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac no aceptó ese usuario y contraseña."
+          }
+        }
+      }
+    },
+    "The dashboard did not answer. It only listens on your own network.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac no respondió. Solo escucha en tu propia red o por Tailscale."
+          }
+        }
+      }
+    },
+    "The dashboard returned %lld.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac respondió %lld."
+          }
+        }
+      }
+    },
+    "The dashboard returned %lld: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac respondió %lld: %@"
+          }
+        }
+      }
+    },
+    "The dashboard sent something this app could not read.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac envió algo que esta app no pudo leer."
+          }
+        }
+      }
+    },
+    "The dashboard took too long to answer.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Mac tardó demasiado en responder."
+          }
+        }
+      }
+    },
     "The draft could not be saved. Keep this chat open and try again.": {
       "localizations": {
         "es": {
@@ -14037,6 +18257,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "No se pudo leer un borrador guardado. Se han conservado sus datos originales."
+          }
+        }
+      }
+    },
+    "The agent's chat is the simplest: the result appears there like any other reply.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El chat del agente es lo más sencillo: el resultado aparece allí como cualquier otra respuesta."
           }
         }
       }
@@ -14091,6 +18321,56 @@
         }
       }
     },
+    "Couldn’t open notification": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir la notificación"
+          }
+        }
+      }
+    },
+    "Couldn’t open routine": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir la rutina"
+          }
+        }
+      }
+    },
+    "Couldn’t open the conversation": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo abrir la conversación"
+          }
+        }
+      }
+    },
+    "Couldn’t save": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo guardar"
+          }
+        }
+      }
+    },
+    "Couldn’t send. Check the connection to your Mac and tap to try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo enviar. Revisa la conexión con tu Mac y toca para reintentar."
+          }
+        }
+      }
+    },
     "Couldn’t start the microphone.": {
       "localizations": {
         "es": {
@@ -14107,6 +18387,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Interfaz"
+          }
+        }
+      }
+    },
+    "Expensive model warning": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aviso de modelo caro"
           }
         }
       }
@@ -14151,12 +18441,42 @@
         }
       }
     },
+    "Less noise in the reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos ruido en la respuesta"
+          }
+        }
+      }
+    },
+    "Let Alice act without asking?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Dejar que Alice actúe sin preguntar?"
+          }
+        }
+      }
+    },
     "Library": {
       "localizations": {
         "es": {
           "stringUnit": {
             "state": "translated",
             "value": "Biblioteca"
+          }
+        }
+      }
+    },
+    "Nothing matches “%@”. Search covers the chats on this phone and Alice’s screens.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nada coincide con «%@». La búsqueda abarca los chats de este teléfono y las pantallas de Alice."
           }
         }
       }
@@ -14317,6 +18637,16 @@
       },
       "extractionState": "manual"
     },
+    "e.g. every morning at 8 tell me the weather in Blanes": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "p. ej., cada mañana a las 8 dime el tiempo en Blanes"
+          }
+        }
+      }
+    },
     "feed.seed.agents.body": {
       "localizations": {
         "en": {
@@ -14448,6 +18778,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Escribiendo posts nuevos…"
+          }
+        }
+      }
+    },
+    "Couldn’t stop it": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo detener"
           }
         }
       }
@@ -14788,6 +19128,16 @@
         }
       }
     },
+    "Opens Alice’s settings": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre los ajustes de Alice"
+          }
+        }
+      }
+    },
     "Opens it in the browser": {
       "localizations": {
         "en": {
@@ -14800,6 +19150,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Lo abre en el navegador"
+          }
+        }
+      }
+    },
+    "Toolsets": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Conjuntos de herramientas"
           }
         }
       }

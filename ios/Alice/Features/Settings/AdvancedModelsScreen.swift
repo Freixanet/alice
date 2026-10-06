@@ -36,7 +36,7 @@ struct AdvancedModelsScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -643,7 +643,7 @@ private struct CustomModelEndpointSheet: View {
                 .listRowBackground(Palette.card(scheme))
 
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
                         .listRowBackground(Palette.card(scheme))
                 }
             }
@@ -773,7 +773,7 @@ private struct MoAConfigurationSheet: View {
                 aggregatorSection
                 tuningSection
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled) }
                         .listRowBackground(Palette.card(scheme))
                 }
             }

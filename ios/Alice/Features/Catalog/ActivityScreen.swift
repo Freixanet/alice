@@ -155,7 +155,7 @@ struct ActivityScreen: View {
                         titleVisibility: .visible
                     ) {
                         Button("Clear", role: .destructive) {
-                            withAnimation { store.clearActivityHistory() }
+                            withMotion { store.clearActivityHistory() }
                         }
                         Button("Cancel", role: .cancel) {}
                     } message: {
@@ -266,7 +266,7 @@ struct ActivityScreen: View {
                                 .foregroundStyle(.secondary)
                         } icon: {
                             Image(systemName: "exclamationmark.shield")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(Palette.warning(scheme))
                         }
                         .font(.caption)
                     }
@@ -300,7 +300,7 @@ struct ActivityScreen: View {
                         .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "exclamationmark.triangle")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning(scheme))
                 }
                 .font(.caption)
                 .padding(.top, 2)
@@ -336,7 +336,7 @@ struct ActivityScreen: View {
         .swipeActions(edge: .trailing, allowsFullSwipe: !event.isActionable) {
             if !event.isActionable {
                 Button(role: .destructive) {
-                    withAnimation {
+                    withMotion {
                         for member in stacked?.events ?? [event] {
                             store.dismissActivity(member)
                         }

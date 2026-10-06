@@ -49,7 +49,7 @@ struct ErrandStoppedCard: View {
                 PurchaseCapsuleButton(title: showingOptions ? language.pick("Hide the options", "Ocultar las opciones")
                                                             : language.pick("Choose another product", "Elegir otro producto"),
                                       disabled: sending) {
-                    withAnimation(.snappy) { showingOptions.toggle() }
+                    withMotion(.snappy) { showingOptions.toggle() }
                 }
             }
             if errand.status == .stuck {

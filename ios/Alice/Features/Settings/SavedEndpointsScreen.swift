@@ -18,7 +18,7 @@ struct SavedEndpointsScreen: View {
                 else if let snapshot, snapshot.endpoints.isEmpty { Text("No saved custom endpoints for this profile.").foregroundStyle(.secondary) }
                 else if let snapshot { ForEach(snapshot.endpoints) { endpoint in
                     VStack(alignment:.leading,spacing:6) {
-                        HStack { Text(endpoint.name).font(.subheadline.weight(.medium)); Spacer(); if endpoint.isCurrent { Text("ACTIVE").font(.caption2.weight(.bold)).foregroundStyle(.green) } }
+                        HStack { Text(endpoint.name).font(.subheadline.weight(.medium)); Spacer(); if endpoint.isCurrent { Text("ACTIVE").font(.caption2.weight(.bold)).foregroundStyle(Palette.success(scheme)) } }
                         Text(endpoint.baseURL).font(.caption.monospaced()).foregroundStyle(.secondary).textSelection(.enabled)
                         Text(endpoint.model).font(.caption).foregroundStyle(.secondary)
                         HStack(spacing:7) { if endpoint.hasAPIKey { Label(endpoint.APIKeyPreview.isEmpty ? "key set" : endpoint.APIKeyPreview,systemImage:"key.fill") }; Text(endpoint.discoverModels ? "model discovery" : "fixed model") }.font(.caption2).foregroundStyle(.tertiary)
@@ -32,7 +32,7 @@ struct SavedEndpointsScreen: View {
                 } }
             }
             if let snapshot { Section("Current model route") { LabeledContent("Provider",value:snapshot.currentProvider.isEmpty ? "None" : snapshot.currentProvider); LabeledContent("Model",value:snapshot.currentModel.isEmpty ? "None" : snapshot.currentModel); if !snapshot.currentBaseURL.isEmpty { Text(snapshot.currentBaseURL).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary) } } }
-            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled) } }
+            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled) } }
         }
         .navigationTitle("Saved Endpoints").navigationBarTitleDisplayMode(.inline)
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
@@ -69,7 +69,7 @@ private struct EndpointEditor: View {
         Section("Endpoint") { TextField("Name",text:$name); TextField("https://host.example/v1",text:$baseURL).textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL); TextField("Model ID",text:$model).textInputAutocapitalization(.never).autocorrectionDisabled(); SecureField(endpoint?.hasAPIKey == true ? "New API key (leave blank to keep existing)" : "API key (optional)",text:$apiKey).textInputAutocapitalization(.never).autocorrectionDisabled(); TextField("Context length (optional)",text:$contextLength).keyboardType(.numberPad); Toggle("Discover models from /models",isOn:$discover); Toggle("Make this the profile default",isOn:$makeDefault) }
         Section("Connection test") { Button("Validate /models") { Task{await validate()} }.disabled(!basicValid||busy); if let validation { Label(validation.ok ? "Endpoint accepted" : (validation.reachable ? "Endpoint rejected configuration" : "Endpoint unreachable"),systemImage:validation.ok ? "checkmark.circle.fill":"exclamationmark.triangle.fill").foregroundStyle(validation.ok ? Color.green : Color.orange); if !validation.message.isEmpty{Text(validation.message).font(.caption).foregroundStyle(.secondary)}; if !validation.models.isEmpty{Text("Models: \(validation.models.prefix(8).joined(separator: ", "))").font(.caption2).foregroundStyle(.secondary)} } }
         Section { Text("API keys are write-only. Alice sends a new value directly to Hermes and never saves it in local preferences. Leaving the field blank while editing preserves the existing key.").font(.caption).foregroundStyle(.secondary) }
-        if let failure{Section{Text(failure).font(.footnote).foregroundStyle(.red)}}
+        if let failure{Section{Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme))}}
     }.navigationTitle(endpoint == nil ? "Add Endpoint":"Edit Endpoint").navigationBarTitleDisplayMode(.inline).scrollContentBackground(.hidden).background(Palette.background(scheme)).toolbar{ToolbarItem(placement:.cancellationAction){Button("Cancel"){dismiss()}};ToolbarItem(placement:.confirmationAction){if busy{ProgressView()}else{Button("Save"){Task{await save()}}.disabled(!basicValid)}}}.task{guard name.isEmpty else{return};if let endpoint{name=endpoint.name;baseURL=endpoint.baseURL;model=endpoint.model;contextLength=endpoint.contextLength.map(String.init) ?? "";discover=endpoint.discoverModels}}}}
     private var basicValid:Bool{guard !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,!model.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty,let u=URL(string:baseURL),["http","https"].contains(u.scheme?.lowercased() ?? ""),u.host != nil else{return false};return true}
     private var context:Int?{Int(contextLength.trimmingCharacters(in:.whitespacesAndNewlines))}

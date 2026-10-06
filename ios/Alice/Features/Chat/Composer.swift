@@ -27,6 +27,8 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .body) private var compactRowHeight: CGFloat = 34
     @Namespace private var glass
     @State private var showModels = false
+    /// `/yolo` lets agents act without asking, risky actions included: asked once more before it goes.
+    @State private var confirmingYolo = false
     @State private var dictation = Dictation()
     /// Set by swiping the command list away. Cleared on the next keystroke,
     /// so dismissing it is about this moment, not about the whole draft.
@@ -104,6 +106,12 @@ struct Composer: View {
                 }
         )
         .sheet(isPresented: $showModels) { ModelPicker() }
+        .confirmationDialog("Let Alice act without asking?", isPresented: $confirmingYolo, titleVisibility: .visible) {
+            Button("Act without asking", role: .destructive) { sendDraft(confirmed: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Alice and your agents will run commands, change files and use your accounts without asking first, including risky actions. Send /yolo again to turn it off.")
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { store.appendDraftAttachments([$0], to: attachmentConversationID) }
                 .ignoresSafeArea()
@@ -420,7 +428,7 @@ struct Composer: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(item.cmd)
                                 .font(.subheadline.monospaced())
-                            Text(item.hint)
+                            Text(LocalizedStringKey(item.hint))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -471,7 +479,7 @@ struct Composer: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .frame(width: 28, height: 28)
-            .contentShape(.rect)
+            .contentShape(Rectangle().inset(by: -8))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
@@ -638,7 +646,7 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 32, height: 32)
-                .contentShape(.circle)
+                .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.plain)
         // Without this, Menu's own automatic style paints a background pill
@@ -762,7 +770,11 @@ struct Composer: View {
 
     /// Send what is written, stopping dictation first so it cannot keep
     /// writing into the field after the message has gone.
-    private func sendDraft() {
+    private func sendDraft(confirmed: Bool = false) {
+        if !confirmed, store.draft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "/yolo" {
+            confirmingYolo = true
+            return
+        }
         if dictation.isListening || pendingListen == true {
             dictation.stop()
             pendingListen = nil
@@ -786,6 +798,8 @@ struct Composer: View {
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
+        // Drawn at 32 pt, touched at 44.
+        .contentShape(Rectangle().inset(by: -6))
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
@@ -827,6 +841,7 @@ struct Composer: View {
             }
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle().inset(by: -6))
         // The transitions above need a change to animate: voice ⇄ send ⇄ stop.
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: sending)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: stopping)

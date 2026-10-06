@@ -77,7 +77,7 @@ struct MovablePerformanceHUD: View {
                     }
             )
             .onTapGesture(count: 2) {
-                withAnimation(.snappy(duration: 0.3)) { offset = .zero }
+                withMotion(.snappy(duration: 0.3)) { offset = .zero }
                 stored = ""
                 resets += 1
             }

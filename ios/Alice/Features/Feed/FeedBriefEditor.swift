@@ -39,7 +39,7 @@ struct FeedBriefEditor: View {
                 if failed {
                     Text("The brief couldn’t be saved. Check that your Mac is reachable and try again.")
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                 }
             }
             .padding(16)

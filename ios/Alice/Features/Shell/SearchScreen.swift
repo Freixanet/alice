@@ -49,7 +49,12 @@ struct SearchScreen: View {
                     )
                 }
             } else if results.isEmpty && places.isEmpty {
-                hint("Nothing matches “\(query)”")
+                // Said with the query inside the translated sentence, not glued onto it.
+                Text("Nothing matches “\(query)”. Search covers the chats on this phone and Alice’s screens.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -87,7 +92,7 @@ struct SearchScreen: View {
     }
 
     private func heading(_ text: String) -> some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .font(.footnote.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
@@ -126,13 +131,13 @@ struct SearchScreen: View {
                 .font(.system(size: 15))
                 .frame(width: 22)
             VStack(alignment: .leading, spacing: 2) {
-                Text(place.title).lineLimit(1)
+                Text(LocalizedStringKey(place.title)).lineLimit(1)
                 // Hermes' own word, kept where Alice's differs. Hiding it
                 // would leave an expert unable to confirm they are in the
                 // right place, and a newcomer unable to connect what they
                 // read here with anything written about Hermes.
                 if let technical = place.technical {
-                    Text(technical)
+                    Text(LocalizedStringKey(technical))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -170,7 +175,7 @@ struct SearchScreen: View {
     }
 
     private func hint(_ text: String) -> some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -179,7 +184,7 @@ struct SearchScreen: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 if let heading {
-                    Text(heading)
+                    Text(LocalizedStringKey(heading))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)
