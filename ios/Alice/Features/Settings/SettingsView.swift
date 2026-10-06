@@ -188,7 +188,7 @@ struct AppearanceSettingsView: View {
         @Bindable var store = store
         Form {
             Section("Theme") {
-                AppSegmentedPicker("Theme", selection: $store.theme, options: ThemeChoice.allCases.map { .init($0, $0.label) })
+                AppSegmentedPicker("Theme", selection: $store.theme, options: [.init(ThemeChoice.system, "System"), .init(ThemeChoice.light, "Light"), .init(ThemeChoice.dark, "Dark")])
                 .labelsHidden()
             }
             Section("Colour") {
