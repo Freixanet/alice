@@ -1,0 +1,13 @@
+# Weekly update proposals for the web app's npm packages and the CI actions; each arrives as a pull
+# request that runs the Quality checks before anything is merged.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
