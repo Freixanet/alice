@@ -24,6 +24,10 @@ NAME = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 # Hermes' own wiring, not a key a person hands to an agent: an injected
 # request for one of these could re-point Hermes itself.
 RESERVED_PREFIXES = ("HERMES_", "API_SERVER_", "ALICE_", "PATH", "HOME", "SHELL", "PYTHON", "LD_", "DYLD_")
+# Settings that re-point where traffic goes or what it trusts: a link in a reply asking for one
+# could send every model or web request through someone else's server.
+RESERVED_NAMES = re.compile(r"(_BASE_URL|_API_BASE|_ENDPOINT|_HOST|_PROXY)$|^(HTTPS?_PROXY|ALL_PROXY|NO_PROXY"
+                            r"|SSL_CERT_(FILE|DIR)|REQUESTS_CA_BUNDLE|CURL_CA_BUNDLE|NODE_\w+|GIT_\w+|NPM_\w+|PIP_\w+)$")
 MAX_VALUE = 4096
 
 
@@ -35,7 +39,7 @@ def check_name(name: str) -> str:
     name = (name or "").strip()
     if not NAME.fullmatch(name):
         raise SecretError("A key name is capital letters, digits and underscores, like EXA_API_KEY.")
-    if name.startswith(RESERVED_PREFIXES):
+    if name.startswith(RESERVED_PREFIXES) or RESERVED_NAMES.search(name):
         raise SecretError(f"{name} is part of Hermes' own setup and cannot be set from a chat.")
     return name
 

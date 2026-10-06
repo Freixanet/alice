@@ -253,6 +253,58 @@ class GateTests(Base):
         self.assertIsNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
                                            args={"code": "click_text('Pagar')"}, now=NOW + 20))
 
+    def test_page_code_devtools_and_dialogs_pay_like_a_click(self):
+        # browser_console runs any JavaScript; browser_cdp sends raw DevTools input; browser_dialog
+        # accepts the page's «Confirm purchase?». None of them may pay without the approval.
+        entry = self.errand()
+        session = entry["session_id"]
+        pay_page = "https://www.hsnstore.com/checkout/index/index/step/payment/"
+        console = {"expression": "document.querySelector('#place-order').click()"}
+        cdp = {"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed", "x": 400, "y": 508}}
+        dialog = {"action": "accept"}
+        for tool, args in (("browser_console", console), ("browser_cdp", cdp), ("browser_dialog", dialog)):
+            self.assertEqual(errands.pay_gate(self.home, session, tool_name=tool, args=args, active_url=pay_page,
+                                              press_pays=True)["action"], "block", tool)
+        self.assertEqual(errands.pay_gate(self.home, session, tool_name="browser_console", args=console,
+                                          active_url=pay_page)["action"], "block")
+        # Reading is not pressing.
+        self.assertFalse(errands._raw_presses("browser_console", {"expression": "document.title"}))
+        self.assertFalse(errands._raw_presses("browser_console", {}))
+        self.assertFalse(errands._raw_presses("browser_cdp", {"method": "Target.getTargets"}))
+        self.assertFalse(errands._raw_presses("browser_dialog", {"action": "dismiss"}))
+        self.assertTrue(errands._raw_presses("browser_console", {"expression": "fetch('/order',{method:'POST'})"}))
+
+    def test_a_stopped_errand_cannot_pay_even_with_an_approval(self):
+        entry = self.approved(at=NOW)
+        errands.stop(self.home, entry["id"])
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "revoked")
+        self.assertIsNotNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
+                                              args={"code": "click_text('Pagar')"}, now=NOW + 20))
+
+    def test_an_approval_pays_once_and_only_on_its_shop(self):
+        entry = self.approved(at=NOW)
+        session = entry["session_id"]
+        pay = {"code": "click_text('Pagar')"}
+        self.assertIsNotNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay,
+                                              active_url="https://www.amazon.es/checkout/pay", now=NOW + 20))
+        self.assertIsNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay,
+                                           active_url="https://sis.redsys.es/pay", gateways=GATEWAYS, now=NOW + 20))
+        errands.record_receipt(self.home, session, {"outcome": "paid", "order": "HSN-1", "total": "27,98 €"},
+                               now=NOW + 40)
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "consumed")
+        self.assertIsNotNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay, now=NOW + 60))
+
+    def test_allow_and_deny_together_decide_once(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda allow: errands.decide_checkout(self.home, entry["id"], allow, now=NOW + 5),
+                                    (True, False)))
+        self.assertEqual(sum(1 for r in results if r is not None), 1)
+        final = errands.get(self.home, entry["id"])
+        self.assertIn(final["checkout"]["status"], ("approved", "denied"))
+        self.assertEqual(final["status"], "working" if final["checkout"]["status"] == "approved" else "denied")
+
     def test_a_saved_login_is_used_without_asking_unless_asked_to_ask(self):
         self.assertIsNone(errands.login_gate(self.home, self.errand()["session_id"]))
         self.assertIsNone(errands.login_gate(self.home, "chat-session"))

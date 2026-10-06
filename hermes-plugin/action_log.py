@@ -243,21 +243,30 @@ def record(root: Path, *, profile: str, session: str, tool: str, kind: str, targ
     path = _log_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, ensure_ascii=False) + "\n"
-    # One short line in append mode: whole even with two gateways writing at once.
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(line)
-    try:
-        if path.stat().st_size > MAX_BYTES:
-            _trim(path)
-    except OSError:
-        pass
+    # Appending and trimming under one file lock: a line appended while the trim rewrote the file
+    # was lost (two processes write here: the gateway and the dashboard).
+    import fcntl
+    with open(str(path) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line)
+            try:
+                if path.stat().st_size > MAX_BYTES:
+                    _trim(path)
+            except OSError:
+                pass
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
     return entry
 
 
 def _trim(path: Path) -> None:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text("".join(lines[-KEEP_LINES:]), encoding="utf-8")
+    import tempfile
+    fd, temp = tempfile.mkstemp(dir=str(path.parent), prefix=".actions.")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("".join(lines[-KEEP_LINES:]))
     os.replace(temp, path)
 
 
