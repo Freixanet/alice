@@ -7,6 +7,8 @@ import { useLocale, useT } from "@/lib/use-i18n";
 export function AppErrorComponent({ error }: ErrorComponentProps) {
   const t = useT();
   const locale = useLocale();
+  // TanStack Router types the error as unknown from 1.170.41 on.
+  const message = error instanceof Error ? error.message : "";
   useEffect(() => {
     void import("@/lib/operational-telemetry-client")
       .then(({ reportClientError }) => reportClientError("route_error"))
@@ -19,9 +21,7 @@ export function AppErrorComponent({ error }: ErrorComponentProps) {
       </span>
       <h1 className="text-lg font-medium">{t("error.pageTitle")}</h1>
       <p className="max-w-md text-sm break-words text-muted-foreground">
-        {error.message
-          ? localizeError(locale, error.message)
-          : t("error.pageHint")}
+        {message ? localizeError(locale, message) : t("error.pageHint")}
       </p>
     </main>
   );
