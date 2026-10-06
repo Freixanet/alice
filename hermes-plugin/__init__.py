@@ -134,7 +134,13 @@ def team_prompt(_session_info=None) -> str:
 
 
 def _egress_guard():
-    return _module("egress_guard.py", "alice_egress_guard")
+    module = _module("egress_guard.py", "alice_egress_guard")
+    if module.STORE is None:
+        try:
+            module.STORE = Path(_hermes_root()) / ".alice" / "taint.json"
+        except Exception:
+            logging.getLogger(__name__).warning("alice: taint kept in memory only", exc_info=True)
+    return module
 
 
 def _guard_egress(tool_name=None, args=None, session_id="", **_):
@@ -188,16 +194,21 @@ def _card_fill(tool_name, args):
 def _guard_repeat_payment(tool_name=None, args=None, session_id="", **_):
     """One payment per order (purchases.py): an unsettled payment on the same shop blocks the fill;
     a paid or unknown one sends it through Hermes' approval card. If the ledger cannot be read, the
-    fill still needs Hermes' own payment confirmation, so nothing is spent without a yes."""
+    fill is refused: inside an errand Hermes' own confirmation is answered by the engine, so «it
+    still asks» was no protection there."""
     try:
         meta = _card_fill(tool_name, args)
-        if meta is None:
-            return None
+    except Exception:
+        meta = None if tool_name != "browser_vault_fill" else True
+    if meta is None:
+        return None
+    try:
         cards = _cards_module()
         site = _purchases().merchant(_open_tabs(), meta.origin or "", cards.PAYMENT_GATEWAYS)
         return _purchases().guard(_hermes_root(), site, session_id or "")
     except Exception:
-        return None
+        logging.getLogger(__name__).warning("alice: payment ledger unreadable; card fill refused", exc_info=True)
+        return {"action": "block", "message": "No se pudo comprobar si este pedido ya se pagó. No pagues; avisa a la persona."}
 
 
 def _errands():
@@ -358,18 +369,21 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
     name = str(tool_name or "")
-    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
+    raw = name in _errands().RAW_BROWSER and _errands()._raw_presses(name, args)
+    # browser_eval/browser_evaluate are not Hermes tools today; kept refused in case one appears.
+    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")) \
+            or (raw and name != "browser_dialog"):
         session = _session_id(session_id)
-        if not session.startswith(_errands().SESSION_PREFIX):
+        if session.startswith(_errands().SESSION_PREFIX):
+            try:
+                offer = bool((_errands().of_session(_hermes_root(), session) or {}).get("offer"))
+            except Exception:
+                offer = True  # unreadable: treated as a purchase
+            if offer:
+                return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
+        if not raw:
             return None
-        try:
-            entry = _errands().of_session(_hermes_root(), session)
-            if not (entry or {}).get("offer"):
-                return None
-        except Exception:
-            pass
-        return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
-    if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
+    if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS and name not in _errands().RAW_BROWSER:
         return None
     session = _session_id(session_id)
     try:
@@ -400,18 +414,23 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
             verdict = errands.pay_gate(root, session, card_fill_site=meta.origin or "", merchant_site=merchant,
                                        gateways=cards.PAYMENT_GATEWAYS)
         else:
+            # Inside an errand, pressing anything through raw page code, DevTools or a page dialog
+            # counts as paying: those calls carry no reliable words to tell a pay button apart.
+            press_pays = raw and session.startswith(errands.SESSION_PREFIX)
             verdict = errands.pay_gate(root, session, tool_name=name, args=args, active_url=active_url,
-                                       payment_step=payment_step)
+                                       payment_step=payment_step, press_pays=press_pays,
+                                       gateways=_cards_module().PAYMENT_GATEWAYS)
         if verdict:
             return verdict
-        paying = meta is not None or errands.is_pay_action(name,args,active_url,payment_step)
+        paying = meta is not None or errands.is_pay_action(name,args,active_url,payment_step) or (
+            raw and session.startswith(errands.SESSION_PREFIX))
         entry = errands.of_session(root,session)
         if paying and (entry or {}).get('offer'):
             if not _module("purchase_prices.py", "alice_purchase_prices").payment_ready(root,entry):
                 return {"action":"block", "message":"El total o la sesión cambiaron, o falta evidencia del resumen aprobado. Comprueba la cesta y llama a checkout_request para mostrar el total actual antes de pagar."}
         return None
     except Exception:
-        if name == "browser_vault_fill" or _errands().is_pay_action(name,args,_active_url()):
+        if name == "browser_vault_fill" or raw or _errands().is_pay_action(name,args,_active_url()):
             return {"action": "block", "message": "No se pudo comprobar la aprobación del pago; no pagues."}
         return None
 
@@ -445,7 +464,7 @@ def _record_payment(tool_name, args, result, session_id) -> None:
         entry = _purchases().record(_hermes_root(), site, session_id or "")
         _schedule_payment_check(entry)
     except Exception:
-        pass
+        logging.getLogger(__name__).error("alice: a card payment was not recorded in the ledger", exc_info=True)
 
 
 def _schedule_payment_check(entry) -> None:
@@ -471,6 +490,20 @@ def _schedule_payment_check(entry) -> None:
     # Telegram or iMessage: back to that chat. Alice's app chats have no such origin: the agent's chat.
     create_job(None, at.isoformat(timespec="seconds"), name=f"Comprobar pago en {entry['shop']}",
                repeat=1, origin=origin, deliver=None if origin else "bot-chat", script=name, no_agent=True)
+
+
+def _skill_staged_note(tool_name=None, args=None, result=None, session_id="", **_):
+    """A staged skill write reads as saved, not «pending your approval» (skill_keeper.staged_note)."""
+    if tool_name != "skill_manage":
+        return None
+    try:
+        tainted = _egress_guard().tainted(_session_id(session_id))
+    except Exception:
+        tainted = True
+    try:
+        return _skill_keeper().staged_note(args, result, tainted=tainted)
+    except Exception:
+        return None
 
 
 def _payment_error_note(tool_name=None, result=None, session_id="", **_):
@@ -765,9 +798,10 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
     for Alice's Activity. An observer: it never changes the call, and a failure here is
     swallowed so it can never break a turn."""
     try:
-        _egress_guard().observe(session_id or "", tool_name or "")
+        _egress_guard().observe(session_id or "", tool_name or "", args=args)
     except Exception:
-        pass
+        logging.getLogger(__name__).warning("alice: could not record that this session read outside content",
+                                            exc_info=True)
     try:
         from hermes_constants import get_hermes_home
 
@@ -782,6 +816,14 @@ def _post_tool_call(tool_name=None, args=None, result=None, session_id="", statu
     except Exception:
         pass
     if tool_name == "skill_manage" and status != "error":
+        # Proposed after reading the web: a page may have written it, so it waits (skill_keeper.py).
+        try:
+            staged = json.loads(result) if isinstance(result, str) else (result or {})
+            if isinstance(staged, dict) and staged.get("staged") and staged.get("pending_id") \
+                    and _egress_guard().tainted(_session_id(session_id)):
+                _skill_keeper().mark_tainted(_hermes_root(), str(staged["pending_id"]))
+        except Exception:
+            logging.getLogger(__name__).warning("alice: could not check where a lesson came from", exc_info=True)
         # A skill written now is kept now, unless it reads like an injection (skill_keeper.py).
         _keep_skills(delay=1.0)
     if tool_name == "memory" and status != "error":
@@ -2050,6 +2092,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _route_card_fill)
     # A payment error on the page reaches the agent, and through it the person (purchases.py).
     ctx.register_hook("transform_tool_result", _payment_error_note)
+    # A lesson Alice keeps herself is not «pending your approval» to the agent (skill_keeper.py).
+    ctx.register_hook("transform_tool_result", _skill_staged_note)
     # In a feed run, every source research surfaces gets a citable id (feed.py).
     ctx.register_hook("transform_tool_result", _feed_sources)
     ctx.register_hook("pre_tool_call", _guard_feed_publish)

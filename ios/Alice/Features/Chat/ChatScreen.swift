@@ -268,6 +268,17 @@ private struct ChatScreenContent: View, Equatable {
                 await store.prepareHomeChatIfNeeded(conversationID: id)
             }
         }
+        // What Alice learned is said under the reply it came after (`LessonNotice`). Hermes reviews a
+        // conversation once it pauses (about 90 s), so look again a little after the last message.
+        // Keyed on the dashboard too: at launch the chat opens before the dashboard signs in, and a
+        // refresh then does nothing.
+        .task(id: "\(store.activeID ?? "")#\(store.shownConversation?.messages.count ?? 0)#\(store.dashboardReady)") {
+            guard bot == nil || bot == "default", store.activeID != nil else { return }
+            await store.refreshAgentActions()
+            try? await Task.sleep(for: .seconds(150))
+            guard !Task.isCancelled else { return }
+            await store.refreshAgentActions()
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
         )) { note in
@@ -465,7 +476,7 @@ private struct ChatScreenContent: View, Equatable {
                 // chat again is `/new`, which keeps what was said under Sessions.
                 Button {
                     Haptic.soft.play()
-                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
+                    withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
                 } label: {
                     Image(systemName: "rectangle.stack")
                         .font(.system(size: 18, weight: .medium))
@@ -614,7 +625,8 @@ private struct TranscriptView: View {
 
     private func transcriptRow(
         _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
-        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef], modelChange: ModelChange? = nil
+        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef], modelChange: ModelChange? = nil,
+        learned: [AgentAction] = []
     ) -> some View {
         let busy = (position?.isLatest ?? false) && latestBusy
         return MessageRow(
@@ -624,7 +636,8 @@ private struct TranscriptView: View {
             showsAuthor: position?.isFirst ?? true,
             actionsContent: position?.text,
             errandRefs: errandRefs,
-            modelChange: modelChange
+            modelChange: modelChange,
+            learned: learned
         )
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
@@ -656,10 +669,10 @@ private struct TranscriptView: View {
         Task { @MainActor in
             // After the page that holds it is laid out.
             try? await Task.sleep(for: .milliseconds(250))
-            withAnimation(.snappy(duration: 0.35)) { position.scrollTo(id: target, anchor: .center) }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = target }
+            withMotion(.snappy(duration: 0.35)) { position.scrollTo(id: target, anchor: .center) }
+            withMotion(.easeOut(duration: 0.2)) { highlighted = target }
             try? await Task.sleep(for: .seconds(1.8))
-            withAnimation(.easeInOut(duration: 0.6)) { highlighted = nil }
+            withMotion(.easeInOut(duration: 0.6)) { highlighted = nil }
         }
     }
 
@@ -714,6 +727,9 @@ private struct TranscriptView: View {
             session: conversation.hermesSessionID
         )
         let modelChanges = ModelChange.changes(in: conversation.messages)
+        // Alice's own chats only; hers carry no bot or the `default` profile.
+        let learned = [nil, "", "default"].contains(conversation.botName)
+            ? LessonNotice.replies(in: conversation.messages, actions: store.keptLessons) : [:]
         let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
             ?? Self.windowStart(presented, before: presented.count)
         let hiddenCount = start
@@ -760,7 +776,8 @@ private struct TranscriptView: View {
                             message, position: positions[message.id], latestBusy: latestBusy,
                             superseded: answered.contains(message.id), reaction: given[message.id],
                             errandRefs: errands[message.id] ?? [],
-                            modelChange: modelChanges[message.id]
+                            modelChange: modelChanges[message.id],
+                            learned: learned[message.id] ?? []
                         )
                     }
                     if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
@@ -895,7 +912,7 @@ private struct TranscriptView: View {
                             // Tapped, the way back down is shown rather than cut to. Following a
                             // reply as it grows stays unanimated (see above).
                             Haptic.tap.play()
-                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
+                            withMotion(reduceMotion ? nil : .snappy(duration: 0.35)) {
                                 position.scrollTo(edge: .bottom)
                             }
                         } label: {

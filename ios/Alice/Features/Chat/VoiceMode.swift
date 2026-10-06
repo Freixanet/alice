@@ -146,12 +146,13 @@ final class VoiceConversation {
         guard token == generation, !Task.isCancelled,
               self.store === store, store.activeChat.id == conversationID else { return }
         guard allowed else {
-            phase = .unavailable("Alice needs the microphone and speech recognition. Turn them on in iOS Settings.")
+            phase = .unavailable(String(localized: "Alice needs the microphone and speech recognition. Turn them on in iOS Settings."))
             return
         }
-        let recognizer = SFSpeechRecognizer(locale: Locale(identifier: "es-ES")) ?? SFSpeechRecognizer()
+        // The phone's own language, not Spanish for everyone: an English speaker was transcribed as Spanish.
+        let recognizer = SFSpeechRecognizer(locale: Locale.current) ?? SFSpeechRecognizer()
         guard let recognizer, recognizer.isAvailable else {
-            phase = .unavailable("Speech recognition is not available right now.")
+            phase = .unavailable(String(localized: "Speech recognition is not available right now."))
             return
         }
         self.recognizer = recognizer
@@ -168,7 +169,7 @@ final class VoiceConversation {
                 input.removeTap(onBus: 0)
                 let format = input.outputFormat(forBus: 0)
                 guard format.sampleRate > 0, format.channelCount > 0 else {
-                    phase = .unavailable("The microphone is not available right now.")
+                    phase = .unavailable(String(localized: "The microphone is not available right now."))
                     stopListening()
                     return
                 }
@@ -182,7 +183,7 @@ final class VoiceConversation {
                 engine.prepare()
                 try engine.start()
             } catch {
-                phase = .unavailable("Couldn’t start the microphone.")
+                phase = .unavailable(String(localized: "Couldn’t start the microphone."))
                 stopListening()
                 return
             }
@@ -343,7 +344,7 @@ final class VoiceConversation {
                 // Nothing went out: say so, instead of thinking for ever.
                 if !sawActivity, (store.shownConversation?.messages.count ?? 0) <= self.baseline,
                    Date().timeIntervalSince(sentAt) > 12 {
-                    self.phase = .unavailable("No se pudo enviar. Revisa la conexión con Hermes y toca para reintentar.")
+                    self.phase = .unavailable(String(localized: "Couldn’t send. Check the connection to your Mac and tap to try again."))
                     return
                 }
                 let messages = store.shownConversation?.messages ?? []

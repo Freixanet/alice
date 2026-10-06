@@ -36,7 +36,7 @@ struct WebhooksScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -142,7 +142,7 @@ struct WebhooksScreen: View {
                             systemImage: "arrow.clockwise.circle"
                         )
                         .font(.footnote)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(Palette.warning(scheme))
                         Button { confirmRestart = true } label: {
                             Label("Restart gateway", systemImage: "arrow.clockwise")
                         }
@@ -580,7 +580,7 @@ private struct CreateWebhookSheet: View {
                 .autocorrectionDisabled()
             Text("A script is executed by Hermes on the host when this route fires. Only configure scripts you trust.")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning(scheme))
             SecureField("Custom HMAC secret (optional)", text: $secret)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -591,7 +591,7 @@ private struct CreateWebhookSheet: View {
         .listRowBackground(Palette.card(scheme))
 
         if let failure {
-            Section { Text(failure).font(.footnote).foregroundStyle(.red) }
+            Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
                 .listRowBackground(Palette.card(scheme))
         }
     }
@@ -600,11 +600,11 @@ private struct CreateWebhookSheet: View {
     private func createdSections(_ result: WebhookCreation) -> some View {
         Section {
             Label("Subscription created", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.success(scheme))
                 .listRowBackground(Palette.card(scheme))
             Text("Copy the HMAC secret now. Hermes will not return it again from list calls.")
                 .font(.footnote)
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning(scheme))
                 .listRowBackground(Palette.card(scheme))
         }
 

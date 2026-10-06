@@ -126,7 +126,7 @@ struct HermesFilesScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -785,7 +785,7 @@ struct HermesRemoteFileDetail: View {
                     if file.truncated {
                         Label("Preview truncated at 512 KB. Editing is disabled; download the full file instead.", systemImage: "exclamationmark.triangle")
                             .font(.caption)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                     }
                     Text(file.text)
                         .font(.system(.footnote, design: .monospaced))

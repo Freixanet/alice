@@ -274,7 +274,7 @@ struct RootView: View {
                                 if translation > drawerWidth * 0.3 || predicted > 120 {
                                     closeFeed()
                                 } else {
-                                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                    withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                                 }
                             }
                         )
@@ -447,7 +447,7 @@ struct RootView: View {
                             if travelled || flicked {
                                 openFeed()
                             } else {
-                                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                             }
                             return
                         }
@@ -458,11 +458,11 @@ struct RootView: View {
                         if !drawerOpen, opens {
                             SwipeNavigationTip().invalidate(reason: .actionPerformed)
                         }
-                        withAnimation(drawerAnimation) { setDrawer(opens) }
+                        withMotion(drawerAnimation) { setDrawer(opens) }
                     },
                     onCancel: {
                         panOpensFeed = nil
-                        withAnimation(drawerAnimation) {
+                        withMotion(drawerAnimation) {
                             feedDrag = 0
                             setDrawer(drawerOpen)
                         }
@@ -525,7 +525,7 @@ struct RootView: View {
         botsCloseTask = Task { @MainActor in
             do {
                 if lead > .zero { try await Task.sleep(for: lead) }
-                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+                withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
                     botsExitOffset = exitLeading ? -width : width
                 }
                 try await Task.sleep(for: .milliseconds(320))
@@ -588,7 +588,7 @@ struct RootView: View {
     /// Goals leaves the way it came in, off the right.
     private func openFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = true
             feedDrag = 0
         }
@@ -596,7 +596,7 @@ struct RootView: View {
 
     private func closeFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = false
             feedDrag = 0
         }
@@ -604,7 +604,7 @@ struct RootView: View {
 
     private func closeGoals() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingGoals = false
         }
     }
@@ -612,7 +612,7 @@ struct RootView: View {
     /// The agenda leaves the way it came in, off the right.
     private func closeAgenda() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingAgenda = false
         }
     }
@@ -620,7 +620,7 @@ struct RootView: View {
     /// Notes leaves the way it came in, off the right.
     private func closeNotes() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingNotes = false
         }
     }

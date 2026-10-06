@@ -534,7 +534,7 @@ struct ModelPicker: View {
                     if warning == nil {
                         onChanged?(model.label)
                         // Said, not assumed: the change is confirmed before the sheet closes.
-                        withAnimation(reduceMotion ? nil : .snappy) { confirmed = model.label }
+                        withMotion(reduceMotion ? nil : .snappy) { confirmed = model.label }
                         try? await Task.sleep(for: .milliseconds(900))
                         dismiss()
                     }

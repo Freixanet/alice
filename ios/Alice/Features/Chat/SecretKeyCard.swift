@@ -73,7 +73,7 @@ struct SecretKeyCard: View {
                 } label: {
                     if working { ProgressView() } else { Text(language.pick("Save", "Guardar")) }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).onAccentLabel()
                 .disabled(value.trimmingCharacters(in: .whitespaces).isEmpty || working)
             }
             Text(language.pick("Saved in Hermes on your Mac. It never goes through the chat.",
@@ -96,7 +96,7 @@ struct SecretKeyCard: View {
         do {
             try await store.saveSecret(name, value: value.trimmingCharacters(in: .whitespacesAndNewlines))
             value = ""
-            withAnimation(.snappy) { saved = true }
+            withMotion(.snappy) { saved = true }
             store.sendAppNote("The person saved \(name). Carry on with the task.")
         } catch {
             problem = PlainWords.describe(error, doing: "save the key")

@@ -76,6 +76,21 @@ class ErrandHookTests(unittest.TestCase):
                 result = self.plugin._guard_errand(tool_name=tool, args={"command":"submit order"}, session_id=entry["session_id"])
                 self.assertEqual(result["action"], "block")
 
+    def test_page_code_cannot_press_pay_in_any_errand_without_approval(self):
+        # The P0: a shop with a saved card, and the agent clicking «Realizar pedido» through page code.
+        console = {"expression": "document.querySelector('#place-order').click()"}
+        for entry in (self.errand(), self.errand(offer={"option_id": "chosen", "price": "34,99 €"})):
+            for tool, args in (("browser_console", console),
+                               ("browser_cdp", {"method": "Input.dispatchMouseEvent", "params": {"x": 1, "y": 2}}),
+                               ("browser_dialog", {"action": "accept"})):
+                with self.subTest(tool=tool, offer=bool(entry.get("offer"))):
+                    result = self.plugin._guard_errand(tool_name=tool, args=args, session_id=entry["session_id"])
+                    self.assertEqual(result["action"], "block")
+        # Reading the page through the console stays allowed outside purchases.
+        plain = self.errand()
+        self.assertIsNone(self.plugin._guard_errand(tool_name="browser_console", args={"expression": "document.title"},
+                                                    session_id=plain["session_id"]))
+
     def test_execution_guard_preserves_non_purchase_sessions(self):
         entry = self.errand()
         self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"]))

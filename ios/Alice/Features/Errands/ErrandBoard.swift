@@ -45,7 +45,10 @@ final class ErrandBoard {
                 guard let self else { return }
                 await self.refresh()
                 let busy = self.errands.contains { $0.status == .working }
-                try? await Task.sleep(for: .seconds(busy ? 3 : 10))
+                let waiting = self.errands.contains { $0.status.needsPerson }
+                // With nothing under way the board rarely changes: a minute apart, not ten seconds,
+                // while any chat is open (network, disk and a transcript redraw each time).
+                try? await Task.sleep(for: .seconds(busy ? 3 : waiting ? 10 : 60))
             }
         }
     }
@@ -69,10 +72,14 @@ final class ErrandBoard {
     func refresh() async {
         guard let store else { return }
         do {
-            errands = try await store.listErrands()
+            let next = try await store.listErrands()
             fresh = true
             failure = nil
-            store.rememberLaunchList(.errands, errands)
+            // Unchanged, nothing is reassigned or rewritten.
+            if next != errands {
+                errands = next
+                store.rememberLaunchList(.errands, errands)
+            }
         } catch {
             failure = error.localizedDescription
         }
@@ -81,12 +88,18 @@ final class ErrandBoard {
 
     /// «Permitir» pays, so it asks for Face ID first; «Denegar» does not.
     func decide(_ errand: Errand, allow: Bool, card: String = "") async {
-        guard let store, let checkout = errand.checkout, checkout.status == .pending else { return }
+        guard let store, let checkout = errand.checkout, checkout.status == .pending,
+              !sending.contains(errand.id) else { return }
         if allow {
+            // In flight from the first tap: two quick taps asked for Face ID twice and could send
+            // two decisions. The card is disabled while Face ID asks.
+            sending.insert(errand.id)
             let language = errand.language
             let merchant = checkout.merchant.nonEmpty(or: checkout.site)
             let reason = language.pick("Pay \(checkout.total) at \(merchant)", "Pagar \(checkout.total) en \(merchant)")
-            guard await Biometrics.authenticate(reason: reason) else { return }
+            let approved = await Biometrics.authenticate(reason: reason)
+            sending.remove(errand.id)
+            guard approved else { return }
         }
         await answer(errand) {
             try await store.decideCheckout(errand.id, checkoutID: checkout.id, allow: allow, card: card)
@@ -212,7 +225,7 @@ struct ErrandStack: View {
                     Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .disabled(sending)
                     Button(errand.language.pick("Later", "Ahora no")) {
                         Task { _ = await store.answerSecureRequest(request, value: "") }

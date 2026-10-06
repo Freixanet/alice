@@ -107,8 +107,16 @@ struct PrivacySettingsView: View {
                     get: { store.requireUnlock },
                     set: { on in
                         // Turned on only by someone who can unlock it, so the
-                        // app is never locked against its own owner.
-                        guard on else { store.requireUnlock = false; return }
+                        // app is never locked against its own owner; turned off
+                        // only by the owner too, not by whoever picked the phone up.
+                        guard on else {
+                            Task {
+                                if await Biometrics.authenticate(reason: "Turn off locking for Alice.") {
+                                    store.requireUnlock = false
+                                }
+                            }
+                            return
+                        }
                         Task {
                             if await Biometrics.authenticate(reason: "Turn on locking for Alice.") {
                                 store.requireUnlock = true

@@ -167,7 +167,26 @@ def _load(home):
     return json.loads(path.read_text()) if path.exists() else {'searches': {}, 'quotes': {}}
 
 
+EVIDENCE_DAYS = 30
+EVIDENCE_MAX = 400
+
+
+def _prune(data, now=None):
+    """Searches and quotes older than a month, or past the newest few hundred, are dropped: nothing
+    checks a price that old, and the file only grew (half a megabyte after a week)."""
+    now = now or time.time()
+    cutoff = now - EVIDENCE_DAYS * 86400
+    for key in ('searches', 'quotes'):
+        rows = data.get(key) or {}
+        kept = sorted(((k, v) for k, v in rows.items()
+                       if isinstance(v, dict) and float(v.get('at') or 0) >= cutoff),
+                      key=lambda kv: float(kv[1].get('at') or 0))[-EVIDENCE_MAX:]
+        data[key] = dict(kept)
+    return data
+
+
 def _save(home, data):
+    data = _prune(data)
     path = _path(home)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_suffix('.tmp')

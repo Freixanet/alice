@@ -36,7 +36,7 @@ struct PluginsAdminScreen: View {
                 }
             }
             if let message { Section("Result") { Text(message).font(.footnote).textSelection(.enabled) } }
-            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled) } }
+            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled) } }
         }
         .navigationTitle("Plugins")
         .navigationBarTitleDisplayMode(.inline)
@@ -91,6 +91,7 @@ private enum PluginMutation: Identifiable {
 }
 
 private struct PluginInstallSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     @State private var identifier=""
     @State private var force=false
@@ -101,8 +102,8 @@ private struct PluginInstallSheet: View {
     let install: (String,Bool,Bool) async throws -> Void
     var body: some View { NavigationStack { Form {
         Section("Plugin") { TextField("Identifier or repository", text:$identifier).textInputAutocapitalization(.never).autocorrectionDisabled(); Toggle("Enable after install",isOn:$enable); Toggle("Force reinstall",isOn:$force) }
-        Section { Text("Installing a plugin can download and execute third-party code on the Mac running Hermes. Review the identifier/source before continuing.").font(.caption).foregroundStyle(.orange) }
-        if let failure { Section { Text(failure).foregroundStyle(.red).font(.footnote) } }
+        Section { Text("Installing a plugin can download and execute third-party code on the Mac running Hermes. Review the identifier/source before continuing.").font(.caption).foregroundStyle(Palette.warning(scheme)) }
+        if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) } }
     }.navigationTitle("Install Plugin").toolbar { ToolbarItem(placement:.cancellationAction){Button("Cancel"){dismiss()}}; ToolbarItem(placement:.confirmationAction){if busy{ProgressView()}else{Button("Install"){confirm=true}.disabled(identifier.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}}} }.confirmationDialog("Install code on the Hermes host?",isPresented:$confirm,titleVisibility:.visible){Button("Install"){Task{await run()}};Button("Cancel",role:.cancel){}} message:{Text("Hermes will resolve this identifier and may execute its install steps on the Mac.")} }
     private func run() async { busy=true; defer{busy=false}; do{try await install(identifier.trimmingCharacters(in:.whitespacesAndNewlines),force,enable);dismiss()}catch{failure=PlainWords.describe(error, doing: "install the plugin")} }
 }

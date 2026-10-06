@@ -73,7 +73,11 @@ enum AttachmentLoader {
             width: (image.size.width * scale).rounded(),
             height: (image.size.height * scale).rounded()
         )
-        return UIGraphicsImageRenderer(size: size).image { _ in
+        // Scale 1: the default format renders at the screen's scale (3x), so the 1024 px limit gave
+        // 3072 px images, nine times the bytes in chats, drafts and model requests.
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: size))
         }
     }
@@ -213,6 +217,7 @@ struct AttachmentChips: View {
                 .foregroundStyle(.white)
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.55), in: .circle)
+                .contentShape(Rectangle().inset(by: -10))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Remove \(attachment.name)")

@@ -1,0 +1,106 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSCalendarsFullAccessUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice lee tus próximos eventos y los comparte con tu propio Hermes, para que tus agentes puedan organizarse según tu día. Solo añade, mueve o cancela un evento cuando lo confirmas en el chat."
+          }
+        }
+      }
+    },
+    "NSRemindersFullAccessUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice muestra tus recordatorios pendientes junto a tus eventos en Agenda, y comparte los que vencen pronto (título, fecha y lista, nunca las notas) con tu propio Hermes para tu resumen de la mañana. Solo marca uno como hecho cuando tú lo marcas."
+          }
+        }
+      }
+    },
+    "NSHealthShareUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice lee tu sueño diario, pasos, energía activa, entrenamientos, frecuencia cardiaca en reposo, VFC, minutos de atención plena y medicación —incluido lo que tu WHOOP o Apple Watch escriben en Salud— y envía un resumen al día a tu propio Hermes, para contarte lo que destaca. Nunca escribe en Salud."
+          }
+        }
+      }
+    },
+    "NSLocationWhenInUseUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice busca en el mapa, cerca de ti, los sitios que le pides, como «cuando llegue al súper»."
+          }
+        }
+      }
+    },
+    "NSLocationAlwaysAndWhenInUseUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para que Alice haga lo que le pediste al llegar a un sitio o salir de él, incluso con la app cerrada. Tu iPhone vigila solo esos sitios. Tu propio Hermes recibe el sitio por el que preguntaste y que has llegado o salido, nunca dónde estás el resto del tiempo."
+          }
+        }
+      }
+    },
+    "NSFaceIDUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice usa Face ID para desbloquear la app y tus notas bloqueadas, si lo activas en Ajustes."
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice usa la cámara para escanear el código QR de emparejamiento con Hermes y cuando adjuntas una foto que haces desde el redactor."
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice usa el micrófono cuando dictas un mensaje y cuando hablas con ella en una conversación de voz."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice transcribe lo que dictas, y lo que dices en una conversación de voz, para enviarlo como mensaje."
+          }
+        }
+      }
+    },
+    "NSLocalNetworkUsageDescription": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice se conecta al agente Hermes que tienes en tu red."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -95,7 +95,7 @@ struct ConnectOfferCard: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(minWidth: 110)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .buttonBorderShape(.capsule)
                     .tint(accent)
 
@@ -189,7 +189,7 @@ struct CalendarConnectionRow: View {
                         .buttonStyle(.borderless)
                 } else {
                     Button("Connect") { Task { await connect() } }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).onAccentLabel()
                         .buttonBorderShape(.capsule)
                         .tint(store.accent.primary(scheme))
                 }
@@ -296,7 +296,7 @@ struct AddEventCard: View {
         // Added by a 👍 to the reply while the card was on screen.
         .onReceive(NotificationCenter.default.publisher(for: .aliceCalendarCardsChanged)) { _ in
             if added == nil, let at = AddEventCard.addedAt(key) {
-                withAnimation(.snappy(duration: 0.25)) { added = at }
+                withMotion(.snappy(duration: 0.25)) { added = at }
             }
         }
     }
@@ -315,7 +315,7 @@ struct AddEventCard: View {
 
     private func dismiss() {
         AddEventCard.rememberDismissed(key)
-        withAnimation(.snappy(duration: 0.25)) { dismissed = true }
+        withMotion(.snappy(duration: 0.25)) { dismissed = true }
         // Said to the agent too, so the conversation reads as he left it.
         if !superseded { store.sendQuickReply(language.pick("No, thanks.", "No, gracias.")) }
     }
@@ -393,7 +393,7 @@ struct AddEventCard: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).onAccentLabel()
                 .buttonBorderShape(.capsule)
                 .tint(accent)
                 .disabled(working)

@@ -261,7 +261,7 @@ struct NotesScreen: View {
     private func pinSelection() {
         let notes = selectedNotes
         let allPinned = notes.allSatisfy { store.pinnedNotes.contains($0.id) }
-        withAnimation(.snappy(duration: 0.3)) {
+        withMotion(.snappy(duration: 0.3)) {
             for note in notes where store.pinnedNotes.contains(note.id) == allPinned {
                 store.togglePinned(note)
             }
@@ -411,7 +411,7 @@ struct NotesScreen: View {
             // The end of a swipe is not a tap on the note.
             guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
             guard swipedOpen == nil else {
-                withAnimation(.snappy(duration: 0.25)) { swipedOpen = nil }
+                withMotion(.snappy(duration: 0.25)) { swipedOpen = nil }
                 store.noteRowOpen = false
                 return
             }
@@ -443,7 +443,7 @@ struct NotesScreen: View {
             shareText: hides(note) ? "" : note.text,
             pinned: store.pinnedNotes.contains(note.id),
             onPin: {
-                withAnimation(.snappy(duration: 0.3)) { store.togglePinned(note) }
+                withMotion(.snappy(duration: 0.3)) { store.togglePinned(note) }
             },
             lastSwipe: $lastSwipe,
             moving: Binding(
@@ -696,8 +696,8 @@ struct NotesScreen: View {
                 Label("Share", systemImage: "square.and.arrow.up.fill")
             }
             .disabled(hidden)
-            // Not wired to anything yet.
-            Button("Move", systemImage: "folder.fill") {}
+            // The same move as the toolbar's, for this one note (it did nothing before).
+            Button("Move", systemImage: "folder.fill") { moving = .notes([note.id]) }
             Button(role: .destructive) {
                 deleting = note
             } label: {
@@ -713,7 +713,7 @@ struct NotesScreen: View {
         .controlGroupStyle(.compactMenu)
         let pinned = store.pinnedNotes.contains(note.id)
         Button(pinned ? "Unpin Note" : "Pin Note", systemImage: pinned ? "pin.slash" : "pin") {
-            withAnimation(.snappy(duration: 0.3)) { store.togglePinned(note) }
+            withMotion(.snappy(duration: 0.3)) { store.togglePinned(note) }
             NoteActionsTip().invalidate(reason: .actionPerformed)
         }
         AddToHomeButton(
@@ -749,13 +749,13 @@ struct NotesScreen: View {
 
     private func toggleLock(_ note: Note) {
         guard store.isLocked(note) else {
-            withAnimation { store.setLocked(note, true) }
+            withMotion { store.setLocked(note, true) }
             return
         }
         // Taking a lock off is only for whoever can open it.
         Task {
             if await Biometrics.authenticate(reason: "Remove the lock from this note.") {
-                withAnimation { store.setLocked(note, false) }
+                withMotion { store.setLocked(note, false) }
             }
         }
     }
@@ -973,7 +973,7 @@ struct SwipeToDelete: ViewModifier {
         _ title: String, symbol: String, tint: Color, shown: CGFloat, run: @escaping () -> Void
     ) -> some View {
         Button {
-            withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+            withMotion(.snappy(duration: 0.25)) { openSide = nil }
             run()
         } label: {
             actionFace(title, symbol: symbol, tint: tint)
@@ -992,7 +992,7 @@ struct SwipeToDelete: ViewModifier {
         let width = max(50, offset - inset * 2)
         let title = pinned ? "Unpin" : "Pin"
         return Button {
-            withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+            withMotion(.snappy(duration: 0.25)) { openSide = nil }
             onPin()
         } label: {
             VStack(spacing: 6) {
@@ -1037,7 +1037,7 @@ struct SwipeToDelete: ViewModifier {
                     }
                     .buttonStyle(.plain)
                     .simultaneousGesture(TapGesture().onEnded {
-                        withAnimation(.snappy(duration: 0.25)) { openSide = nil }
+                        withMotion(.snappy(duration: 0.25)) { openSide = nil }
                     })
                     .scaleEffect(max(0.01, revealed(2)))
                     .opacity(revealed(2))
@@ -1104,7 +1104,7 @@ struct SwipeToDelete: ViewModifier {
                 if fullSwipe {
                     fullSwipe = false
                     passedOpen = nil
-                    withAnimation(.snappy(duration: 0.3)) {
+                    withMotion(.snappy(duration: 0.3)) {
                         drag = 0
                         openSide = nil
                     } completion: {
@@ -1114,7 +1114,7 @@ struct SwipeToDelete: ViewModifier {
                     return
                 }
                 let landing = side(at: resting + projected)
-                withAnimation(.snappy(duration: 0.3)) {
+                withMotion(.snappy(duration: 0.3)) {
                     drag = 0
                     openSide = landing
                 } completion: {

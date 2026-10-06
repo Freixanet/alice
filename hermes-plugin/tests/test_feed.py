@@ -37,7 +37,9 @@ class FakeGateway:
         self.stopped = []
         self.on_start = on_start
 
-    def start(self, session_id, text):
+    def start(self, session_id, text, *, model, provider):
+        # The real signature (errands.Gateway.start): a fake that drifted from it hid a feed that
+        # could never start (StartContractTests).
         self.started.append((session_id, text))
         if self.on_start:
             self.on_start(session_id)
@@ -340,6 +342,15 @@ class Schedule(unittest.TestCase):
         jobs = FakeJobs([theirs])
         feed.ensure_schedule(self.home, profile="inbox", jobs=jobs)
         self.assertEqual(jobs.jobs, [theirs])
+
+
+
+class StartContractTests(unittest.TestCase):
+    def test_the_fake_gateway_matches_the_real_one(self):
+        import inspect
+        errands = feed._sibling("alice_errands", "errands.py")
+        shape = lambda f: [(p.name, p.kind) for p in inspect.signature(f).parameters.values()]
+        self.assertEqual(shape(FakeGateway.start), shape(errands.Gateway.start))
 
 
 if __name__ == "__main__":

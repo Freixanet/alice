@@ -63,25 +63,25 @@
 		</dict>
 	</dict>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She adds an event only when you tap Add, and never changes or deletes one.</string>
+	<string>Alice reads your upcoming events and shares them with your own Hermes, so your agents can plan around your day. She adds, moves or cancels an event only when you confirm it in the chat.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Alice uses the camera to scan a Hermes pairing QR code and when you attach a photo you take from the composer.</string>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Alice uses Face ID to unlock the app and your locked notes, when you turn that on in Settings.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Alice reads your daily sleep, steps, active energy, workouts, resting heart rate and HRV — including what your WHOOP or Apple Watch writes to Health — and sends one summary per day to your own Hermes, so she can tell you what stands out. She never writes to Health.</string>
+	<string>Alice reads your daily sleep, steps, active energy, workouts, resting heart rate, HRV, mindful minutes and medications — including what your WHOOP or Apple Watch writes to Health — and sends one summary per day to your own Hermes, so she can tell you what stands out. She never writes to Health.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Alice connects to the Hermes agent running on your network.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>So Alice can do what you asked when you arrive at or leave a place, even with the app closed. Your iPhone watches only those places; your location is never sent anywhere, only that you arrived or left.</string>
+	<string>So Alice can do what you asked when you arrive at or leave a place, even with the app closed. Your iPhone watches only those places. Your own Hermes receives the place you asked about and that you arrived or left, never where you are the rest of the time.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Alice finds the places you ask her about, like "when I get to the supermarket", on the map near you.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Alice uses the microphone when you dictate a message.</string>
+	<string>Alice uses the microphone when you dictate a message and when you talk with her in a voice conversation.</string>
 	<key>NSRemindersFullAccessUsageDescription</key>
 	<string>Alice shows your open reminders next to your events in Agenda, and shares the ones due soon (title, date and list, never notes) with your own Hermes for your morning briefing. She marks one done only when you tick it.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Alice transcribes what you dictate so you can edit it before sending.</string>
+	<string>Alice transcribes what you dictate, and what you say in a voice conversation, so it can be sent as a message.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIAppFonts</key>

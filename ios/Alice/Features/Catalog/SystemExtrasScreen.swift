@@ -40,8 +40,8 @@ struct SystemExtrasScreen: View {
         hooksSection
         diagnosticsSection
         if let activeAction { Section("Current operation") { actionView(activeAction) } }
-        if let debugResult { Section("Debug share") { ForEach(debugResult.urls,id:\.self){url in Text(url).font(.caption.monospaced()).textSelection(.enabled)}; if !debugResult.failures.isEmpty{Text(debugResult.failures.joined(separator:"\n")).font(.caption).foregroundStyle(.orange)}; Text(debugResult.redacted ? "Report redaction enabled. Hermes also uploaded the requested log bundle." : "Redaction was disabled.").font(.caption2).foregroundStyle(.secondary) } }
-        if let failure{Section("Last error"){Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled)}}
+        if let debugResult { Section("Debug share") { ForEach(debugResult.urls,id:\.self){url in Text(url).font(.caption.monospaced()).textSelection(.enabled)}; if !debugResult.failures.isEmpty{Text(debugResult.failures.joined(separator:"\n")).font(.caption).foregroundStyle(Palette.warning(scheme))}; Text(debugResult.redacted ? "Report redaction enabled. Hermes also uploaded the requested log bundle." : "Redaction was disabled.").font(.caption2).foregroundStyle(.secondary) } }
+        if let failure{Section("Last error"){Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled)}}
     }.navigationTitle("Advanced Operations").navigationBarTitleDisplayMode(.inline).scrollContentBackground(.hidden).background(Palette.background(scheme)).task{await loadProfiles();await load()}.task(id:activeAction?.name){await pollAction()}.onChange(of:profile){_,_ in Task{await loadComputer()}}.refreshableWithFeedback{await load()}
     .sheet(isPresented:$addingCredential){CredentialAddSheet{provider,key,label in try await store.addCredentialPool(provider:provider,apiKey:key,label:label);await loadPool()}.preferredColorScheme(store.theme.colorScheme)}
     .sheet(isPresented:$addingHook){HookAddSheet(events:hooks.validEvents){event,command,matcher,timeout,approve in try await store.createHook(event:event,command:command,matcher:matcher,timeout:timeout,approve:approve);await loadHooks()}.preferredColorScheme(store.theme.colorScheme)}
@@ -67,7 +67,7 @@ struct SystemExtrasScreen: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack { Text(active.status.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(active.status == "ready" ? Color.green : Color.orange); Spacer(); Text(active.name).font(.caption2.monospaced()).foregroundStyle(.secondary) }
                         Text(active.detail).font(.caption).foregroundStyle(.secondary)
-                        if !active.statusDetail.isEmpty { Text(active.statusDetail).font(.caption2).foregroundStyle(.orange) }
+                        if !active.statusDetail.isEmpty { Text(active.statusDetail).font(.caption2).foregroundStyle(Palette.warning(scheme)) }
                     }
                 }
                 ForEach(terminal.backends.filter { $0.name != terminal.active && $0.status != "ready" }) { backend in
@@ -82,7 +82,7 @@ struct SystemExtrasScreen: View {
 
     private var computerSection:some View{Section("Computer Use"){Picker("Profile",selection:$profile){ForEach(profiles,id:\.id){Text($0.label).tag($0.id)}};if let computer{HStack{Label(computer.ready ? "Ready":"Not ready",systemImage:computer.ready ? "checkmark.circle.fill":"display.trianglebadge.exclamationmark").foregroundStyle(computer.ready ? Color.green : Color.orange);Spacer();if let v=computer.version{Text(v).font(.caption2).foregroundStyle(.secondary)}};ForEach(computer.checks){c in VStack(alignment:.leading,spacing:2){HStack{Text(c.label);Spacer();Text(c.status.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(c.status=="ok" ? Color.green : Color.orange)};Text(c.message).font(.caption2).foregroundStyle(.secondary).lineLimit(3)}};if computer.canGrant && !computer.ready{Button("Request macOS permissions"){permissionConfirm = true}}}else{ProgressView()}}}
     private var credentialsSection:some View{Section("Credential pools"){Text("Secrets stay redacted. Adding supports manual API keys; interactive OAuth pooling remains a Hermes CLI flow.").font(.caption).foregroundStyle(.secondary);ForEach(pool){provider in DisclosureGroup("\(provider.provider) · \(provider.entries.count)"){ForEach(provider.entries){entry in VStack(alignment:.leading,spacing:4){HStack{Text(entry.label ?? entry.identifier ?? "Credential");Spacer();if let status=entry.lastStatus{Text(status.uppercased()).font(.caption2.weight(.bold)).foregroundStyle(status=="ok" ? Color.green : Color.orange)}};Text([entry.authType,entry.source,entry.tokenPreview].compactMap{$0}.filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption2).foregroundStyle(.secondary);Button("Remove",role:.destructive){removeCredential = .init(provider:provider.provider,entry:entry)}.controlSize(.small)}}}};Button("Add API key"){addingCredential = true}}}
-    private var hooksSection:some View{Section("Shell hooks"){Text("Hooks can execute arbitrary host commands on Hermes lifecycle events. Approved hooks run automatically on matching events.").font(.caption).foregroundStyle(.orange);if hooks.hooks.isEmpty{Text("No shell hooks configured.").foregroundStyle(.secondary)}else{ForEach(hooks.hooks){h in VStack(alignment:.leading,spacing:4){HStack{Text(h.event).font(.subheadline.weight(.medium));Spacer();Text(h.allowed ? "APPROVED":"NOT APPROVED").font(.caption2.weight(.bold)).foregroundStyle(h.allowed ? Color.green : Color.orange)};Text(h.command).font(.caption.monospaced()).textSelection(.enabled);if let m=h.matcher{Text("Matcher: \(m)").font(.caption2).foregroundStyle(.secondary)};Button("Delete",role:.destructive){removeHook = h}.controlSize(.small)}}};Button("Add shell hook"){addingHook = true}.disabled(hooks.validEvents.isEmpty)} }
+    private var hooksSection:some View{Section("Shell hooks"){Text("Hooks can execute arbitrary host commands on Hermes lifecycle events. Approved hooks run automatically on matching events.").font(.caption).foregroundStyle(Palette.warning(scheme));if hooks.hooks.isEmpty{Text("No shell hooks configured.").foregroundStyle(.secondary)}else{ForEach(hooks.hooks){h in VStack(alignment:.leading,spacing:4){HStack{Text(h.event).font(.subheadline.weight(.medium));Spacer();Text(h.allowed ? "APPROVED":"NOT APPROVED").font(.caption2.weight(.bold)).foregroundStyle(h.allowed ? Color.green : Color.orange)};Text(h.command).font(.caption.monospaced()).textSelection(.enabled);if let m=h.matcher{Text("Matcher: \(m)").font(.caption2).foregroundStyle(.secondary)};Button("Delete",role:.destructive){removeHook = h}.controlSize(.small)}}};Button("Add shell hook"){addingHook = true}.disabled(hooks.validEvents.isEmpty)} }
     private var diagnosticsSection:some View{Section("More diagnostics"){Button("Migrate Hermes configuration"){Task{await configMigrate()}};Button("Create shareable debug bundle"){debugConfirm = true};Menu("Reset built-in memory"){Button("MEMORY.md",role:.destructive){memoryReset = "memory"};Button("USER.md",role:.destructive){memoryReset = "user"};Button("Both",role:.destructive){memoryReset = "all"}}} }
     @ViewBuilder private func actionView(_ action:HermesActionStart)->some View{if let status=actionStatus{HStack{Text(status.name);Spacer();Text(status.running ? "RUNNING":(status.exitCode==0 ? "DONE":"FAILED")).font(.caption2.weight(.bold)).foregroundStyle(status.running ? Color.orange : (status.exitCode == 0 ? Color.green : Color.red))};if !status.lines.isEmpty{ScrollView(.horizontal){Text(status.lines.joined(separator:"\n")).font(.caption2.monospaced()).textSelection(.enabled).frame(minWidth:500,alignment:.leading)}};if !status.running{Button("Close"){activeAction=nil;actionStatus=nil}}}else{ProgressView("Starting \(action.name)…")}}
 
@@ -136,6 +136,7 @@ struct SystemExtrasScreen: View {
 private struct CredentialRemoval:Identifiable{var id:String{"\(provider)|\(entry.index)"};var provider:String;var entry:CredentialPoolEntry}
 
 private struct CredentialAddSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     @State private var provider = ""
     @State private var label = ""
@@ -158,7 +159,7 @@ private struct CredentialAddSheet: View {
                     Text("Alice never stores this key. Hermes adds it to the provider's credential pool on the host.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if let failure { Section { Text(failure).foregroundStyle(.red) } }
+                if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)) } }
             }
             .navigationTitle("Add Credential")
             .toolbar {
@@ -183,6 +184,7 @@ private struct CredentialAddSheet: View {
 }
 
 private struct HookAddSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
     let events: [String]
     let save: (String, String, String?, Int?, Bool) async throws -> Void
@@ -212,9 +214,9 @@ private struct HookAddSheet: View {
                 }
                 Section {
                     Text("An approved hook can execute this shell command automatically on the Mac when its event fires. Treat the command as executable code.")
-                        .font(.caption).foregroundStyle(.orange)
+                        .font(.caption).foregroundStyle(Palette.warning(scheme))
                 }
-                if let failure { Section { Text(failure).foregroundStyle(.red) } }
+                if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)) } }
             }
             .navigationTitle("Add Shell Hook")
             .toolbar {

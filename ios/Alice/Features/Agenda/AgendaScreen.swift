@@ -130,7 +130,7 @@ struct AgendaScreen: View {
             Button(refused ? "Open Settings" : "Allow Access") {
                 Task { await allowAccess() }
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).onAccentLabel()
             .foregroundStyle(scheme == .dark ? Color.black : Color.white)
             .accessibilityIdentifier("agenda.connect")
         }
@@ -211,7 +211,7 @@ struct AgendaScreen: View {
         do {
             try AgendaSource.setCompleted(identifier, true)
             problem = nil
-            withAnimation(.snappy(duration: 0.2)) { _ = ticking.insert(item.id) }
+            withMotion(.snappy(duration: 0.2)) { _ = ticking.insert(item.id) }
             Task {
                 try? await Task.sleep(for: .milliseconds(650))
                 await model.reload()
@@ -416,6 +416,7 @@ struct AgendaListContent: View {
                                           ticked: ticking.contains(item.id)) { onTick(item) }
                                 .contentShape(.rect)
                                 .onTapGesture { onOpen(item) }
+                                .accessibilityAddTraits(.isButton)
                         }
                     } header: {
                         header(day.label)
@@ -435,7 +436,7 @@ struct AgendaListContent: View {
             .contentMargins(.top, 14, for: .scrollContent)
             .onChange(of: jump) {
                 // Back to the top: what is late, then today.
-                if let first = days.first?.id { withAnimation(.snappy) { proxy.scrollTo(first, anchor: .top) } }
+                if let first = days.first?.id { withMotion(.snappy) { proxy.scrollTo(first, anchor: .top) } }
             }
         }
     }
@@ -505,6 +506,7 @@ struct AgendaSearch: View {
                 AgendaItemRow(item: item, now: Date(), showsTime: false, showsDate: true)
                     .contentShape(.rect)
                     .onTapGesture { onPick(item) }
+                    .accessibilityAddTraits(.isButton)
                     .listRowBackground(Palette.card(scheme))
             }
             .overlay {

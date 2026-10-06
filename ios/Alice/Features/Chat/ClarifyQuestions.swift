@@ -155,7 +155,7 @@ struct ClarifyQuestionsView: View {
             HStack(spacing: 12) {
                 Text("\(number)")
                     .font(.subheadline.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(isSelected ? Color.white : Color.secondary)
+                    .foregroundStyle(isSelected ? store.accent.onFill(scheme) : Color.secondary)
                     .frame(width: 28, height: 28)
                     .background(
                         isSelected ? AnyShapeStyle(tint) : AnyShapeStyle(Palette.background(scheme)),
@@ -213,9 +213,10 @@ struct ClarifyQuestionsView: View {
                     } label: {
                         Image(systemName: "arrow.up")
                             .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(.white)
+                            .foregroundStyle(store.accent.onControl(scheme))
                             .frame(width: 40, height: 40)
                             .background(store.accent.control(scheme), in: .rect(cornerRadius: 10))
+                            .contentShape(Rectangle().inset(by: -2))
                     }
                     .accessibilityLabel("Send answer")
                     .accessibilityIdentifier("\(surface).answer.send.\(key)")
@@ -260,10 +261,10 @@ struct ClarifyQuestionsView: View {
         if question.allowsMultiple {
             var choosing = picked(question, key: key)
             if choosing.contains(option) { choosing.remove(option) } else { choosing.insert(option) }
-            withAnimation(.snappy(duration: 0.2)) { selected[key] = choosing }
+            withMotion(.snappy(duration: 0.2)) { selected[key] = choosing }
             return
         }
-        withAnimation(.snappy(duration: 0.2)) { selected[key] = [option] }
+        withMotion(.snappy(duration: 0.2)) { selected[key] = [option] }
         typed[key] = nil
         // A pick is the answer, the last question's too: pressing Send in the
         // field after choosing a row asked for a second decision nobody had.
@@ -504,7 +505,7 @@ struct AskPersonCard: View {
     /// On to the next question, or send them all after the last.
     private func advance() {
         guard !value(current).isEmpty else { return }
-        if isLast { submit() } else { withAnimation(.snappy) { step += 1 } }
+        if isLast { submit() } else { withMotion(.snappy) { step += 1 } }
     }
 
     var body: some View {
@@ -582,7 +583,7 @@ struct AskPersonCard: View {
                 .transition(.opacity)
                 HStack {
                     if step > 0 {
-                        Button { withAnimation(.snappy) { step -= 1 } } label: {
+                        Button { withMotion(.snappy) { step -= 1 } } label: {
                             Label("Back", systemImage: "chevron.left").font(.subheadline)
                         }
                         .buttonStyle(.plain)
@@ -598,7 +599,7 @@ struct AskPersonCard: View {
                         Button(action: advance) {
                             Text(isLast ? "Send" : "Next")
                                 .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(store.accent.onControl(scheme))
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 10)
                                 .background(store.accent.control(scheme), in: .capsule)

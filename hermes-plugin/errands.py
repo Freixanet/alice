@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import logging
 import os
 import re
 import secrets
@@ -82,6 +83,12 @@ PAY_PAGE = re.compile(
 # Browser actions that can press something on the page (Browser Use code or built-in tools).
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
+# Hermes tools that run any code in the page, send raw DevTools commands or answer the page's own
+# «Confirm purchase?» dialog: each can pay like a click, so each passes the same gate.
+RAW_BROWSER = ("browser_console", "browser_cdp", "browser_dialog")
+# DevTools methods that only read.
+_CDP_READS = re.compile(r"^(Target\.get|Target\.attachToTarget|DOM\.(get|query|describe|resolve)|Page\.get"
+                        r"|Network\.get|Accessibility\.get|CSS\.get|Browser\.get)")
 
 
 def _money():
@@ -317,10 +324,22 @@ OG_IMAGE = re.compile(
     re.I)
 
 
+def _safe_fetch():
+    import importlib.util
+    import sys as _sys
+
+    name = "alice_safe_fetch"
+    if name not in _sys.modules:
+        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
+        module = importlib.util.module_from_spec(spec)
+        _sys.modules[name] = module
+        spec.loader.exec_module(module)
+    return _sys.modules[name]
+
+
 def _fetch(url: str, limit: int, accept: str) -> Tuple[bytes, str]:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-    with urllib.request.urlopen(request, timeout=6) as response:  # noqa: S310 — https only, checked by callers
-        return response.read(limit), str(response.headers.get("Content-Type") or "")
+    # A picture address the model chose: public https only, redirects included (safe_fetch.py).
+    return _safe_fetch().fetch(url, {"User-Agent": USER_AGENT, "Accept": accept}, limit, 6)
 
 
 def is_picture(url: str, fetch: Callable[..., Tuple[bytes, str]] = _fetch) -> bool:
@@ -444,12 +463,18 @@ def expire_checkouts(home: Path, now: Optional[float] = None) -> List[str]:
     on a checkout Apple had closed hours before, without the person knowing."""
     now = now or time.time()
     expired = []
-    for entry in listing(home):
-        checkout = entry.get("checkout")
-        if (isinstance(checkout, dict) and checkout.get("status") == "pending"
-                and now - float(checkout.get("requested_at") or now) > CHECKOUT_TTL):
-            update(home, entry["id"], now=now, checkout={**checkout, "status": "expired"})
-            expired.append(entry["id"])
+    # Read and written under one lock: an approval made a moment ago is never overwritten by a stale copy.
+    with _locked(home) as path:
+        entries = _read(path)
+        for entry in entries:
+            checkout = entry.get("checkout")
+            if (isinstance(checkout, dict) and checkout.get("status") == "pending"
+                    and now - float(checkout.get("requested_at") or now) > CHECKOUT_TTL):
+                entry["checkout"] = {**checkout, "status": "expired"}
+                entry["updated_at"] = now
+                expired.append(entry["id"])
+        if expired:
+            _write(path, entries)
     return expired
 
 
@@ -463,25 +488,30 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
                     card_label: str = "") -> Optional[Dict[str, Any]]:
     now = now or time.time()
     expire_checkouts(home, now)
-    entry = get(home, errand_id)
-    checkout = (entry or {}).get("checkout")
-    if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
-        return None
-    # Existing archives may predate cents. Validate them before granting payment approval.
-    amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
-    if allow and (not amount or not amount[1]):
-        return None
-    checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
-    if allow:
-        # The yes is to this total, kept in cents for the code that checks the payment page.
-        checkout["approved_total"] = checkout.get("total", "")
-        checkout["total_cents"], checkout["currency"] = amount
-        checkout["approved_cents"], checkout["approved_currency"] = amount
-    if allow and _clean(card_label, 60):
-        checkout["card_label"] = _clean(card_label, 60)
-    status = "working" if allow else "denied"
-    return update(home, errand_id, now=now, checkout=checkout, status=status,
-                  reason="" if allow else "Has denegado la compra.")
+    # Checked and decided under one lock: «Permitir» and «Denegar» arriving together (phone and
+    # watch) decide once; the second finds the checkout no longer pending.
+    with _locked(home) as path:
+        entries = _read(path)
+        entry = next((e for e in entries if e.get("id") == errand_id), None)
+        checkout = (entry or {}).get("checkout")
+        if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
+            return None
+        # Existing archives may predate cents. Validate them before granting payment approval.
+        amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
+        if allow and (not amount or not amount[1]):
+            return None
+        checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
+        if allow:
+            # The yes is to this total, kept in cents for the code that checks the payment page.
+            checkout["approved_total"] = checkout.get("total", "")
+            checkout["total_cents"], checkout["currency"] = amount
+            checkout["approved_cents"], checkout["approved_currency"] = amount
+        if allow and _clean(card_label, 60):
+            checkout["card_label"] = _clean(card_label, 60)
+        entry.update(checkout=checkout, status="working" if allow else "denied",
+                     reason="" if allow else "Has denegado la compra.", updated_at=now)
+        _write(path, entries)
+    return entry
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -507,6 +537,9 @@ def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Opti
     checkout = (entry or {}).get("checkout")
     if not isinstance(checkout, dict) or checkout.get("status") != "approved":
         return None
+    # A stopped, denied or finished errand pays nothing, whatever its checkout says.
+    if (entry or {}).get("status") != "working":
+        return None
     if now - float(checkout.get("decided_at") or 0) > APPROVAL_TTL:
         return None
     if site and shop(site) != checkout.get("site"):
@@ -528,6 +561,13 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step:
 
     ``payment_step`` is what the errand's own page shows (None when unread): a cart's «Finalizar
     compra» is let through only when the page was read and has no payment step."""
+    if tool_name in RAW_BROWSER:
+        # Same reading as a click; inside an errand any press through these needs the approval
+        # anyway (pay_gate's ``press_pays``).
+        text = _text_of(args)
+        return _raw_presses(tool_name, args) and bool(
+            PAY_WORDS.search(text) or PAY_PAGE.search(str(active_url or "")) or payment_step
+            or (STEP_WORDS.search(text) and payment_step is None))
     if tool_name not in BROWSER_ACTIONS:
         return False
     text = _text_of(args)
@@ -540,16 +580,29 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step:
     return bool(STEP_WORDS.search(text)) and payment_step is None
 
 
+def _raw_presses(tool_name: str, args: Any) -> bool:
+    """A RAW_BROWSER call that can press or submit something (reading the page or the console cannot)."""
+    a = args if isinstance(args, dict) else {}
+    if tool_name == "browser_dialog":
+        return str(a.get("action") or "").lower() != "dismiss"
+    if tool_name == "browser_cdp":
+        return not _CDP_READS.search(str(a.get("method") or ""))
+    expression = str(a.get("expression") or "")
+    return bool(expression.strip()) and bool(CLICKS.search(expression) or re.search(
+        r"dispatchEvent|\.submit\b|location\s*=|location\.(assign|replace|href)|fetch\s*\(|XMLHttpRequest|sendBeacon",
+        expression))
+
+
 def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = None, tool_name: str = "",
              args: Any = None, active_url: str = "", gateways: Iterable[str] = (),
              merchant_site: str = "", now: Optional[float] = None,
-             payment_step: Optional[bool] = None) -> Optional[Dict[str, str]]:
+             payment_step: Optional[bool] = None, press_pays: bool = False) -> Optional[Dict[str, str]]:
     """A pre_tool_call directive that refuses paying without the person's approved checkout, or None.
 
     ``card_fill_site`` is the page a saved payment card is about to be written into (None when
     the call is not a card fill); otherwise the call is checked as a browser action."""
     filling = card_fill_site is not None
-    if not filling and not is_pay_action(tool_name, args, active_url, payment_step):
+    if not filling and not press_pays and not is_pay_action(tool_name, args, active_url, payment_step):
         return None
     entry = of_session(home, session_id)
     if entry is None:
@@ -563,7 +616,11 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         fresh = approved_checkout(entry, now=now)
         ok = fresh is not None and (fresh.get("site") in candidates or host in banks)
     else:
-        ok = approved_checkout(entry, now=now) is not None
+        fresh = approved_checkout(entry, now=now)
+        # The press happens on the approved shop or on the bank page it sent the person to.
+        host = shop(active_url or "")
+        banks = {shop(g) for g in gateways}
+        ok = fresh is not None and (not host or host == fresh.get("site") or host in banks)
     if ok:
         return None
     return {"action": "block", "message": (
@@ -690,7 +747,12 @@ def record_receipt(home: Path, session_id: str, args: Dict[str, Any], now: Optio
         expected = _money().parse(approved, checkout.get("currency") or "")
     if approved and receipt["total"] and (not amount or amount != expected):
         receipt["approved_total"] = approved
-    update(home, entry["id"], now=now, receipt=receipt)
+    fields: Dict[str, Any] = {"receipt": receipt}
+    # One approval pays once: after a payment (or one whose result is unknown) it is spent.
+    if checkout.get("status") == "approved" and receipt["outcome"] not in ("declined", "not_charged"):
+        fields["checkout"] = {**checkout, "status": "consumed", "consumed_at": now or time.time()}
+    update(home, entry["id"], now=now, **fields)
+
 
 
 def outcome_properties() -> Dict[str, Any]:
@@ -1069,8 +1131,8 @@ class Gateway:
     def stop(self, run_id: str) -> None:
         try:
             self._call("POST", f"/v1/runs/{run_id}/stop", {})
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — the errand's checkout is already revoked; the run is told later
+            logging.getLogger(__name__).warning("errands: could not stop run %s", run_id, exc_info=True)
 
 
 # ── Driving an errand ───────────────────────────────────────────────────────────
@@ -1521,7 +1583,13 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
-    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
+    checkout = entry.get("checkout")
+    fields: Dict[str, Any] = {}
+    if isinstance(checkout, dict) and checkout.get("status") in ("pending", "approved"):
+        # Stopped means nothing is paid, even if a tool call is already on its way.
+        fields["checkout"] = {**checkout, "status": "revoked"}
+    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None,
+                   resume_message=None, **fields)
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:

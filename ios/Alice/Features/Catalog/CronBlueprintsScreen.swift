@@ -29,7 +29,7 @@ struct CronBlueprintsScreen: View {
                     }.buttonStyle(.plain)
                 } }
             }
-            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(.red) } }
+            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) } }
         }
         .navigationTitle("Routine Blueprints")
         .navigationBarTitleDisplayMode(.inline)
@@ -63,7 +63,7 @@ private struct BlueprintForm: View {
                     if let human = blueprint.scheduleHuman { LabeledContent("Typical schedule", value: human) }
                     Text(blueprint.command).font(.caption.monospaced()).textSelection(.enabled).foregroundStyle(.secondary)
                 }
-                if let failure { Section { Text(failure).font(.footnote).foregroundStyle(.red) } }
+                if let failure { Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) } }
             }
             .navigationTitle(blueprint.title).navigationBarTitleDisplayMode(.inline)
             .scrollContentBackground(.hidden).background(Palette.background(scheme))

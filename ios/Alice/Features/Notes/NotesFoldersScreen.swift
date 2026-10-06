@@ -204,7 +204,7 @@ struct NotesFoldersScreen: View {
                 .disabled(editingFolders)
                 if query.isEmpty {
                     Button {
-                        withAnimation(.snappy(duration: 0.25)) { editingFolders.toggle() }
+                        withMotion(.snappy(duration: 0.25)) { editingFolders.toggle() }
                         if editingFolders {
                             swipedFolder = nil
                             store.noteRowOpen = false
@@ -510,7 +510,7 @@ struct NotesFoldersScreen: View {
                     // while one is open closes it rather than opening a page.
                     guard Date.now.timeIntervalSince(lastSwipe) > 0.35 else { return }
                     guard swipedFolder == nil else {
-                        withAnimation(.snappy(duration: 0.25)) { swipedFolder = nil }
+                        withMotion(.snappy(duration: 0.25)) { swipedFolder = nil }
                         store.noteRowOpen = false
                         return
                     }
@@ -543,7 +543,7 @@ struct NotesFoldersScreen: View {
             )
         if let expanded {
             Button {
-                withAnimation(.snappy(duration: 0.28)) { expanded.wrappedValue.toggle() }
+                withMotion(.snappy(duration: 0.28)) { expanded.wrappedValue.toggle() }
             } label: {
                 arrow
                     .rotationEffect(.degrees(expanded.wrappedValue ? 90 : 0))
@@ -643,6 +643,8 @@ struct RecentlyDeletedScreen: View {
     @State private var recovering: Set<String> = []
     @State private var failure: String?
     @State private var confirmingAll = false
+    /// «Delete Now» on one note: gone for good, so asked first, like «Delete All».
+    @State private var deletingNow: DeletedNote?
 
     private var deleted: [DeletedNote] {
         store.recentlyDeleted.sorted { $0.deletedAt > $1.deletedAt }
@@ -672,7 +674,7 @@ struct RecentlyDeletedScreen: View {
                     .contextMenu {
                         Button("Recover", systemImage: "arrow.uturn.backward") { recover(item) }
                         Button("Delete Now", systemImage: "trash", role: .destructive) {
-                            withAnimation { store.deleteForever(item) }
+                            deletingNow = item
                         }
                     }
                     .swipeActions(edge: .leading) {
@@ -681,7 +683,7 @@ struct RecentlyDeletedScreen: View {
                     }
                     .swipeActions(edge: .trailing) {
                         Button("Delete", systemImage: "trash", role: .destructive) {
-                            withAnimation { store.deleteForever(item) }
+                            withMotion { store.deleteForever(item) }
                         }
                     }
                 }
@@ -704,6 +706,16 @@ struct RecentlyDeletedScreen: View {
         .onAppear { store.notesFolderOpen = true }
         .onDisappear { store.notesFolderOpen = false }
         .onChange(of: deleted.isEmpty) { _, empty in if empty { dismiss() } }
+        .confirmationDialog("Delete this note now?", isPresented: Binding(
+            get: { deletingNow != nil }, set: { if !$0 { deletingNow = nil } }
+        ), titleVisibility: .visible) {
+            Button("Delete Now", role: .destructive) {
+                if let item = deletingNow { withMotion { store.deleteForever(item) } }
+                deletingNow = nil
+            }
+        } message: {
+            Text("It can’t be recovered afterwards.")
+        }
         .confirmationDialog("Delete all these notes now?", isPresented: $confirmingAll, titleVisibility: .visible) {
             Button("Delete All", role: .destructive) { store.deleteAllForever() }
         } message: {

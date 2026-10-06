@@ -150,7 +150,7 @@ struct RoutinesScreen: View {
                 }
             }
             if let error = RoutinePresentation.failureText(routine) {
-                Text(error).font(.caption).foregroundStyle(.red).lineLimit(1)
+                Text(error).font(.caption).foregroundStyle(Palette.danger(scheme)).lineLimit(1)
             }
         }
         .padding(.vertical, 4)
@@ -328,7 +328,7 @@ struct RoutineDetailSheet: View {
                             .listRowBackground(Palette.card(scheme))
                         if promptExpanded || instructionsAreTruncated {
                             Button(promptExpanded ? "Show less" : "Show all") {
-                                withAnimation { promptExpanded.toggle() }
+                                withMotion { promptExpanded.toggle() }
                             }
                             .font(.footnote)
                             .listRowBackground(Palette.card(scheme))
@@ -338,7 +338,7 @@ struct RoutineDetailSheet: View {
 
                 if let failure = RoutinePresentation.failureText(routine) {
                     Section("Last problem") {
-                        Text(failure).foregroundStyle(.red).textSelection(.enabled)
+                        Text(failure).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled)
                             .listRowBackground(Palette.card(scheme))
                         if let at = routine.lastFireAt {
                             Text(at.formatted(date: .abbreviated, time: .standard))
@@ -365,7 +365,7 @@ struct RoutineDetailSheet: View {
                         }
                         if runs.count > 3 {
                             Button(runsExpanded ? "Show less" : "Show all \(runs.count)") {
-                                withAnimation { runsExpanded.toggle() }
+                                withMotion { runsExpanded.toggle() }
                             }
                             .font(.footnote)
                             .listRowBackground(Palette.card(scheme))
@@ -623,7 +623,7 @@ struct RoutineEditorSheet: View {
                     TextField("What should it do?", text: $prompt, axis: .vertical).lineLimit(3...8)
                     if prompt.contains("[") {
                         Text("Replace the parts in [brackets] with your own details.")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(Palette.warning(scheme))
                     }
                 }
                 .listRowBackground(Palette.card(scheme))
@@ -683,7 +683,7 @@ struct RoutineEditorSheet: View {
                     }
                     if let target = targets.first(where: { $0.id == deliver }), !target.homeTargetSet {
                         Text("\(target.name) has no home channel yet. Set one in Hermes, or pick another destination.")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(Palette.warning(scheme))
                     }
                 } header: {
                     Text("Where the result goes")
@@ -693,7 +693,7 @@ struct RoutineEditorSheet: View {
                 .listRowBackground(Palette.card(scheme))
 
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)) }
                         .listRowBackground(Palette.card(scheme))
                 }
             }

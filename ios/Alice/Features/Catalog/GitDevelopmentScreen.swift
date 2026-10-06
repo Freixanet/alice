@@ -105,7 +105,7 @@ struct GitDevelopmentScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -447,7 +447,7 @@ struct GitDevelopmentScreen: View {
                                         Text("#\(pr.number) \(pr.title.isEmpty ? pr.branch : pr.title)")
                                             .font(.subheadline).lineLimit(2)
                                         Spacer()
-                                        if pr.draft { Text("DRAFT").font(.caption2.weight(.bold)).foregroundStyle(.orange) }
+                                        if pr.draft { Text("DRAFT").font(.caption2.weight(.bold)).foregroundStyle(Palette.warning(scheme)) }
                                     }
                                     Text("\(pr.branch) · \(pr.state)").font(.caption).foregroundStyle(.secondary)
                                 }
@@ -485,7 +485,7 @@ struct GitDevelopmentScreen: View {
                             }
                             Spacer(minLength: 8)
                             if branch.checkedOut {
-                                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(Palette.success(scheme))
                             } else if branch.isRemote {
                                 Button("Worktree") { Task { await openRemoteBranchInWorktree(branch) } }
                                     .buttonStyle(.bordered).controlSize(.small)
@@ -520,7 +520,7 @@ struct GitDevelopmentScreen: View {
                         }
                         Spacer(minLength: 8)
                         if tree.isMain { Text("MAIN").font(.caption2.weight(.bold)).foregroundStyle(.secondary) }
-                        if tree.locked { Image(systemName: "lock.fill").foregroundStyle(.orange) }
+                        if tree.locked { Image(systemName: "lock.fill").foregroundStyle(Palette.warning(scheme)) }
                     }
                     HStack(spacing: 8) {
                         if tree.path != repoPath {
@@ -761,6 +761,7 @@ private enum GitDiffMode: String, CaseIterable, Identifiable {
 }
 
 private struct GitDiffSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -792,7 +793,7 @@ private struct GitDiffSheet: View {
                     if loading {
                         ProgressView("Loading diff…")
                     } else if let failure {
-                        Text(failure).foregroundStyle(.red).font(.footnote)
+                        Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote)
                     } else if diff.isEmpty {
                         Text("No diff for this view.").foregroundStyle(.secondary)
                     } else {
@@ -846,6 +847,7 @@ private struct GitDiffSheet: View {
 }
 
 private struct GitCommitSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -893,7 +895,7 @@ private struct GitCommitSheet: View {
                     Section { ProgressView("Reading commit context…") }
                 }
 
-                if let failure { Section { Text(failure).foregroundStyle(.red).font(.footnote) } }
+                if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) } }
             }
             .navigationTitle(push ? "Commit & Push" : "Commit")
             .navigationBarTitleDisplayMode(.inline)
@@ -933,6 +935,7 @@ private struct GitCommitSheet: View {
 }
 
 private struct GitWorktreeAddSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -1000,7 +1003,7 @@ private struct GitWorktreeAddSheet: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
 
-                if let failure { Section { Text(failure).foregroundStyle(.red).font(.footnote) } }
+                if let failure { Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) } }
             }
             .navigationTitle("New Worktree")
             .navigationBarTitleDisplayMode(.inline)

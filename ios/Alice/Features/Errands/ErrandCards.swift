@@ -36,19 +36,22 @@ struct PurchaseCapsuleButton: View {
     var symbol: String? = nil
     /// A colour of its own for the prominent one, such as blue on «Permitir».
     var tint: Color? = nil
+
+    /// White on a given tint (the approve blue); on the accent, whatever reads on it.
+    private var onProminent: Color { tint == nil ? store.accent.onControl(scheme) : .white }
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Group {
                 if busy {
-                    ProgressView().tint(prominent ? .white : .primary)
+                    ProgressView().tint(prominent ? onProminent : .primary)
                 } else {
                     Label { Text(title) } icon: { if let symbol { Image(systemName: symbol) } }
                 }
             }
             .font(.headline)
-            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .foregroundStyle(prominent ? onProminent : Color.primary)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(prominent ? (tint ?? store.accent.control(scheme)) : Palette.muted(scheme), in: .capsule)
             .opacity(disabled ? 0.5 : 1)
@@ -290,7 +293,7 @@ struct ErrandProgressCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+            Button { withMotion(.snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 12) {
                     ShopLogo(errandID: logoID, image: logo)
                     VStack(alignment: .leading, spacing: 1) {
@@ -884,7 +887,7 @@ struct ErrandQuestionsCard: View {
                     }
                 }
                 if index > 0 {
-                    Button { withAnimation(.snappy) { index -= 1 } } label: {
+                    Button { withMotion(.snappy) { index -= 1 } } label: {
                         Label(language.pick("Back", "Atrás"), systemImage: "chevron.left").font(.subheadline)
                     }
                     .buttonStyle(.plain)
@@ -1058,7 +1061,7 @@ struct PurchaseProductSheet: View {
     private var optionPicker: some View {
         HStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, name in
-                Button { withAnimation(.snappy) { chosen = index } } label: {
+                Button { withMotion(.snappy) { chosen = index } } label: {
                     Text(name).font(.body)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background {

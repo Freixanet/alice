@@ -458,7 +458,8 @@ struct Sidebar: View, Equatable {
                     .font(.system(size: 15, weight: weight))
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: iconWidth, alignment: .center)
-                Text(title)
+                // Looked up in the catalog: a plain String bypassed the translations.
+                Text(LocalizedStringKey(title))
                 Spacer(minLength: 0)
                 if badge > 0 {
                     Text("\(badge)")

@@ -77,6 +77,12 @@ jobs:
           git fetch -q --depth 1 https://github.com/NousResearch/hermes-agent.git "$HERMES_COMMIT"
           git checkout -q FETCH_HEAD
           python -m pip install -q -e .
+      # Errors only (syntax, undefined names): the plugin had no linter at all.
+      - name: Lint Hermes plugin
+        run: |
+          set -euo pipefail
+          python -m pip install -q ruff==0.6.9
+          ruff check --select E9,F63,F7,F82 hermes-plugin mac
       - name: Test Hermes plugin and Mac notifier
         run: |
           set -euo pipefail

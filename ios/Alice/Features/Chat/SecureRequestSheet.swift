@@ -161,7 +161,7 @@ struct SecureRequestSheet: View {
             }
             if site != nil && request.errandID == nil {
                 Button(usingKey ? String(localized: "Type a code instead") : String(localized: "Never ask me for codes here")) {
-                    withAnimation { usingKey.toggle() }
+                    withMotion { usingKey.toggle() }
                     focus = .secret
                 }
                 .font(.subheadline)
