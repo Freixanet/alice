@@ -38,10 +38,7 @@ private struct PurchaseWalkthrough: View {
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    Picker("Language", selection: $language) {
-                        Text("Español").tag(ChatLanguage.spanish)
-                        Text("English").tag(ChatLanguage.english)
-                    }.pickerStyle(.segmented)
+                    AppSegmentedPicker("Language", selection: $language, options: [.init(ChatLanguage.spanish, "Español"), .init(ChatLanguage.english, "English")])
                     Toggle(said("Avanzar solo", "Play automatically"), isOn: $automatic)
                     Text(progress + " · " + caption).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     userBubble(said("Compra creatina Creapure", "Buy Creapure creatine"))
@@ -105,6 +102,7 @@ private struct PurchaseWalkthrough: View {
         .background(Palette.background(scheme))
         .navigationTitle(said("Compra en 12 pasos", "12-step purchase"))
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .toolbar { ToolbarItem(placement: .primaryAction) { Button(said("Reiniciar", "Restart")) { restart() } } }
         .task(id: "\(run)-\(step.rawValue)-\(automatic)") {
             guard automatic, canAdvance else { return }

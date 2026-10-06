@@ -151,6 +151,8 @@ struct BotChatSync: Sendable {
             // taking Hermes' durable identity and chronology. File refs added
             // only for transport must never leak into the visible bubble.
             canonical.content = group.map(\.content).filter { !$0.isEmpty }.joined(separator: "\n\n")
+            let quotes = group.flatMap { $0.quotedReplies ?? [] }
+            canonical.quotedReplies = quotes.isEmpty ? nil : quotes
             canonical.attachments = group.flatMap(\.attachments)
             canonical.remoteMatchContent = remote.first(where: { $0.id == remoteID })?.content
             byRemoteID[remoteID] = canonical

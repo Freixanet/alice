@@ -2,6 +2,7 @@ import Foundation
 
 /// Unsent work belongs to a conversation, including selected mentions.
 struct ComposerDraft: Equatable, Sendable {
+    var replies: [MessageReply] = []
     var text = ""
     var mentions: [DraftMention] = []
     var attachments: [Attachment] = []
@@ -15,6 +16,7 @@ struct ComposerDraft: Equatable, Sendable {
 /// Text edits do not re-encode or rewrite unchanged attachments.
 final class ComposerDraftArchive {
     private struct TextRecord: Codable {
+        var replies: [MessageReply]? = nil
         var text: String
         var mentions: [DraftMention]
     }
@@ -42,7 +44,7 @@ final class ComposerDraftArchive {
                 try JSONDecoder().decode([Attachment].self, from: $0)
             } ?? []
             let value = ComposerDraft(
-                text: text?.text ?? legacyText ?? "",
+                replies: text?.replies ?? [], text: text?.text ?? legacyText ?? "",
                 mentions: text?.mentions ?? [], attachments: attachments
             )
             saved[id] = value
@@ -59,7 +61,7 @@ final class ComposerDraftArchive {
         if saved[id]?.attachments != value.attachments {
             try write(JSONEncoder().encode(value.attachments), key: key + ".attachments")
         }
-        let text = TextRecord(text: value.text, mentions: value.mentions)
+        let text = TextRecord(replies: value.replies, text: value.text, mentions: value.mentions)
         try write(JSONEncoder().encode(text), key: key)
         saved[id] = value
     }

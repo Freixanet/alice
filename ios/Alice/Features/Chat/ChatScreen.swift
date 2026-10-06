@@ -206,6 +206,7 @@ private struct ChatScreenContent: View, Equatable {
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
+                        .blur(radius: store.replySpotlightID == nil ? 0 : 4)
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
@@ -632,6 +633,7 @@ private struct TranscriptView: View {
             modelChange: modelChange,
             learned: learned
         )
+        .modifier(MessageReplyInteraction(message: message))
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -816,6 +818,10 @@ private struct TranscriptView: View {
                 }
             }
             .onDisappear { store.errandBoard.unwatch() }
+            .onChange(of: store.replyFocusRequest) { _, _ in
+                following = false
+                if let id = store.replySpotlightID { position.scrollTo(id: id, anchor: .center) }
+            }
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
             }

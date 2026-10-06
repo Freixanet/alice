@@ -104,14 +104,10 @@ struct ReminderDetailsSheet: View {
                         row("Location", systemImage: "location.fill", color: .blue, detail: draft.place?.title)
                     }
                     if let place = draft.place {
-                        Picker("When", selection: Binding(
+                        AppSegmentedPicker("When", selection: Binding(
                             get: { place.arriving },
                             set: { draft.place?.arriving = $0 }
-                        )) {
-                            Text("Arriving").tag(true)
-                            Text("Leaving").tag(false)
-                        }
-                        .pickerStyle(.segmented)
+                        ), options: [.init(true, "Arriving"), .init(false, "Leaving")])
                         Button("Change Location") { choosingPlace = true }
                     }
                 }
@@ -150,6 +146,7 @@ struct ReminderDetailsSheet: View {
             .aliceFormPaper(scheme)
             .navigationTitle("Details")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { onDone(false) }
@@ -247,6 +244,7 @@ struct PlaceSearch: View {
             .onChange(of: query) { _, text in completer.search(text) }
             .navigationTitle("Location")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onPick(nil) } }
             }

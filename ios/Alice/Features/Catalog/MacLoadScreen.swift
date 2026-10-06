@@ -67,6 +67,7 @@ struct MacLoadScreen: View {
         }
         .navigationTitle(load?.host ?? "Mac")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { liveBadge }
         }
@@ -129,12 +130,7 @@ struct MacLoadScreen: View {
             }
 
             Section {
-                Picker("Sort", selection: $sort) {
-                    ForEach(HostLoadSort.allCases) { item in
-                        Text(item.rawValue).tag(item)
-                    }
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker("Sort", selection: $sort, options: HostLoadSort.allCases.map { .init($0, $0.rawValue) })
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }

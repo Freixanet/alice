@@ -376,6 +376,7 @@ private struct NewHermesProjectSheet: View {
             }
             .navigationTitle(seed == nil ? "New Project" : "Make Project")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -533,6 +534,7 @@ private struct ProjectDetailSheet: View {
             }
             .navigationTitle(project.name)
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
@@ -844,6 +846,7 @@ private struct MemoryEntrySheet: View {
             }
             .navigationTitle(edit.original == nil ? "Remember" : "Edit Memory")
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -898,12 +901,7 @@ struct UsageScreen: View {
                     }
 
                     Section {
-                        Picker("Period", selection: $days) {
-                            Text("7 days").tag(7)
-                            Text("30 days").tag(30)
-                            Text("90 days").tag(90)
-                        }
-                        .pickerStyle(.segmented)
+                        AppSegmentedPicker("Period", selection: $days, options: [.init(7, "7 days"), .init(30, "30 days"), .init(90, "90 days")])
                     }
 
                     if let billing, billing.available {
@@ -1105,6 +1103,7 @@ private struct DashboardList<Content: View>: View {
         }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
     }

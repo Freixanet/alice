@@ -42,12 +42,7 @@ struct ConfigurationScreen: View {
                 }
 
                 Section {
-                    Picker("Approval mode", selection: $draft.approvalsMode) {
-                        Text("Smart").tag("smart")
-                        Text("Manual").tag("manual")
-                        Text("Off").tag("off")
-                    }
-                    .pickerStyle(.segmented)
+                    AppSegmentedPicker("Approval mode", selection: $draft.approvalsMode, options: [.init("smart", "Smart"), .init("manual", "Manual"), .init("off", "Off")])
                 } header: {
                     Text("Safety")
                 } footer: {
@@ -106,6 +101,7 @@ struct ConfigurationScreen: View {
         .navigationTitle("Hermes Configuration")
         .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .overlay { if loading && !loaded { ProgressView() } }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) {

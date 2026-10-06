@@ -90,7 +90,7 @@ struct SettingsView: View {
             .listRowBackground(Palette.card(scheme))
         }
         // Room between the bar's back button and the first section, «Connection».
-        .contentMargins(.top, 20, for: .scrollContent)
+        .pageNavigationSpacing()
         .navigationTitle("Settings")
         // The system's small centred title, not a large one over the list.
         .navigationBarTitleDisplayMode(.inline)
@@ -173,6 +173,7 @@ struct PrivacySettingsView: View {
         }
         .navigationTitle("Privacy")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .aliceFormPaper(scheme)
     }
 }
@@ -187,12 +188,7 @@ struct AppearanceSettingsView: View {
         @Bindable var store = store
         Form {
             Section("Theme") {
-                Picker("Theme", selection: $store.theme) {
-                    ForEach(ThemeChoice.allCases) { choice in
-                        Text(choice.label).tag(choice)
-                    }
-                }
-                .pickerStyle(.segmented)
+                AppSegmentedPicker("Theme", selection: $store.theme, options: ThemeChoice.allCases.map { .init($0, $0.label) })
                 .labelsHidden()
             }
             Section("Colour") {
@@ -209,6 +205,7 @@ struct AppearanceSettingsView: View {
         }
         .navigationTitle("Appearance")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .aliceFormPaper(scheme)
     }
 
@@ -294,6 +291,7 @@ struct GeneralSettingsView: View {
         }
         .navigationTitle("General")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .aliceFormPaper(scheme)
     }
 }
@@ -379,6 +377,7 @@ struct AdvancedSettingsView: View {
         }
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .aliceFormPaper(scheme)
     }
 }

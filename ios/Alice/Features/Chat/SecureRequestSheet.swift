@@ -79,6 +79,7 @@ struct SecureRequestSheet: View {
             }
             .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Not Now") { Task { await send("") } }
@@ -115,11 +116,7 @@ struct SecureRequestSheet: View {
             }
             .accessibilityAddTraits(newAccount ? .isSelected : [])
         } else {
-            Picker("Account", selection: $newAccount) {
-                Text("I have an account").tag(false)
-                Text("Create one").tag(true)
-            }
-            .pickerStyle(.segmented)
+            AppSegmentedPicker("Account", selection: $newAccount, options: [.init(false, "I have an account"), .init(true, "Create one")])
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
