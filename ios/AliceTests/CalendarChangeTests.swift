@@ -45,9 +45,19 @@ final class CalendarChangeTests: XCTestCase {
         ))
         XCTAssertEqual(
             CalendarSync.uniqueMatch(
-                from: candidates, around: morning.addingTimeInterval(60), start: \.start
+                from: candidates, around: morning.addingTimeInterval(30), start: \.start
             )?.id,
             "first"
         )
+        XCTAssertNil(CalendarSync.uniqueMatch(
+            from: candidates, around: morning.addingTimeInterval(60), start: \.start
+        ))
+        XCTAssertNil(CalendarSync.uniqueMatch(
+            from: candidates, around: morning.addingTimeInterval(10_800), start: \.start
+        ))
+        XCTAssertNil(CalendarSync.uniqueMatch(
+            from: [candidates[0], Candidate(id: "same-time", start: morning)],
+            around: morning, start: \.start
+        ))
     }
 }
