@@ -107,6 +107,7 @@ struct ConnectionsScreen: View {
         .searchable(text: $query, prompt: "Search connectors")
         .navigationTitle("Connections")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .refreshable { await load() }
         .task { await load() }
         .sheet(item: $signingIn) { signIn in
@@ -515,6 +516,7 @@ private struct ConnectorSignInSheet: View {
             }
             .frame(maxWidth: .infinity)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(done ? "Done" : "Cancel") { onDone(done) }
@@ -610,6 +612,7 @@ private struct ConnectorKeysSheet: View {
             .aliceFormPaper(scheme)
             .navigationTitle("Connect")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onDone(nil) } }
                 ToolbarItem(placement: .confirmationAction) {
@@ -686,6 +689,7 @@ private struct AddConnectorSheet: View {
             .aliceFormPaper(scheme)
             .navigationTitle("Add Connector")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { onDone(nil, false) } }
                 ToolbarItem(placement: .confirmationAction) {

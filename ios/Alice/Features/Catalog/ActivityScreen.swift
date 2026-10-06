@@ -141,6 +141,7 @@ struct ActivityScreen: View {
         .listStyle(.insetGrouped)
         .navigationTitle("Activity")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         // One tap for the whole record, instead of a swipe per row.
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

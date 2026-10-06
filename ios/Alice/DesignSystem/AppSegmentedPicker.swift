@@ -51,6 +51,7 @@ struct AppSegmentedPicker<Value: Hashable>: UIViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
+    @MainActor
     final class Coordinator: NSObject {
         var parent: AppSegmentedPicker
         init(_ parent: AppSegmentedPicker) { self.parent = parent }

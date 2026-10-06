@@ -86,6 +86,7 @@ struct NoteAttachmentsScreen: View {
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
     }
 
     private func fileRow(_ attachment: Attachment, note: Note) -> some View {

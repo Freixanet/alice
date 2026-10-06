@@ -150,6 +150,7 @@ struct ModelsProvidersScreen: View {
         .navigationTitle("Models & Providers")
         .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .overlay {
             if loading && info == nil { ProgressView() }
         }
@@ -332,6 +333,7 @@ private struct ModelPickerSheet: View {
             .navigationTitle("Default Model")
             .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
             }
@@ -514,6 +516,7 @@ private struct ProviderDetailSheet: View {
             .navigationTitle(destination.name)
             .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
             .sheet(item: $editingCredential) { credential in
                 CredentialEditorSheet(profile: profile, credential: credential) {
@@ -637,6 +640,7 @@ private struct CredentialEditorSheet: View {
             .navigationTitle(credential.key)
             .aliceFormPaper(scheme)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {

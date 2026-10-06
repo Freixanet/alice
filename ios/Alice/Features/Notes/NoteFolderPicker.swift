@@ -89,6 +89,7 @@ struct NoteFolderPicker: View {
             .background { Palette.background(scheme).ignoresSafeArea() }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }

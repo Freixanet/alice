@@ -2348,6 +2348,7 @@ struct BotDetail: View {
         }
          .navigationTitle(store.botCurrentName(for: bot))
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         // On the page, not on the row: a list re-renders its rows, and an
         // alert hung on one can fail to appear at all.
         // The same question the list asks: deleting from here went through at once.
@@ -2672,6 +2673,7 @@ private struct SoulEditor: View {
             .background(Palette.background(scheme))
             .navigationTitle("Instructions")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
@@ -2917,6 +2919,7 @@ private struct NewBotSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("Create New Agent")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .interactiveDismissDisabled(busy)
             .onAppear {
                 preferCheapModel()
@@ -3212,6 +3215,7 @@ private struct ChannelSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle(editing == nil ? "New Channel" : "Choose Agents")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .onAppear {
                 guard !seeded else { return }
                 seeded = true
@@ -3280,6 +3284,7 @@ private struct TeamSheet: View {
             .background(Palette.background(scheme))
             .navigationTitle("New Team")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }

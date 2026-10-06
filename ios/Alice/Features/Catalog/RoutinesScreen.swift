@@ -78,6 +78,7 @@ struct RoutinesScreen: View {
         }
         .navigationTitle("Routines")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .toolbar {
@@ -379,6 +380,7 @@ struct RoutineDetailSheet: View {
             }
             .navigationTitle(routine.name)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {
@@ -699,6 +701,7 @@ struct RoutineEditorSheet: View {
             }
             .navigationTitle(routine == nil ? "New Routine" : "Edit Routine")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .scrollContentBackground(.hidden)
             .background(Palette.background(scheme))
             .toolbar {

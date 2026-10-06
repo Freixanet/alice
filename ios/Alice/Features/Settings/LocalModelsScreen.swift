@@ -61,6 +61,7 @@ struct LocalModelsScreen: View {
         }
         .navigationTitle("Local Models")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .searchable(text: $search, prompt: "Search curated models")
@@ -720,6 +721,7 @@ private struct LocalModelBrowserSheet: View {
             }
             .navigationTitle("Find Local Models")
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
             }

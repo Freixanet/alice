@@ -40,6 +40,7 @@ struct PluginsAdminScreen: View {
         }
         .navigationTitle("Plugins")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .searchable(text: $search, prompt: "Search plugins")
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
         .task { await load() }.refreshableWithFeedback { await load() }

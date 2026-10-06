@@ -74,6 +74,7 @@ struct SystemScreen: View {
         }
         .navigationTitle("System")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .scrollContentBackground(.hidden)
         .background(Palette.background(scheme))
         .task {

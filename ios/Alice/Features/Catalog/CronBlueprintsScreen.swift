@@ -33,6 +33,7 @@ struct CronBlueprintsScreen: View {
         }
         .navigationTitle("Routine Blueprints")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .searchable(text: $search, prompt: "Search blueprints")
         .scrollContentBackground(.hidden).background(Palette.background(scheme))
         .task { await loadProfiles(); await load() }.refreshableWithFeedback { await load() }
@@ -66,6 +67,7 @@ private struct BlueprintForm: View {
                 if let failure { Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)) } }
             }
             .navigationTitle(blueprint.title).navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .scrollContentBackground(.hidden).background(Palette.background(scheme))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

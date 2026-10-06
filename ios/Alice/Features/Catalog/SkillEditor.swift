@@ -52,6 +52,7 @@ struct SkillEditor: View {
             .background(Palette.background(scheme))
             .navigationTitle(subject.title)
             .navigationBarTitleDisplayMode(.inline)
+            .pageNavigationSpacing()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }

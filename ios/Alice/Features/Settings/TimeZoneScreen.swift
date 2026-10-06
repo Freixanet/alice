@@ -126,6 +126,7 @@ struct TimeZoneScreen: View {
         .navigationTitle("Time zone")
         .aliceFormPaper(scheme)
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .disabled(saving)
         .overlay { if saving { ProgressView() } }
     }

@@ -151,6 +151,7 @@ struct AgentActionsScreen: View {
         .background(Palette.background(scheme))
         .navigationTitle("Done by your agents")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .refreshableWithFeedback { await store.refreshAgentActions() }
         .modifier(AgentActionOpener.Presenting(opener: opener, onOpenedChat: onOpenedChat))
     }

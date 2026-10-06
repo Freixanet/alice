@@ -180,6 +180,7 @@ struct NotesFoldersScreen: View {
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle("Folders")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .searchable(text: $query, prompt: "Search notes")
         .onChange(of: query) { _, text in
             if !text.isEmpty { editingFolders = false }
@@ -697,6 +698,7 @@ struct RecentlyDeletedScreen: View {
         .background { Palette.background(scheme).ignoresSafeArea() }
         .navigationTitle("Recently Deleted")
         .navigationBarTitleDisplayMode(.inline)
+        .pageNavigationSpacing()
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button("Delete All", role: .destructive) { confirmingAll = true }
