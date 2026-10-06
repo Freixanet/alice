@@ -11,11 +11,6 @@ enum AttachmentLoader {
     /// is comfortably more than any vision model reads at.
     private static let maxEdge: CGFloat = 1024
 
-    /// Largest file the picker will read. Attachments live in memory and in
-    /// the conversation archive; only the first 50,000 UTF-8 characters of a
-    /// text file are ever sent anyway.
-    private static let maxFileBytes = 20 * 1024 * 1024
-
     static func image(from item: PhotosPickerItem) async -> Attachment? {
         guard let data = try? await item.loadTransferable(type: Data.self),
               let source = UIImage(data: data)
@@ -43,30 +38,17 @@ enum AttachmentLoader {
     }
 
     static func file(at url: URL) -> Attachment? {
+        try? loadFile(at: url)
+    }
+
+    /// Chat needs the failure reason; existing note callers retain their optional API.
+    static func loadFile(at url: URL) throws -> Attachment {
         // A file handed over by the document picker lives outside the app's
         // sandbox; without this the read fails with a permission error.
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
-        // Read nothing the app cannot afford to keep: attachment data is held
-        // in the message and archived with the conversation, so a multi-hundred
-        // MB pick would blow memory and the archive both.
-        let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize
-        guard size ?? 0 <= Self.maxFileBytes else { return nil }
-
-        let data: Data
-        if size != nil {
-            guard let read = try? Data(contentsOf: url) else { return nil }
-            data = read
-        } else {
-            // The provider gave no size; read with a cap so an oversized or
-            // growing file still stops at the limit.
-            guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-            defer { try? handle.close() }
-            guard let read = try? handle.read(upToCount: Self.maxFileBytes + 1),
-                  read.count <= Self.maxFileBytes else { return nil }
-            data = read
-        }
+        let data = try AttachmentFileReader.read(url)
         let type = UTType(filenameExtension: url.pathExtension)
         let mime = type?.preferredMIMEType ?? "application/octet-stream"
 

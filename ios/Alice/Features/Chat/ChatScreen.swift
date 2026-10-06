@@ -202,7 +202,12 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            .modifier(ChatTopChrome {
+            // Register both native bars outside the painted chat surface,
+            // at matching levels, so neither has a separate background layer.
+            .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
+                composerArea
+            })
+            .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
                     // In the page, not floating over it: a popover tip is
@@ -293,12 +298,6 @@ private struct ChatScreenContent: View, Equatable {
         if let conversation = store.shownConversation, !conversation.messages.isEmpty {
             transcript
                 .simultaneousGesture(dismissKeyboard)
-                // A real conversation reserves the live composer height so the
-                // last message still follows attachments, extra lines, and the
-                // keyboard.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    composerArea
-                }
         } else {
             // Home is centred in the room between the header and the composer,
             // in both states: its space shrinks with the keyboard exactly as
@@ -780,9 +779,8 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
-                // Air under the header, so the first message does not start
-                // against the agent's portrait and name, in the space below
-                // the header rather than underneath its floating controls.
+                // The registered header already reserves its height. This extra
+                // breathing room scrolls with the messages.
                 .padding(.top, 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
@@ -792,6 +790,10 @@ private struct TranscriptView: View {
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
+                .background {
+                    ProgressiveBottomScrollEdge()
+                        .allowsHitTesting(false)
+                }
             }
             .scrollIndicators(.hidden)
             .scrollPosition($position)
@@ -817,8 +819,7 @@ private struct TranscriptView: View {
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // A soft edge below the header as earlier replies leave the viewport.
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
@@ -844,6 +845,10 @@ private struct TranscriptView: View {
                 )
             } action: { old, tail in
                 lastTail = tail
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--alice-edge-capture")
+                    || ProcessInfo.processInfo.arguments.contains("--alice-top-edge-capture") { return }
+                #endif
                 // Past the end with nobody holding it: a lazy stack opens at
                 // the end of the height it estimated for rows it had not
                 // drawn, then shrinks as they draw, and the chat sat on empty
@@ -908,32 +913,57 @@ private struct TranscriptView: View {
                         .accessibilityLabel("Jump to latest message")
                         .accessibilityIdentifier("chat.scrollToBottom")
                         .padding(.bottom, 2)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                     }
                 }
                 // Animates the button only. On the scroll view, every crossing
                 // of the near-bottom line — which is the moment a reader starts
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
-                .animation(.snappy(duration: 0.2), value: settled && !following)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: settled && !following)
             }
         }
     }
 }
 
-/// The portrait has its own space. Scrolled text must not remain readable
-/// through the gap around the floating portrait and name.
+/// Register the floating header with the native scroll-edge renderer. Empty
+/// chats retain their existing safe-area layout and centred welcome content.
 private struct ChatTopChrome<Header: View>: ViewModifier {
-    @Environment(\.colorScheme) private var scheme
+    let usesScrollEdges: Bool
     var header: Header
 
-    init(@ViewBuilder header: () -> Header) {
+    init(usesScrollEdges: Bool, @ViewBuilder header: () -> Header) {
+        self.usesScrollEdges = usesScrollEdges
         self.header = header()
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .top, spacing: 0) {
-            header.background(Palette.background(scheme))
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .top, spacing: 0) { header }
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) { header }
+        }
+    }
+}
+
+/// Attach the composer at the same level as the header, after the chat's
+/// background. Empty chats already place their own composer in chatContent.
+private struct ChatBottomChrome<ComposerContent: View>: ViewModifier {
+    let usesScrollEdges: Bool
+    var composer: ComposerContent
+
+    init(usesScrollEdges: Bool, @ViewBuilder composer: () -> ComposerContent) {
+        self.usesScrollEdges = usesScrollEdges
+        self.composer = composer()
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .bottom, spacing: 0) { composer }
+        } else {
+            content
         }
     }
 }

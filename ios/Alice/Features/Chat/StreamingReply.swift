@@ -11,12 +11,13 @@ import SwiftUI
 /// token, as light inline Markdown. A code or card block still open, or a
 /// table still being written, stays out of sight until it is whole.
 struct StreamingReply: View {
+    @ScaledMetric(relativeTo: .body) private var blockSpacing: CGFloat = 16
     let content: String
     var onTap: (@MainActor () -> Void)? = nil
 
     var body: some View {
         let parts = Self.split(content)
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: blockSpacing) {
             if !parts.finished.isEmpty {
                 RichMessageView(content: parts.finished, onTap: onTap)
             }
