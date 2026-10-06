@@ -94,10 +94,9 @@ agent's iPhone build, and the running plugin came from a non-git folder
   `ai.hermes.dashboard` (9119), one at a time.
 - **The iPhone:** read the installed build number right before installing
   (`xcrun devicectl device info apps --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B`), not
-  only at the start of the task, and look for newer `Alice.app` builds made by other
-  agents (for example `find /private/tmp ~/Documents/Codex -name Alice.app -path
-  '*iphoneos*' -newer <your build>`). If another agent installed something newer, ask
-  the user before replacing it. Use the next build number above the installed one.
+  only at the start of the task, and look for newer `Alice.app` device builds made by
+  other agents (under `/private/tmp` and `~/Documents/Codex`). If another agent installed
+  something newer, ask the user before replacing it. Use the next build number above the installed one.
 - **Say where it came from:** every report of an install names the branch and commit
   installed, for the plugin and for the app.
 

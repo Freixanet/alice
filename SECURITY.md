@@ -16,11 +16,11 @@ entered into the connection form, and needs the gateway key for direct mode.
 
 **Where the key lives**
 
-| Transport      | Stored credential                                                    | Trust boundary                                                                                 |
-| -------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Server proxy   | Encrypted `httpOnly` connection cookie                               | Alice's server decrypts the key to contact Hermes; JavaScript cannot read the cookie.          |
-| Direct browser | Account-scoped `sessionStorage` plus the encrypted connection cookie | The authenticated `device-secret` API returns the key to the browser so it can contact Hermes. |
-| Local Mac      | Server access to local Hermes and optional browser memory            | Only the configured owner may use local access with authentication enabled.                    |
+| Transport      | Stored credential                                                    | Trust boundary                                                                                                                                                               |
+| -------------- | -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Server proxy   | Encrypted `httpOnly` connection cookie                               | Alice's server decrypts the key to contact Hermes; JavaScript cannot read the cookie.                                                                                        |
+| Direct browser | Account-scoped `sessionStorage` plus the encrypted connection cookie | The authenticated `device-secret` API returns the key to the browser so it can contact Hermes.                                                                               |
+| Local Mac      | Server access to local Hermes and optional browser memory            | Only the configured owner may use local access with authentication enabled.                                                                                                  |
 | iPhone         | `AfterFirstUnlockThisDeviceOnly` Keychain                            | Readable once the phone has been unlocked after a restart, so place triggers and background refresh work while it is locked; never backed up or synced; no biometric prompt. |
 
 Set `HERMES_COOKIE_SECRET` to a long random value in any deployment you keep.
