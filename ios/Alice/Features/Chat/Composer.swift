@@ -17,6 +17,7 @@ struct Composer: View {
     var focused: FocusState<Bool>.Binding
     var placeholder: String = "Talk to Alice…"
     var keyboardShown = false
+    @Binding var replyingToMessage: Message.Quote?
     /// The Experimental Home interface puts a round section button to this
     /// composer's left in the same row (`ChatScreen.composerArea`); compact
     /// trims Alice's own composer to a single 44pt-tall capsule, the bot
@@ -46,6 +47,8 @@ struct Composer: View {
     @State private var showingVoice = false
     @State private var pendingListen: Bool?
     @State private var dictationFailure: String?
+    @State private var replySendTargetID: String?
+    @State private var replySendBaselineCount: Int?
 
     /// One height for every control on the bottom row, so the send button and
     /// the model chip line up instead of each taking the size its own padding
@@ -75,6 +78,7 @@ struct Composer: View {
                 else if !matchingBots.isEmpty { botMentionList }
                 if store.editingMessageID != nil { editingBanner }
                 if store.queuedSendNote != nil { queueBanner }
+                if replyingToMessage != nil { replyBanner }
                 // Compact (the Experimental Home row) always wins: it is its
                 // own unified composer regardless of which bot backs the
                 // chat underneath, since a plain agent chat opened on its own
@@ -149,6 +153,11 @@ struct Composer: View {
             dictation.stop()
             pendingListen = nil
             commandsDismissed = false
+            replySendTargetID = nil
+            replySendBaselineCount = nil
+        }
+        .onChange(of: store.activeChat.messages.last?.id) { _, _ in
+            clearReplyIfSent()
         }
         .onDisappear {
             dictation.stop()
@@ -174,7 +183,10 @@ struct Composer: View {
             Text(dictationFailure ?? "")
         }
         .onChange(of: store.editingMessageID) { _, editing in
-            if editing != nil { focused.wrappedValue = true }
+            if editing != nil {
+                cancelReply()
+                focused.wrappedValue = true
+            }
         }
         .animation(.snappy(duration: 0.2), value: store.editingMessageID)
         .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
@@ -733,8 +745,68 @@ struct Composer: View {
             dictation.stop()
             pendingListen = nil
         }
-        store.send()
+        if let replyingToMessage {
+            replySendTargetID = replyingToMessage.messageID
+            replySendBaselineCount = store.activeChat.messages.count
+        }
+        store.send(replyingTo: replyingToMessage)
+        clearReplyIfSent()
         Haptic.tap.play()
+    }
+
+    private func clearReplyIfSent() {
+        guard let targetID = replySendTargetID,
+              let baselineCount = replySendBaselineCount,
+              baselineCount <= store.activeChat.messages.count,
+              store.activeChat.messages.dropFirst(baselineCount).contains(where: {
+                  $0.role == .user && $0.quote?.messageID == targetID
+              })
+        else { return }
+        if replyingToMessage?.messageID == targetID { replyingToMessage = nil }
+        replySendTargetID = nil
+        replySendBaselineCount = nil
+    }
+
+    private func cancelReply() {
+        replyingToMessage = nil
+        replySendTargetID = nil
+        replySendBaselineCount = nil
+    }
+
+    private var replyAuthor: String { replyingToMessage?.author ?? "Alice" }
+
+    private var replyBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "arrowshape.turn.up.left.fill")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(store.accent.primary(scheme))
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Replying to \(replyAuthor)")
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                Text(replyingToMessage?.text ?? "")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button(action: cancelReply) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 32, height: 32)
+                    .contentShape(.circle)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel reply")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .accessibilityElement(children: .contain)
     }
 
     /// Dictation, always left of the trailing control: it only fills the
