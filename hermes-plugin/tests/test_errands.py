@@ -123,6 +123,19 @@ class CheckoutTests(Base):
         self.assertEqual([line["label"] for line in checkout["breakdown"]], ["Subtotal", "Cupón MRKEHEL"])
         self.assertEqual(checkout["conditions"], ["Se renueva solo a 14,93 €/año", "Sin devoluciones"])
 
+    def test_lines_that_do_not_add_up_to_the_total_are_read_again(self):
+        entry = self.errand()
+        args = {**CHECKOUT, "total": "31,98 €", "currency": "EUR",
+                "breakdown": [{"label": "Subtotal", "amount": "27,98 €"}, {"label": "Envío", "amount": "3,99 €"}]}
+        out = errands.request_checkout(self.home, entry["id"], args, now=NOW)
+        self.assertFalse(out["ok"])
+        self.assertIn("31,97", out["error"])
+        out = errands.request_checkout(self.home, entry["id"], {**args, "breakdown_checked": True}, now=NOW)
+        self.assertTrue(out["ok"])
+        args["breakdown"].append({"label": "Cupón X", "amount": "-0,99 €"})
+        args["total"] = "30,98 €"
+        self.assertTrue(errands.request_checkout(self.home, entry["id"], {**args}, now=NOW)["ok"])
+
     def test_only_https_images_are_kept(self):
         entry = self.errand()
         items = [{"name": "X", "image": "javascript:alert(1)"}, {"name": "Y", "image": "http://x/y.jpg"}]

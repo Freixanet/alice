@@ -394,6 +394,8 @@ CHECKOUT_SCHEMA: Dict[str, Any] = {
                     "amount": {"type": "string", "description": "As shown, e.g. '4,99 €', '-1,00 €', 'Gratis'"}},
                     "required": ["label", "amount"]},
             },
+            "breakdown_checked": {"type": "boolean", "description": "Only after the plugin said the lines do not add up "
+                                  "and the page shows no other line."},
             "conditions": {
                 "type": "array", "maxItems": 5, "items": {"type": "string"},
                 "description": ("What the person agrees to with this order beyond the price, in a few words each, "
@@ -567,6 +569,27 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
             return {"ok": True, "status": "needs_card",
                     "next": ("There is no saved card to pay with: the person is asked to add one first. Do not "
                              "pay. End your turn with one line saying you wait for the card.")}
+    # The lines shown must add up to the total shown: HSN's came to 31,97 € under a 31,98 € total.
+    lines = _breakdown(args.get("breakdown"))
+    if lines and not args.get("breakdown_checked"):
+        cents = []
+        for line in lines:
+            if re.fullmatch(r"(?i)\s*(gratis|free|gratuito|0)\s*", line["amount"]):
+                cents.append(0)
+                continue
+            parsed = _money().parse(line["amount"].replace("\u2212", "-"), currency)
+            if not parsed:
+                cents = None
+                break
+            negative = line["amount"].strip().startswith(("-", "\u2212"))
+            cents.append(-abs(parsed[0]) if negative else parsed[0])
+        subtotal_lines = [c for c, l in zip(cents or [], lines) if re.search(r"(?i)sub-?total", l["label"])]
+        if cents is not None and sum(cents) != total_cents and not (subtotal_lines and len(lines) == 1):
+            return {"ok": False, "error": (
+                f"El desglose suma {_money().text(sum(cents), currency)} y el total de la página es {total}. "
+                "Vuelve a leer las líneas del resumen (falta una: un recargo, un redondeo, un impuesto o un "
+                "descuento) y llama otra vez a checkout_request. Si la página no muestra más líneas, pasa "
+                "breakdown_checked: true y la persona verá el desglose tal cual con su total.")}
     items = real_pictures(entry, items, fetch or _fetch)
     checkout = {
         "id": secrets.token_hex(4), "status": "pending", "merchant": _clean(args.get("merchant"), 60) or site,
