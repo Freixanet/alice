@@ -1934,7 +1934,8 @@ class Engine:
                     text = (CONTINUATION + f" La cesta marca {blocked['price']} porque aún no tiene el cupón "
                             f"{offer_now['coupon']}: no es un cambio de precio. Abre la cesta o el checkout, "
                             "escribe el cupón en su campo de código promocional, aplícalo, espera a que cambie el "
-                            "total y llama a `purchase_check_cart`. Solo si la tienda rechaza el cupón, termina "
+                            "total y llama a `purchase_check_cart`. Si solo lo acepta con la sesión iniciada, inicia sesión con "
+                            "`login_fill` y el acceso guardado y vuelve a aplicarlo. Solo si la tienda rechaza el cupón, termina "
                             "con «BLOQUEADO: precio … — la tienda no acepta el cupón».")
                     continue
                 if blocked["kind"] == "datum":

@@ -5,6 +5,7 @@ import importlib.util
 import json
 import re
 import secrets
+import time
 import sys
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -75,7 +76,22 @@ def page_evaluate(context, expression):
                 return result['result']['result'].get('value')
 
 
-def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluate, backend=None):
+# The second step of a two-step sign-in: the form holding the filled email is sent on («Continuar»),
+# so its password field appears. No secret is read or returned; only the button is pressed.
+NEXT_STEP_JS = r"""(()=>{const seen=e=>e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+const words=/^(continuar|siguiente|continue|next|seguir|acceder|iniciar sesi[oó]n|entrar|sign in|log in)$/i;
+const filled=Array.from(document.querySelectorAll('input[type=email],input[autocomplete=username],input[autocomplete=email],input[name*=mail i],input[type=text]')).filter(e=>seen(e)&&e.value);
+for(const field of filled){const form=field.closest('form');const scope=form||field.parentElement?.parentElement?.parentElement||document;
+if(scope.querySelector&&Array.from(scope.querySelectorAll('input[type=password]')).some(seen))continue;
+const buttons=Array.from(scope.querySelectorAll('button,input[type=submit],[role=button]')).filter(seen);
+const b=buttons.find(b=>b.type==='submit'&&!/google|apple|facebook/i.test(b.innerText||''))||buttons.find(b=>words.test(String(b.innerText||b.value||'').trim()));
+if(b){b.click();return 'pressed';}
+if(form&&form.requestSubmit){form.requestSubmit();return 'submitted';}}
+return '';})()"""
+
+
+def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluate, backend=None,
+               sleep=time.sleep, second=False):
     entry = module('errands').get(home, errand_id)
     selected = (entry or {}).get('saved_login') or {}
     if selected.get('handle') and handle != selected['handle']:
@@ -128,6 +144,20 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
         saved_login={'handle': handle, 'origin': page_origin},
         account_action=entry.get('account_action') or 'login',
         login_attempt={'origin': page_origin, 'stage': 'identifier' if first_step else 'credentials'})
+    if first_step and not second:
+        # Sent on here, then the password filled in the same call: the agent filled the email three
+        # times on Prozis and never pressed «Continuar» (06-10).
+        try:
+            moved = evaluate(context, NEXT_STEP_JS)
+        except Exception:  # noqa: BLE001
+            moved = ''
+        if moved:
+            sleep(2.5)
+            try:
+                return fill_login(home, errand_id, handle, inspect=inspect, evaluate=evaluate, backend=backend,
+                                  sleep=sleep, second=True)
+            except ValueError:
+                pass  # no password field yet: say what is left to do, below
     if first_step:
         return {'ok':True, 'origin':page_origin, 'filled':int(result['filled']), 'step':'identifier',
                 'next':'Solo se ha rellenado el email: la tienda pide la contraseña en un segundo paso. Pulsa su botón de continuar (o «iniciar sesión con contraseña») y vuelve a llamar login_fill con el mismo acceso.'}

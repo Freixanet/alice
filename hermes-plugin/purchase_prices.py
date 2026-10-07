@@ -801,8 +801,9 @@ def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, 
         return {'ok': False, 'coupon_pending': True, 'price': real,
                 'next': (f"La cesta cobra {real} porque aún no tiene el cupón {coupon}. Escríbelo en el campo de "
                          "cupón o código promocional de la cesta o del checkout, aplícalo, espera a que se "
-                         "actualice el total y vuelve a llamar a `purchase_check_cart`. No pares ni lo cuentes "
-                         "como un cambio de precio.")}
+                         "actualice el total y vuelve a llamar a `purchase_check_cart`. Si la tienda solo acepta el "
+                         "cupón con la sesión iniciada, inicia sesión con `login_fill` y el acceso guardado y vuelve a "
+                         "aplicarlo. No pares ni lo cuentes como un cambio de precio.")}
     if not module('money').same(real,offer['price'],offer['currency']):
         # The evidence is kept with the real price: when the person accepts it, this cart is
         # already checked and the errand goes straight on to the checkout.

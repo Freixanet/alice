@@ -266,11 +266,38 @@ class AccessTests(unittest.TestCase):
             written.append(script)
             return {'filled':1}
         with mock.patch('agent.redact.register_vault_redaction_value'):
-            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend)
+            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend,
+                                    sleep=lambda _:None)
         self.assertEqual(out['step'],'identifier')
         self.assertIn('segundo paso',out['next'])
         self.assertIn('fixture@example.com',written[0])
         self.assertNotIn('FAKE-test-password',written[0])
+
+    def test_two_step_login_presses_continue_and_fills_the_password(self):
+        # 06-10: the email was filled three times on Prozis and «Continuar» never pressed.
+        try:
+            import agent.vault_login_classifier  # noqa: F401
+        except ImportError:
+            self.skipTest('Hermes is not importable here')
+        backend = mock.Mock()
+        backend.get_meta.return_value = types.SimpleNamespace(kind='login',origin='https://example.com',identifier='fixture@example.com')
+        backend.resolve_password.return_value = 'FAKE-test-password'
+        state = {'step': 'email'}; written = []
+        def evaluate(ctx, script):
+            if script == access.NEXT_STEP_JS:
+                state['step'] = 'password'; return 'pressed'
+            if 'flatMap' in script:
+                fields = [{'index':0,'name':'email','type':'email','autocomplete':'username','label':'Email'}]
+                if state['step'] == 'password':
+                    fields.append({'index':1,'name':'password','type':'password','autocomplete':'current-password','label':'Contraseña'})
+                return json.dumps(fields)
+            written.append(script)
+            return {'filled':2 if state['step'] == 'password' else 1}
+        with mock.patch('agent.redact.register_vault_redaction_value'):
+            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend,
+                                    sleep=lambda _:None)
+        self.assertNotIn('step', out)
+        self.assertIn('FAKE-test-password', written[-1])
 
     def test_other_origin_credentials_are_rejected_before_secret_resolution(self):
         backend = mock.Mock();backend.get_meta.return_value=types.SimpleNamespace(kind='login',origin='https://other.example')
