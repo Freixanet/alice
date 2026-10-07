@@ -567,6 +567,9 @@ def shop_home(shop: str) -> str:
     parts = urlsplit(text if "//" in text else "https://" + text)
     if parts.scheme != "https" or not parts.hostname:
         raise ValueError("Di la tienda como dominio o dirección https.")
+    if "." not in parts.hostname:
+        # «HSN» is a name, not an address: said plainly, not «la dirección no es segura».
+        raise ValueError("«" + text + "» es el nombre de la tienda: pásala como dominio (p. ej. hsnstore.com).")
     return urlunsplit(("https", parts.netloc, "/", "", ""))
 
 

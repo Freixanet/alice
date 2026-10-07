@@ -171,7 +171,12 @@ def matches_identity(option: Dict[str, Any], identity: str, store_only: bool) ->
     values = [option.get("merchant"), hostname.replace(".", " ")]
     if not store_only:
         values += [option.get("brand"), option.get("title")]
-    return any(re.search(r"(?<!\w)" + re.escape(identity) + r"(?!\w)", _normalized(v)) for v in values)
+    if any(re.search(r"(?<!\w)" + re.escape(identity) + r"(?!\w)", _normalized(v)) for v in values):
+        return True
+    # «en HSN» is hsnstore.com, «en El Corte Inglés» elcorteingles.es: the shop's name starting its domain.
+    squashed = identity.replace(" ", "")
+    return len(squashed) >= 3 and any(label.startswith(squashed) for label in _normalized(hostname).split()
+                                      if label not in ("www", "es", "com", "shop", "store"))
 
 
 def set_key(options: Iterable[Dict[str, Any]]) -> str:
