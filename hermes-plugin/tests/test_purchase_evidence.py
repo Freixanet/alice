@@ -356,6 +356,14 @@ class CartRevalidationTests(unittest.TestCase):
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
         self.amount='27,99 €'
         self.assertTrue(self.check()['ok'])
+    def test_a_coupon_off_the_total_keeps_the_chosen_price(self):
+        # 06-10: Prozis left the line at 34,99 € and took IMBACK off the total (27,99 €).
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'qty':1,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        self.qty='1'
+        with mock.patch.object(prices.module('shop_engine'),'errand_total',return_value={'text':'27,99 €'}):
+            out=self.check()
+        self.assertTrue(out['ok'])
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
     def test_a_coupon_the_shop_refuses_stops_after_trying(self):
         errands.update(self.home,self.entry['id'],offer={**self.offer,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
         for _ in range(2): self.assertTrue(self.check().get('coupon_pending'))

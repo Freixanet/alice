@@ -774,7 +774,28 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
     amount = cart_amount(read(recipe['price']),offer['currency'],offer.get('qty',1),recipe)
     if not amount:
         raise ValueError('La cesta no tiene un precio verificable.')
+    amount = _with_coupon(ev, context, offer, amount)
     return _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount, recipe, now)
+
+
+def _with_coupon(ev, context, offer, amount):
+    """The line's price as the order pays it. Some shops take a coupon off the order's total and
+    leave the line at its list price (Prozis: 34,99 € on the line, 27,99 € to pay with IMBACK); read
+    from the line alone, the coupon looked refused (06-10). When the total is at most the chosen
+    price for those units, the chosen price stands."""
+    money = module('money')
+    chosen = money.parse(offer.get('price'), offer.get('currency') or '')
+    qty = int(offer.get('qty', 1) or 1)
+    if not offer.get('coupon') or not chosen or amount[0] <= chosen[0]:
+        return amount
+    try:
+        total = module('shop_engine').errand_total(lambda code: ev(context, code)) or {}
+        paid = money.parse(total.get('text'), offer.get('currency') or '')
+    except Exception:  # noqa: BLE001
+        return amount
+    if paid and 0 < paid[0] <= chosen[0] * qty:
+        return (chosen[0], amount[1])
+    return amount
 
 
 def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount, recipe, now):
@@ -830,7 +851,7 @@ def _check_cart_engine(home, errand_id, entry, offer, page_origin, context, comm
     if str(read['qty']) != str(offer.get('qty', 1)):
         raise ValueError('La cesta tiene ' + str(read['qty']) + ' unidades, no ' + str(offer.get('qty', 1))
                          + '. Corrígela antes de pedir aprobación.')
-    amount = (read['price_cents'], read['currency'])
+    amount = _with_coupon(ev, context, offer, (read['price_cents'], read['currency']))
     return _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, amount,
                          {'engine': read.get('how') or 'dom'}, now)
 
