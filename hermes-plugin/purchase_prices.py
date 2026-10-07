@@ -810,6 +810,14 @@ def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, 
     evidence = {'origin':page_origin,'context':context['context'],'recipe':recipe,
         'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),
         'session':fingerprint(cookies,page_origin)}
+    if old_price and amount[0] * 2 < old_price[0]:
+        # Less than half the checked price is a misreading, not a member discount: HSN's «−0,50 €»
+        # dosing-scoop line was once taken for a 27,98 € tub and adopted. Read the cart again.
+        return {'ok': False, 'unreadable': True, 'price': real,
+                'next': ('La cesta muestra ' + real + ' junto al producto, menos de la mitad de los ' + offer['price']
+                         + ' comprobados: es otra línea o un descuento, no su precio. Abre la página de la cesta, '
+                         'localiza la línea de este producto y vuelve a llamar a `purchase_check_cart`. No lo '
+                         'aceptes como precio.')}
     if old_price and amount[0] < old_price[0]:
         # Cheaper in the basket (a member discount after login): the person's choice only got
         # better, and the final total is approved before paying anyway.

@@ -2209,10 +2209,27 @@ def _register_task_tools(ctx) -> None:
         if not session or session.startswith(errands.SESSION_PREFIX):
             return _agent_json({"ok": False, "error": "Only in the chat, before the purchase starts."})
         details = _ask_person().load_details(Path(get_hermes_home()))
-        return _agent_json(_module("purchase_prices.py", "alice_purchase_prices").present(
+        request = _PURCHASE_REQUESTS.get(session, "")
+        out = _module("purchase_prices.py", "alice_purchase_prices").present(
             _hermes_root(), session, args or {}, currency=_purchase_locale()[1],
-            picture=lambda page: errands.page_picture(page),
-            request=_PURCHASE_REQUESTS.get(session, "")))
+            picture=lambda page: errands.page_picture(page), request=request)
+        # Asked for one thing in one shop and exactly that was found: nothing to choose between,
+        # so the purchase starts, as Muse's «Marchando» does. The total is still approved before paying.
+        flow = _purchase_flow()
+        shown = out.get("options") or []
+        if out.get("ok") and len(shown) == 1 and flow.requested_identity(request)[0]:
+            option_id = str(shown[0].get("id") or "")
+            chosen = flow.choose(_hermes_root(), session, option_id, qty=1, commit=False)
+            if chosen is not None:
+                started = _start_purchase(session, chosen)
+                flow.choose(_hermes_root(), session, option_id, qty=chosen.get("qty", 1))
+                _ERRAND_TURN_IDS[session] = started["errand_id"]
+                _PURCHASE_OPEN.discard(session)
+                return _agent_json({"ok": True, "started": True, "errand_id": started["errand_id"],
+                                    "next": ("Solo había una opción y es la pedida: la compra ya está en marcha. "
+                                             "Dilo en una línea («Marchando: preparo la compra; te enseño el total "
+                                             "antes de pagar») y termina el turno. No pidas que elija.")})
+        return _agent_json(out)
 
     def price_tool(method, args):
         session = _session_id()

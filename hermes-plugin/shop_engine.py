@@ -55,7 +55,8 @@ const norm=s=>squash(String(s||'').normalize('NFKD').replace(/[̀-ͯ]/g,'').toLo
 const words=s=>norm(s).split(' ').filter(w=>w.length>1||/\d/.test(w));
 const names=(line,...parts)=>{const l=norm(line);const ws=l.split(' ');return parts.every(p=>{const pw=words(p);return !pw.length||pw.every(w=>ws.includes(w)||l.includes(w));});};
 const AMOUNT=/(?:(?:€|EUR|US\$|\$|USD|£|GBP|CHF|MXN|ARS|CLP|COP)\s?\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{1,2})?)|(?:\d{1,3}(?:[.,\s]\d{3})*(?:[.,]\d{1,2})?\s?(?:€|EUR|US\$|\$|USD|£|GBP|CHF|MXN|ARS|CLP|COP))/g;
-const amounts=t=>(squash(t).match(AMOUNT)||[]).map(a=>a.trim());
+// A discount line («Descuento −0,50 €») is never a price: amounts after a minus sign are left out.
+const amounts=t=>{const s=squash(t);const out=[];AMOUNT.lastIndex=0;let m;while((m=AMOUNT.exec(s))){if(/[-\u2212\u2013]\s?$/.test(s.slice(Math.max(0,m.index-2),m.index)))continue;out.push(m[0].trim());}AMOUNT.lastIndex=0;return out;};
 const fire=e=>{e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));};
 const text=e=>squash([e.innerText,e.value,e.getAttribute&&e.getAttribute('aria-label'),e.title].filter(Boolean).join(' '));
 const PAY=/pagar|\bpay\b|place.?order|comprar ahora|buy now|confirmar|checkout|finalizar|tramitar|realizar pedido|suscri|subscri/i;
