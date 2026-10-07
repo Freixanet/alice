@@ -302,6 +302,11 @@ struct MessageRow: View {
                                             replyProfile: message.mentionProfile,
                                             onLoaded: { purchaseSets[call.id] = $0 })
                     }
+                    ForEach(message.tools.filter { ProductList.isTool($0.name) && $0.status == .done }) { call in
+                        if let list = ProductList.parse(call.detail) {
+                            ProductListCard(list: list).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
                     ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
                         if let ask = AskPerson.parse(call.detail),
                            !AskPerson.superseded(ask, callID: call.id,
@@ -880,7 +885,7 @@ enum ToolCaption {
     /// Listing it as a step would leave "Asking a question" standing in the
     /// trace under an answer they have already given.
     static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
-        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) && !PurchaseOptionSet.isTool($0.name) }
+        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) && !PurchaseOptionSet.isTool($0.name) && !ProductList.isTool($0.name) }
     }
 
     /// The line above the reply: what it is doing, or what it took.

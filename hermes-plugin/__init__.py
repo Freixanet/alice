@@ -2276,6 +2276,18 @@ def _register_task_tools(ctx) -> None:
             str(args.get("product_id") or ""), selected=selected,
             country=_purchase_locale()[0], currency=_purchase_locale()[1]))
 
+    product_list = _module("product_list.py", "alice_product_list")
+
+    def show_products(args, **_):
+        try:
+            return _agent_json(product_list.check(args or {}))
+        except product_list.ProductListError as error:
+            return _agent_json({"ok": False, "error": str(error)})
+
+    ctx.register_tool(name="product_list", toolset="alice_tasks", schema=product_list.SCHEMA,
+                      handler=show_products, check_fn=_always, description=product_list.SCHEMA["description"],
+                      emoji="🛍️")
+
     flow, catalog = _purchase_flow(), _catalog()
     ctx.register_tool(name="purchase_options", toolset="alice_tasks", schema=flow.OPTIONS_SCHEMA, handler=options,
                       check_fn=_always, description=flow.OPTIONS_SCHEMA["description"], emoji="🛒")

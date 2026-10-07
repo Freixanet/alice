@@ -1,6 +1,54 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Before %@": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Before %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antes %@"
+          }
+        }
+      }
+    },
+    "My pick": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "My pick"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mi elección"
+          }
+        }
+      }
+    },
+    "Opens the product page": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Opens the product page"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abre la página del producto"
+          }
+        }
+      }
+    },
     "Preferences": {
       "localizations": {
         "es": {
