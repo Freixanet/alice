@@ -760,7 +760,12 @@ def check_cart(home, errand_id, recipe, *, inspect=None, evaluate=None, now=None
             raise ValueError('Usa selectores CSS de la página para line, price y cart_quantity, no nombres de producto, importes o cantidades. Lee los controles y vuelve a comprobar la cesta.')
         return result
     line = read(recipe['line'])
-    if not line or not names(line, offer['title'], offer.get('variant') or ''):
+    if not line:
+        # The shop's basket recipe reads its mini-cart, which the checkout and payment pages do not
+        # have: there the order summary is read by the product's name instead. After signing in on
+        # Prozis' payment step this check could never pass, and the errand could not ask for approval.
+        return _check_cart_engine(home, errand_id, entry, offer, page_origin, context, command, ev, now)
+    if not names(line, offer['title'], offer.get('variant') or ''):
         raise ValueError('La cesta no contiene el formato elegido (selector ' + recipe['line'] + '; línea: ' + str(line or '')[:200] + ').')
     if read(recipe['cart_quantity']) != str(offer.get('qty',1)):
         raise ValueError('La cesta tiene otra cantidad. Corrígela antes de pedir aprobación.')
