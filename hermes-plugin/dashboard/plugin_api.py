@@ -2088,6 +2088,13 @@ async def browser_control(body: _BrowserControl) -> JSONResponse:
     module = _browser_module()
     work = module.take_over if body.holder == "human" else module.hand_back
     await asyncio.to_thread(work, _hermes_root())
+    if body.holder == "agent":
+        # Errands under way read the page again; one whose checkout was approved may have been paid
+        # by the person, which the ledger now holds until its outcome is read.
+        try:
+            await asyncio.to_thread(_errands_module().handed_back, _hermes_root())
+        except Exception:
+            _log.warning("errands: hand-back note failed", exc_info=True)
     return await asyncio.to_thread(lambda: _browser_call(lambda: module.status(_hermes_root())))
 
 
@@ -2611,6 +2618,20 @@ async def purchase_options(key: str, session: str = "") -> JSONResponse:
     return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
 
 
+@router.get("/purchase/sets")
+async def purchase_sets(session: str = "", since: float = 0, until: Optional[float] = None) -> JSONResponse:
+    """The option sets shown in a chat between two moments (one turn): the app draws their cards
+    under that turn's reply, whatever the model called or did not call."""
+    if not session:
+        raise HTTPException(status_code=400, detail="session is required")
+
+    def read():
+        flow = _sibling("purchase_flow.py", "alice_purchase_flow")
+        return {"sets": flow.sets_between(_hermes_root(), session, since, until)}
+
+    return JSONResponse(await asyncio.to_thread(read), headers=_NO_STORE)
+
+
 def _errand_or_404(errand_id: str) -> Dict[str, Any]:
     entry = _errands_module().get(_hermes_root(), errand_id)
     if entry is None:
@@ -2623,8 +2644,8 @@ async def errands_list() -> JSONResponse:
     """Every errand, newest first. An errand left working by a restart goes on from here."""
     def read():
         module, root = _errands_module(), _hermes_root()
-        module.expire_checkouts(root)
-        module.ensure_running(root)
+        # Each upkeep step on its own: one failing never hides the person's errands.
+        module.sweep(root)
         return [module.public(e) for e in module.listing(root)]
 
     return JSONResponse({"errands": await asyncio.to_thread(read)}, headers=_NO_STORE)
@@ -2657,6 +2678,10 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
         checkout = entry.get("checkout") or {}
         if checkout.get("id") == body.checkout_id and checkout.get("status") == "expired":
             raise HTTPException(status_code=409, detail="Este checkout ha caducado: prepáralo de nuevo.")
+        # The same answer sent twice (a timeout on the phone, a retry): it already stands.
+        already = {"allow": "approved", "deny": "denied"}[body.decision]
+        if checkout.get("id") == body.checkout_id and checkout.get("status") == already:
+            return module.public(entry)
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
@@ -2731,11 +2756,35 @@ async def errands_answer(errand_id: str, body: _ErrandAnswers) -> JSONResponse:
     def answer():
         module, root = _errands_module(), _hermes_root()
         entry = _errand_or_404(errand_id)
+        import hashlib
+
+        digest = hashlib.sha256(json.dumps(body.answers, sort_keys=True).encode("utf-8")).hexdigest()[:16]
         if entry.get("status") != "needs_input":
+            if entry.get("answered") == digest:
+                # These same answers were taken already (the phone retried after a timeout): they stand.
+                return module.public(entry)
             raise HTTPException(status_code=409, detail="Ese recado no está esperando respuestas.")
-        text = module.answer_text({k: v for k, v in body.answers.items() if str(v).strip()})
+        asked = {str(q.get("id")) for q in ((entry.get("questions") or {}).get("items") or []) if isinstance(q, dict)}
+        if any(k not in asked for k in body.answers):
+            raise HTTPException(status_code=400, detail="Esas respuestas no corresponden a las preguntas del recado.")
+        answers = {k: v for k, v in body.answers.items() if str(v).strip()}
+        text = module.answer_text(answers)
         if not text:
             raise HTTPException(status_code=400, detail="Faltan las respuestas.")
+        if (entry.get("questions") or {}).get("fields"):
+            # Delivery details asked before the shop: kept, so no errand asks them again.
+            try:
+                ask = _ask_person()
+                with _profile_scope(_known_profile(entry.get("profile") or "default")):
+                    from hermes_constants import get_hermes_home
+
+                    home = Path(get_hermes_home())
+                    kept = ask.load_details(home)
+                    kept.update({k: str(v) for k, v in answers.items() if k in ask.FIELDS})
+                    ask.save_details(home, kept)
+            except Exception:  # noqa: BLE001 — the errand still gets the answers in its message
+                logging.getLogger(__name__).warning("errands: could not keep the delivery details", exc_info=True)
+        module.update(root, errand_id, answered=digest)
         module.resume(root, errand_id, text)
         return module.public(module.get(root, errand_id) or entry)
 
@@ -2759,7 +2808,9 @@ async def errands_approval(errand_id: str, body: _ErrandApproval) -> JSONRespons
         module, root = _errands_module(), _hermes_root()
         entry = _errand_or_404(errand_id)
         pending = entry.get("approval") or {}
-        if not pending or (body.request_id and pending.get("request_id") != body.request_id):
+        if not body.request_id:
+            raise HTTPException(status_code=400, detail="Falta la confirmación a la que respondes.")
+        if not pending or pending.get("request_id") != body.request_id:
             raise HTTPException(status_code=409, detail="No hay ninguna confirmación pendiente.")
         gateway = module.Gateway(root, entry.get("profile") or "")
         if not gateway.approve(pending.get("run_id") or "", body.choice, pending.get("request_id") or ""):
@@ -2823,6 +2874,9 @@ async def errands_continue(errand_id: str, body: _ErrandGoOn) -> JSONResponse:
         offer = before.get('offer') or {}
         if offer and not offer.get('quote_ref'):
             raise HTTPException(status_code=409, detail="Esta oferta antigua no tiene un precio comprobado. Pide a Alice que vuelva a comprobar los formatos antes de iniciar otra compra.")
+        if before.get("status") == "working":
+            # «Seguir» pressed twice: the errand is already going on.
+            return module.public(before)
         entry = module.go_on(root, errand_id, accept_price=body.accept_price)
         if entry is None:
             raise HTTPException(status_code=409, detail="Este recado ya no está parado.")

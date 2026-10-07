@@ -44,6 +44,11 @@ def without_quote(text: Any) -> str:
 PURCHASE_REQUEST = re.compile(
     r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito"
     r"|buy|order|purchase)\b", re.I)
+# «Pídeme cita», «order a taxi», «pide hora»: an errand, not a purchase (nothing is bought in a
+# shop), so it must be able to start from words.
+NOT_A_PURCHASE = re.compile(
+    r"\b(cita|hora|turno|mesa|taxi|cabify|uber|reserva\w*|appointment|booking|table|ride|cab|"
+    r"consulta|visita|entrada|billete|ticket|vuelo|hotel|m[eé]dico|dentista)\b", re.I)
 # What a button that fills a cart or goes to checkout says (the paying ones are errands.PAY_WORDS).
 CART_WORDS = re.compile(
     r"(a[nñ]adir (a la cesta|al carrito)|add to (cart|bag|basket)|agregar al carrito|a la cesta|al carrito"
@@ -89,7 +94,13 @@ def _read(path: Path) -> List[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return data if isinstance(data, list) else []
-    except (OSError, ValueError):
+    except OSError:
+        return []
+    except ValueError:
+        try:
+            path.rename(Path(str(path) + f".corrupt-{int(time.time())}"))
+        except OSError:
+            pass
         return []
 
 
@@ -141,7 +152,14 @@ def requested_identity(request: str) -> Tuple[str, bool]:
     found = re.search(r'\b(marca|brand|de|en|from|by)\s+[«"\']?([\w&+.-]+(?:\s+[\w&+.-]+){0,2})[»"\']?[.!?]*\s*$', request, re.I)
     if not found:
         return "", False
-    return _normalized(found.group(2).rstrip(".")), found.group(1).casefold() == "en"
+    identity = _normalized(found.group(2).rstrip("."))
+    # «de 1 litro», «de 500 g», «de color azul»: a size, an amount or a feature, never a brand or
+    # a shop. Taking it for one once discarded every option as «no corresponde a 1 litro».
+    if re.search(r"\d", identity) or re.search(
+            r"^(color|talla|tama[nñ]o|sabor|size|flavou?r|colou?r|kilo|kilos|gramo|gramos|litro|litros|ml|cm|mm|"
+            r"unidad|unidades|pack|caja|cajas|bote|botes|siempre|casa|regalo|hoy|ma[nñ]ana)\b", identity):
+        return "", False
+    return identity, found.group(1).casefold() == "en"
 
 
 def matches_identity(option: Dict[str, Any], identity: str, store_only: bool) -> bool:
@@ -191,9 +209,22 @@ ZONE_COUNTRY = {
     "Europe/Madrid": "ES", "Atlantic/Canary": "ES", "Africa/Ceuta": "ES", "Europe/Lisbon": "PT",
     "Europe/Paris": "FR", "Europe/Rome": "IT", "Europe/Berlin": "DE", "Europe/Andorra": "AD",
     "Europe/London": "GB", "America/Mexico_City": "MX",
+    "Europe/Dublin": "IE", "Europe/Amsterdam": "NL", "Europe/Brussels": "BE", "Europe/Vienna": "AT",
+    "Europe/Helsinki": "FI", "Europe/Athens": "GR", "Europe/Luxembourg": "LU", "Europe/Bratislava": "SK",
+    "Europe/Ljubljana": "SI", "Europe/Tallinn": "EE", "Europe/Riga": "LV", "Europe/Vilnius": "LT",
+    "Europe/Zagreb": "HR", "Asia/Nicosia": "CY", "Europe/Malta": "MT", "Atlantic/Madeira": "PT",
+    "Atlantic/Azores": "PT", "Europe/Monaco": "MC", "Europe/Zurich": "CH", "Europe/Warsaw": "PL",
+    "Europe/Prague": "CZ", "Europe/Stockholm": "SE", "Europe/Copenhagen": "DK", "Europe/Oslo": "NO",
+    "Europe/Budapest": "HU", "Europe/Bucharest": "RO", "America/New_York": "US", "America/Chicago": "US",
+    "America/Denver": "US", "America/Los_Angeles": "US", "America/Phoenix": "US", "America/Toronto": "CA",
+    "America/Vancouver": "CA", "America/Bogota": "CO", "America/Argentina/Buenos_Aires": "AR",
+    "America/Santiago": "CL", "America/Lima": "PE", "America/Sao_Paulo": "BR",
 }
-EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU"}
-COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF"}
+EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU", "SK", "SI", "EE", "LV",
+        "LT", "HR", "CY", "MT", "MC"}
+COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF", "PL": "PLN", "CZ": "CZK", "SE": "SEK",
+                    "DK": "DKK", "NO": "NOK", "HU": "HUF", "RO": "RON", "CA": "CAD", "CO": "COP", "AR": "ARS",
+                    "CL": "CLP", "PE": "PEN", "BR": "BRL"}
 
 
 def iso_country(value: Any) -> str:
@@ -275,6 +306,8 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
         price_cents, read_currency = amount
         money = money or read_currency
         price = _money().text(price_cents, money)
+        promotion = _money().parse(option.get("promotional_price"), money)
+        promotional_price = _money().text(*promotion) if promotion and 0 < promotion[0] < price_cents else ""
         checkout_url = str(option.get("checkout_url") or "").strip()
         kept.append({
             "id": f"{key}-{index + 1}", "title": title, "merchant": _clean(option.get("merchant"), 80),
@@ -283,6 +316,10 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
             "channel": channel, "catalog_id": _clean(option.get("catalog_id"), 120),
             "checkout_url": checkout_url if checkout_url.startswith("https://") else "",
             "recommended": bool(option.get("recommended")), "why": _clean(option.get("why"), 200),
+            "price_note": _clean(option.get("price_note"), 160),
+            "promotional_price": promotional_price, "promotion_code": _clean(option.get("promotion_code"), 40),
+            # The public code the checked price rests on; the errand applies it before its own check.
+            "coupon": _clean(option.get("coupon") or (option.get("promotion_code") if promotional_price else ""), 40),
         })
     # One recommendation exactly: the first the model marked, or the first card.
     marked = False
@@ -361,7 +398,8 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
     key = kept[0]["id"].split("-")[0]
     with _locked(home) as path:
         sets = [s for s in _read(path) if now - float(s.get("at") or 0) < KEEP and not (s.get("key") == key and s.get("session") == _clean(session, 160))]
-        sets.append({"key": key, "session": _clean(session, 160), "options": kept, "chosen": None, "at": now})
+        sets.append({"key": key, "session": _clean(session, 160), "options": kept, "chosen": None, "at": now,
+                     "request": _clean(requested, 300)})
         _write(path, sets)
     return {"ok": True, "set": key, "options": [{"id": o["id"], "title": o["title"], "price": o["price"]}
                                                 for o in kept],
@@ -376,10 +414,76 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
                         if adjusted else ""))}
 
 
+def recommendation_reply(home: Path, session: str, since: float, *, now=None):
+    """The delivered recommendation is rendered from the same stored option as the badge.
+    Only sets published in this turn qualify; selection/checkout replies are never replaced.
+    """
+    now = now or time.time()
+    with _locked(home) as path:
+        sets = [s for s in _read(path) if s.get('session') == session and s.get('options')
+                and not s.get('chosen') and float(s.get('at') or 0) >= since
+                and now-float(s.get('at') or 0) < KEEP]
+        if not sets: return None
+        shown = max(sets,key=lambda s:float(s['at']))
+        best = next((o for o in shown['options'] if o.get('recommended')),None)
+        if not best: return None
+        title = best['title']
+        variant = best.get('variant') or ''
+        if variant and variant.casefold() not in title.casefold(): title += ' · ' + variant
+        price = best.get('promotional_price') or best['price']
+        coupon = (' Con cupón ' + best.get('promotion_code','') + ', sujeto a sus condiciones.') if best.get('promotional_price') else ''
+        return 'Te recomiendo **' + title + '** por **' + price + '**.' + coupon + '\n\nElige la tarjeta que prefieras para continuar.'
+
+
+def sets_between(home: Path, session: str, since: float, until: Optional[float] = None,
+                 now: Optional[float] = None) -> List[Dict[str, Any]]:
+    """The option sets shown in a chat during one turn (by when they were shown), newest last: the
+    app draws their cards under that turn's reply whether or not the model's call for them is in
+    the transcript (it showed them itself, or it answered without calling anything)."""
+    now = now or time.time()
+    found = [s for s in _read(_path(home)) if s.get("session") == session and s.get("options")
+             and now - float(s.get("at") or 0) < KEEP
+             and float(s.get("at") or 0) >= float(since or 0)
+             and (until is None or float(s.get("at") or 0) < float(until))]
+    found.sort(key=lambda s: float(s.get("at") or 0))
+    return [{"key": s["key"], "at": s["at"], "chosen": s.get("chosen"), "count": len(s["options"]),
+             "aliases": list(s.get("aliases") or [])} for s in found]
+
+
+def _words(text: Any) -> set:
+    """The product words of a request, as six-letter stems: not the asking («compra», «quiero»)."""
+    return {w[:6] for w in _normalized(text).split()
+            if len(w) > 3 and not PURCHASE_REQUEST.search(w) and w not in ("quiero", "necesito", "puedes", "podrias", "porfa")}
+
+
+def reshow(home: Path, session: str, request: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+    """The person asks again for what was already searched and shown in this chat (nothing chosen):
+    the same cards are shown again, now, instead of a new search or an answer from memory with no
+    cards under it. The set is stamped with this moment so it lands under this turn's reply."""
+    now = now or time.time()
+    asked = _words(request)
+    identity = requested_identity(request)
+    if not asked:
+        return None
+    with _locked(home) as path:
+        sets = _read(path)
+        for found in sorted(sets, key=lambda s: -float(s.get("at") or 0)):
+            if (found.get("session") != session or found.get("chosen") or not found.get("options")
+                    or now - float(found.get("at") or 0) >= KEEP):
+                continue
+            words = _words(found.get("request") or "") or {w for o in found["options"] for w in _words(o.get("title"))}
+            same_identity = not found.get("request") or requested_identity(found["request"]) == identity
+            if asked & words and same_identity:
+                found["at"] = now
+                _write(path, sets)
+                return found
+    return None
+
+
 def options_set(home: Path, key: str, session: Optional[str] = None,
                 now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     now = now or time.time()
-    matches = [s for s in _read(_path(home)) if s.get("key") == key
+    matches = [s for s in _read(_path(home)) if (s.get("key") == key or key in (s.get("aliases") or []))
                and now - float(s.get("at") or 0) < KEEP
                and (session is None or s.get("session") == session)]
     # Older callers without a session must never receive another chat's ambiguous set.
@@ -405,7 +509,7 @@ def choose(home: Path, session: str, option_id: str, now: Optional[float] = None
     key = str(option_id or "").split("-")[0]
     with _locked(home) as path:
         sets = _read(path)
-        found = next((s for s in sets if s.get("key") == key and s.get("session") == session
+        found = next((s for s in sets if (s.get("key") == key or key in (s.get("aliases") or [])) and s.get("session") == session
                       and now - float(s.get("at") or 0) < KEEP), None)
         picked = next((o for o in (found or {}).get("options") or [] if o.get("id") == option_id), None)
         if picked is None:
@@ -429,7 +533,7 @@ def chosen_id(text: Any) -> Optional[str]:
 def is_purchase_request(text: Any) -> bool:
     text = " ".join(without_quote(text).split())
     return bool(text) and not text.startswith(("[respuesta:", "[elecci", "[Continuing")) \
-        and bool(PURCHASE_REQUEST.search(text))
+        and bool(PURCHASE_REQUEST.search(text)) and not NOT_A_PURCHASE.search(text)
 
 
 def is_cart_action(tool_name: str, args: Any) -> bool:
@@ -445,7 +549,7 @@ def is_cart_action(tool_name: str, args: Any) -> bool:
 
 def offer(chosen: Dict[str, Any]) -> Dict[str, Any]:
     """The chosen option as the errand keeps it: exactly what to buy, where and for how much."""
-    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition")
+    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition", "coupon")
     return {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
 
 
@@ -488,7 +592,8 @@ def context_block(details: Dict[str, str], cards: List[Dict[str, Any]], recent: 
 
 def turn_note(block: str) -> str:
     return (block + " Sigue «Comprar»: nunca ofrezcas una opción que no hayas visto; si lo que falta depende de lo que "
-            "vende la tienda (formato, talla, sabor), mira primero la tienda y el catálogo (`catalog_search`) y "
+            "vende la tienda (formato, talla, sabor), mira primero la tienda (`catalog_search` solo dice dónde se "
+            "vende; sus resultados no se pueden enseñar como tarjetas) y "
             "enseña lo comprable como tarjetas con `purchase_options`, no como preguntas. En el chat no se llena "
             "ningún carrito ni se paga. Una portada o una ficha de otro producto no demuestra que el solicitado no exista. "
             "No declares falta de disponibilidad ni propongas sustituciones desde una búsqueda parcial: revisa la "
@@ -545,8 +650,8 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
         "Step 5 of buying, in the chat: show the person, as product cards, the options you verified — a real "
         "product page (https), in stock, priced in their currency — with your recommendation marked. 1 to 6 "
         "options, once per search. Nothing is bought. Options the plugin cannot verify are left out and "
-        "listed in `discarded`. Then end your turn: the person taps one or says which, and the purchase "
-        "starts with `errand_start` and that `option_id`."
+        "listed in `discarded`. Then end your turn: the person taps one and the purchase starts by itself "
+        "(words such as «la segunda» do not choose; if they answer in words, ask them to tap the card)."
     ),
     "parameters": {"type": "object", "properties": {
         "search_id": {"type": "string", "description": "Inventory returned by purchase_discover; all formats must be quoted or discarded"},

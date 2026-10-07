@@ -75,7 +75,14 @@ def _locked(home: Path):
 def _read(path: Path) -> List[Dict[str, Any]]:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except OSError:
+        return []
+    except ValueError:
+        # Kept aside, never overwritten by the next write: it may hold a payment's only trace.
+        try:
+            path.rename(Path(str(path) + f".corrupt-{int(time.time())}"))
+        except OSError:
+            pass
         return []
     return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
 
@@ -115,7 +122,8 @@ def record(home: Path, site: str, session: str = "", now: Optional[float] = None
                       and e.get("session") == session and e.get("status") in ("pending", "unknown")
                       and now - float(e.get("at") or 0) < REFILL), None)
         if again is not None:
-            # A refill of the same payment: one entry, still waiting for its outcome.
+            # A refill of the same payment: one entry, still waiting for its outcome. Whether its
+            # pay button was pressed (`pressed`) stays as it was: a refill does not undo a press.
             again.update({"at": now, "status": "pending"})
             _write(path, entries)
             return again
@@ -125,7 +133,11 @@ def record(home: Path, site: str, session: str = "", now: Optional[float] = None
 
 
 def settle(home: Path, site: str, outcome: str, order: str = "", total: str = "",
-           now: Optional[float] = None) -> Dict[str, Any]:
+           now: Optional[float] = None, ensure_session: str = "") -> Dict[str, Any]:
+    """Writes how a payment ended. ``ensure_session`` is an errand whose checkout the person
+    approved: a payment there may have gone by a way no hook saw (PayPal, Bizum, a card kept by the
+    shop, the person finishing on the bank's page), so a known outcome is never refused for lack of
+    an entry — the entry is made first. In a chat the refusal stands: nothing was paid there."""
     now = now or time.time()
     name = shop(site)
     if outcome not in OUTCOMES:
@@ -135,6 +147,11 @@ def settle(home: Path, site: str, outcome: str, order: str = "", total: str = ""
     with _locked(home) as path:
         entries = _read(path)
         recent = [e for e in entries if e.get("shop") == name and now - float(e.get("at") or 0) < WINDOW]
+        if not recent and ensure_session:
+            entry = {"id": secrets.token_hex(6), "shop": name, "at": now, "session": ensure_session,
+                     "status": "pending", "unseen": True}
+            entries = [e for e in entries if now - float(e.get("at") or 0) < KEEP] + [entry]
+            recent = [entry]
         if not recent:
             return {"ok": False, "error": f"no card payment recorded on {name} in the last 24 hours"}
         target = next((e for e in reversed(recent) if e.get("status") == "pending"), recent[-1])
@@ -149,8 +166,13 @@ def _ago(seconds: float) -> str:
     return f"{minutes} min" if minutes < 90 else f"{round(minutes / 60)} h"
 
 
-def guard(home: Path, site: str, session: str = "", now: Optional[float] = None) -> Optional[Dict[str, str]]:
-    """A pre_tool_call directive for a card fill on ``site``, or None to let it run."""
+def guard(home: Path, site: str, session: str = "", now: Optional[float] = None,
+          in_errand: bool = False) -> Optional[Dict[str, str]]:
+    """A pre_tool_call directive for a card fill on ``site``, or None to let it run.
+
+    In an errand (``in_errand``) a shop already paid is never left to an approval card the engine
+    might answer: the fill is blocked with ``kind: paid_before`` and the errand stops on it; only
+    the person's «Seguir desde aquí» on that stop lets one fill through (errands.go_on)."""
     now = now or time.time()
     name = shop(site)
     if not name:
@@ -182,6 +204,10 @@ def guard(home: Path, site: str, session: str = "", now: Optional[float] = None)
             + (f" (pedido {last['order']})" if last.get("order") else "")
             if last["status"] == "paid"
             else f"hace {ago} se envió un pago en {name} y no se sabe si se cobró")
+    if in_errand:
+        return {"action": "block", "kind": "paid_before", "reason": f"{said[0].upper()}{said[1:]}.", "message": (
+            f"Atención: {said}. No pagues: la persona decide si este es otro pedido distinto. "
+            "Termina tu turno diciendo en una línea qué se pagó antes y que esperas su decisión.")}
     return {"action": "approve",
             "message": f"Atención: {said}. Aprueba solo si quieres pagar otra vez, en un pedido distinto.",
             # Unique: «permitir siempre» can never cover a later repeat payment.
@@ -265,9 +291,9 @@ def follow_up_script(plugin_dir: Path, home: Path, entry_id: str) -> str:
     )
 
 
-def run_tool(home: Path, args: Dict[str, Any]) -> Dict[str, Any]:
+def run_tool(home: Path, args: Dict[str, Any], ensure_session: str = "") -> Dict[str, Any]:
     return settle(home, str(args.get("site") or ""), str(args.get("outcome") or ""),
-                  str(args.get("order") or ""), str(args.get("total") or ""))
+                  str(args.get("order") or ""), str(args.get("total") or ""), ensure_session=ensure_session)
 
 
 SKILL = Path(__file__).resolve().parent / "skills" / "comprar" / "SKILL.md"

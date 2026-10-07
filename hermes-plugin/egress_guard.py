@@ -30,7 +30,7 @@ from typing import Any, Dict, Optional
 TAINT_TTL = 6 * 3600
 # Tools that bring outside words into the conversation.
 READS_OUTSIDE = re.compile(
-    r"^(web_extract|web_search|browser_\w+|browser-use\w*|fetch\w*|read_email\w*|himalaya\w*|gmail\w*|"
+    r"^(purchase_browser|web_extract|web_search|browser_\w+|browser-use\w*|fetch\w*|read_email\w*|himalaya\w*|gmail\w*|"
     r"mcp_\w*(gmail|mail|web|browse|fetch|scrape)\w*)$", re.I)
 # Tools whose arguments run code or commands.
 RUNS_CODE = {"terminal", "execute_code", "shell", "bash", "run_command"}
