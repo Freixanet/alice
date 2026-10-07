@@ -8634,7 +8634,12 @@ final class AppStore {
         draft = addressed
         draftMentions = []
         draftAttachments = []
+        // A tapped card, button or option is its own answer, never one to a quoted reply: a quote
+        // before «[elección:…]» hid the choice and the purchase never started (06-10).
+        let quoting = replyingTo
+        replyingTo = nil
         send()
+        replyingTo = quoting
         if keepsDraft {
             draft = savedDraft
             draftMentions = savedMentions
