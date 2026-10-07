@@ -177,6 +177,18 @@ class WordsTests(unittest.TestCase):
         self.assertEqual(flow.chosen_id("@compras [elección:a1b2c3d4-2] Producto"), "a1b2c3d4-2")
         self.assertIsNone(flow.chosen_id("la segunda"))
 
+    def test_the_coupon_price_shown_is_the_price_chosen(self):
+        # 06-10: the card said «23,99 € con IMBACK», the errand kept 29,99 € and stopped at 23,99 €.
+        chosen = {"id": "772ab209-1", "title": "Creatina 80 cápsulas", "price": "29,99 €", "currency": "EUR",
+                  "url": "https://www.prozis.com/x", "promotional_price": "23,99 €", "promotion_code": "IMBACK",
+                  "coupon": ""}
+        kept = flow.offer(chosen)
+        self.assertEqual((kept["price"], kept["list_price"], kept["coupon"]), ("23,99 €", "29,99 €", "IMBACK"))
+        self.assertIn("23,99 € con el cupón IMBACK", flow.task(chosen))
+        plain = flow.offer({**chosen, "promotional_price": "", "promotion_code": ""})
+        self.assertEqual(plain["price"], "29,99 €")
+        self.assertNotIn("list_price", plain)
+
     def test_a_choice_after_a_quoted_reply(self):
         # 06-10: the app sent a tapped option behind the reply being answered, and no purchase began.
         quoted = "> He encontrado cinco formatos en Prozis. Te recomiendo la de 300 g.\n\n"

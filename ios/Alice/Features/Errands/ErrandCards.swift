@@ -198,6 +198,9 @@ struct ErrandBrowserCard: View {
     let onOpen: () -> Void
 
     @State private var still: UIImage?
+    /// Once the browser has been on the shop, the page stays: a consent page, a payment frame or a
+    /// blank tab between two of the shop's pages hid it and showed it again, over and over (06-10).
+    @State private var reachedShop = false
 
     private var language: ChatLanguage { errand.language }
     private var live: LiveBrowser { store.liveBrowser }
@@ -238,6 +241,9 @@ struct ErrandBrowserCard: View {
         .accessibilityElement(children: .contain)
         .onAppear { if following { live.watch() } }
         .onDisappear { if following { live.unwatch() } }
+        .onChange(of: live.url, initial: true) { _, url in
+            if !reachedShop, BrowserDestination.reached(url, site: errand.site) { reachedShop = true }
+        }
         .onChange(of: following) { was, now in
             if was && !now { still = live.image; live.unwatch() }
             if now && !was { still = nil; live.watch() }
@@ -252,7 +258,7 @@ struct ErrandBrowserCard: View {
         case .still: return errand.status != .denied && errand.status != .stopped
         case .live:
             return errand.status != .denied && errand.status != .stopped
-                && BrowserDestination.reached(live.url, site: errand.site)
+                && (reachedShop || BrowserDestination.reached(live.url, site: errand.site))
         }
     }
 
@@ -308,7 +314,7 @@ struct ErrandProgressCard: View {
                                     .foregroundStyle(.secondary)
                             }
                             .fixedSize()
-                            if !errand.steps.isEmpty {
+                            if !doneSteps.isEmpty {
                                 Image(systemName: "chevron.down")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.secondary)
@@ -323,19 +329,18 @@ struct ErrandProgressCard: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .disabled(errand.steps.isEmpty)
+            .disabled(doneSteps.isEmpty)
             .accessibilityHint(language.pick("Shows the steps", "Muestra los pasos"))
 
             if expanded {
+                // What was done, in order. The action under way is the line below, not repeated here.
                 VStack(alignment: .leading, spacing: 8) {
-                    let stages = errand.milestones
-                    ForEach(Array(stages.enumerated()), id: \.offset) { index, stage in
+                    ForEach(Array(doneSteps.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Image(systemName: index == stages.count - 1 && errand.status == .working
-                                  ? "circle.dotted" : "checkmark.circle")
+                            Image(systemName: "checkmark.circle")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(stage).font(.subheadline).foregroundStyle(.secondary)
+                            Text(step).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -357,6 +362,12 @@ struct ErrandProgressCard: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    /// The actions finished: all of them once it stops, all but the one under way while it works.
+    private var doneSteps: [String] {
+        let all = errand.actions
+        return errand.status == .working ? Array(all.dropLast()) : all
     }
 
     @ViewBuilder private var statusMark: some View {
@@ -383,7 +394,7 @@ struct ErrandProgressCard: View {
             if errand.checkout?.status == .replaced {
                 return language.pick("Preparing the checkout again…", "Preparando el checkout de nuevo…")
             }
-            return errand.milestones.last ?? language.pick("Getting started…", "Empezando…")
+            return errand.actions.last ?? language.pick("Getting started…", "Empezando…")
         case .done:
             return errand.receipt?.paid == true ? language.pick("Order placed", "Pedido realizado")
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))

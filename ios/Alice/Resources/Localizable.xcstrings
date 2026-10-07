@@ -451,6 +451,16 @@
         }
       }
     },
+    "%@ asks for a verification code to continue.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ pide un código de verificación para continuar."
+          }
+        }
+      }
+    },
     "%@ because of a file error (%lld).": {
       "localizations": {
         "es": {
@@ -7801,6 +7811,26 @@
         }
       }
     },
+    "It was sent %@ to %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se ha enviado %@ a %@."
+          }
+        }
+      }
+    },
+    "It was sent %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se ha enviado %@."
+          }
+        }
+      }
+    },
     "Its notes are not deleted. They go back to Quick Notes.": {
       "localizations": {
         "es": {
@@ -14821,6 +14851,26 @@
         }
       }
     },
+    "The page does not say where it was sent.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La página no dice adónde se ha enviado."
+          }
+        }
+      }
+    },
+    "The page does not say where it was sent; your account there is %@.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La página no dice adónde se ha enviado; tu cuenta allí es %@."
+          }
+        }
+      }
+    },
     "The provider entry and its dedicated stored credential will be removed. If it is the active model route, Hermes also detaches that route.": {
       "localizations": {
         "es": {
@@ -14857,6 +14907,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "La documentación del propio servicio indica su dirección MCP."
+          }
+        }
+      }
+    },
+    "The shop": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tienda"
           }
         }
       }
@@ -16745,6 +16805,36 @@
         }
       }
     },
+    "by SMS": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "por SMS"
+          }
+        }
+      }
+    },
+    "by WhatsApp": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "por WhatsApp"
+          }
+        }
+      }
+    },
+    "by email": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "por correo"
+          }
+        }
+      }
+    },
     "carry the model change": {
       "localizations": {
         "es": {
@@ -17151,6 +17241,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "en curso"
+          }
+        }
+      }
+    },
+    "in your authenticator app": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "en tu app de autenticación"
           }
         }
       }

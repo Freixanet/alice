@@ -158,11 +158,13 @@ struct PurchaseOptionsCard: View {
                     CardImage(image: option.image, page: option.url, symbol: "bag", fits: true)
                         .frame(width: cardWidth, height: 150)
                         .clipped()
+                    // Solid, over the product's photo: a tinted outline vanished on a light or busy picture.
                     if picked {
-                        ComponentPill(text: language.pick("Chosen", "Elegida"), tint: Palette.success(scheme)).padding(8)
+                        PhotoBadge(text: language.pick("Chosen", "Elegida"), systemImage: "checkmark",
+                                   fill: Palette.success(scheme), ink: .white)
                     } else if option.recommended, !decided {
-                        ComponentPill(text: language.pick("Recommended", "Recomendada"), tint: store.accent.primary(scheme))
-                            .padding(8)
+                        PhotoBadge(text: language.pick("Recommended", "Recomendada"), systemImage: "star.fill",
+                                   fill: store.accent.control(scheme), ink: store.accent.onControl(scheme))
                     }
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -210,3 +212,26 @@ struct PurchaseOptionsCard: View {
                                                          "Abre el producto para comprarlo con Alice."))
     }
 }
+
+/// A label laid over a photo: solid, with a soft shadow, readable on any picture.
+private struct PhotoBadge: View {
+    let text: String
+    let systemImage: String
+    let fill: Color
+    let ink: Color
+
+    var body: some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .labelStyle(.titleAndIcon)
+            .imageScale(.small)
+            .lineLimit(1)
+            .foregroundStyle(ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(fill, in: .capsule)
+            .shadow(color: .black.opacity(0.25), radius: 4, y: 1)
+            .padding(8)
+    }
+}
+

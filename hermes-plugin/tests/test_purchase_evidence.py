@@ -337,3 +337,17 @@ class CartRevalidationTests(unittest.TestCase):
         changed=lambda ctx,script:'79,97 €'
         self.assertFalse(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=changed))
         self.assertFalse(prices.payment_ready(self.home,{**entry,'checkout_evidence':None},inspect=self.inspect,evaluate=self.evaluate))
+
+
+class CodeRequestTests(unittest.TestCase):
+    """06-10: a code was asked of the person on a page with no field for one."""
+
+    def test_a_code_is_asked_only_where_the_page_has_a_field_for_it(self):
+        self.assertFalse(access.code_asked({}, evaluate=lambda c, e: False))
+        self.assertTrue(access.code_asked({}, evaluate=lambda c, e: True))
+
+    def test_an_unreadable_page_does_not_hide_a_real_code_wall(self):
+        def broken(c, e):
+            raise OSError("gone")
+        self.assertTrue(access.code_asked({}, evaluate=broken))
+

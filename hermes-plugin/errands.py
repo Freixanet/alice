@@ -992,14 +992,23 @@ def blocked_by(said: str, offer: Optional[Dict[str, Any]] = None) -> Dict[str, A
         # Extra units in the basket (left from another try, a double click) are the agent's to
         # remove, never a price for the person to accept.
         return {"kind": "other"}
-    if re.search(r"\b(precio|price|cuesta|cobra)\b", said, re.I):
+    # «precio 34,99 €», «cobra 34,99 €», «la ficha permite 80 cápsulas por 23,99 €»: another price.
+    if re.search(r"\b(precio|price|cuesta|cobra|vale|costs?)\b|\bpor\s+[\d€$]", said, re.I):
+        currency = (offer or {}).get("currency") or ""
+        chosen = _money().parse(str((offer or {}).get("price") or ""), currency) if offer else None
+        # The first amount said is the shop's («23,99 €, no por los 29,99 € elegidos»); a crossed-out
+        # one comes after it («24,49 € frente a 34,99 € tachados»).
         found = PRICE.search(said)
         if found:
             price = " ".join(found.group(1).split())
-            if offer and _money().same(price, offer.get("price"), offer.get("currency") or ""):
+            if offer and _money().same(price, offer.get("price"), currency):
                 return {"kind": "other"}
             if offer and _multiple(price, offer):
                 return {"kind": "other"}
+            seen = _money().parse(price, currency)
+            if chosen and seen and 0 < seen[0] < chosen[0]:
+                # Cheaper than chosen only got better for the person: never a reason to stop.
+                return {"kind": "cheaper", "price": price}
             return {"kind": "price", "price": price}
     if re.search(r"navegador|browser|controles|controls", said, re.I):
         return {"kind": "other"}
@@ -1112,17 +1121,20 @@ def _offer_lines(offer: Dict[str, Any]) -> str:
         f"({offer.get('currency') or ''}). {start} Compra eso y nada más: no lo cambies por otro producto, "
         "otra variante u otra tienda. Empieza con la cesta solo con esta opción: si tiene otros artículos de "
         "intentos anteriores, quítalos sin preguntar, y si tiene más unidades de las elegidas, déjala en "
-        f"{offer.get('qty') or 1} sin preguntar: eso no es un cambio de precio. Si ya no está disponible, la variante no existe o el precio es otro, no "
-        "sigas: termina tu turno con una sola línea «BLOQUEADO: precio 34,99 € — por qué» (con el precio que "
-        "cobra la cesta, solo si difiere del elegido) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
+        f"{offer.get('qty') or 1} sin preguntar: eso no es un cambio de precio. Si la ficha o la cesta piden lo mismo o menos (un cupón, una oferta), "
+        "sigue con ese precio: no es un cambio que la persona deba aceptar. Si ya no está disponible, la "
+        "variante no existe o el precio es mayor, no sigas: termina tu turno con una sola línea «BLOQUEADO: "
+        "precio 34,99 € — por qué» (con el precio que cobra la cesta) o «BLOQUEADO: qué ha cambiado». Un precio anterior "
         "tachado no es un cambio: selecciona la variante, añade el producto y verifica el precio en la cesta. "
         "Si la tienda pide un dato de la persona que no tienes (fecha de nacimiento, DNI, teléfono…), no es un "
         "bloqueo: pregúntalo con `ask_person` con su `field` y termina el turno; sigue cuando llegue. "
         "Si hay un error de código o una página vacía, corrígelo y vuelve a inspeccionar; no concluyas que faltan "
         "controles a partir de una consulta fallida. La persona decide si sigue."
-        + (f" El precio elegido lleva el cupón «{offer['coupon']}», que la cesta aceptó al comprobarlo: aplícalo en "
-           "la cesta antes de `purchase_check_cart`; si la tienda ya no lo acepta, el precio es otro: «BLOQUEADO: "
-           "precio … — el cupón ya no se aplica»." if offer.get("coupon") else "")
+        + (f" El precio elegido lleva el cupón «{offer['coupon']}»"
+           + (f" ({offer['list_price']} sin él)" if offer.get("list_price") else "")
+           + ": aplícalo en la cesta antes de `purchase_check_cart`. Si la tienda ya no lo acepta y cobra más que "
+           "el precio elegido, es otro precio: «BLOQUEADO: precio … — el cupón ya no se aplica»."
+           if offer.get("coupon") else "")
     )
 
 
@@ -1319,7 +1331,7 @@ def _alice_own_context():
             _owned = cdp("Target.getTargetInfo", targetId=_tid).get("targetInfo") or {{}}
             if _owned.get("browserContextId") != _ctx:
                 raise RuntimeError("La pestaña guardada no pertenece al contexto del recado.")
-        # Keep page transitions running without activating the macOS browser window.
+        # alice: keep page transitions running without activating the macOS browser window.
         switch_tab(_tid)
         cdp("Emulation.setFocusEmulationEnabled", enabled=True)
         _saved = {{"context": _ctx, "target": _tid, "daemon": _dpid}}
@@ -1763,6 +1775,7 @@ class Engine:
         previous = ""
         repeat_recoveries = 0
         self_fixed = False
+        went_cheaper = False
         stalls = 0
         judge_failures = 0
         outcome_asked = 0
@@ -1896,6 +1909,20 @@ class Engine:
                             continue
                     except Exception:
                         pass  # Cannot verify the page/origin: preserve the explicit access block.
+                if blocked["kind"] == "cheaper" and not went_cheaper:
+                    # The shop asks less than the option chosen (a coupon or a sale the card already
+                    # promised): the person's choice only got better. It goes on at that price; the
+                    # final total is still approved before anything is paid.
+                    went_cheaper = True
+                    offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else {}
+                    update(self.home, self.errand_id, offer={**offer, "price": blocked["price"]})
+                    text = (CONTINUATION + f" La tienda cobra {blocked['price']}, menos que los {offer.get('price')} "
+                            "elegidos: no es un motivo para parar. Sigue con esa misma opción a ese precio, añádela "
+                            "a la cesta, comprueba el total con `purchase_check_cart` y llega hasta `checkout_request`. "
+                            "Menciona la diferencia en el resumen final.")
+                    continue
+                if blocked["kind"] == "cheaper":
+                    blocked = {"kind": "other"}
                 if blocked["kind"] == "datum":
                     # A datum only the person has (date of birth, ID number): one question in the
                     # errand's card, kept for every later purchase; the errand goes on with it.
@@ -1912,7 +1939,7 @@ class Engine:
                             "El precio tachado es el precio anterior, no un cambio del precio elegido. Si el precio actual "
                             "coincide con el elegido, añade el producto y comprueba el total en la cesta; no pidas aceptar "
                             "el mismo precio. Luego sigue hasta el paso de pago y llama a `checkout_request`. Solo si la tienda ya "
-                            "no vende esa opción o cobra otro precio, termina con «BLOQUEADO: …».")
+                            "no vende esa opción o cobra más, termina con «BLOQUEADO: …».")
                     continue
                 return self._stuck(said, blocked=blocked)
             receipt = entry.get("receipt") or {}

@@ -36,6 +36,8 @@ class PurchaseBrowserTests(unittest.TestCase):
         return 'https://shop.example', {}, None
 
     def evaluate(self, ctx, script):
+        if script == browser.CONSENT_JS:
+            return ''
         if script == browser.SNAPSHOT_JS:
             return copy.deepcopy(self.snapshot)
         if script == errands.PAYMENT_STEP_JS:
@@ -133,7 +135,7 @@ class PurchaseBrowserTests(unittest.TestCase):
     def test_lost_response_after_page_change_does_not_repeat_the_side_effect(self):
         original = self.evaluate
         def lost(ctx, script):
-            if script not in (browser.SNAPSHOT_JS, errands.PAYMENT_STEP_JS):
+            if script not in (browser.SNAPSHOT_JS, browser.CONSENT_JS, errands.PAYMENT_STEP_JS):
                 original(ctx, script)
                 raise OSError('response lost after remote action')
             return original(ctx, script)
@@ -179,7 +181,7 @@ class PurchaseBrowserTests(unittest.TestCase):
         args.update(action='fill',value='12345')
         original=self.evaluate
         def correction(ctx,script):
-            if script not in (browser.SNAPSHOT_JS,errands.PAYMENT_STEP_JS):
+            if script not in (browser.SNAPSHOT_JS,browser.CONSENT_JS,errands.PAYMENT_STEP_JS):
                 self.snapshot['controls'][0].update(filled=True,invalid=False,edit='2')
                 return {'acted':True}
             return original(ctx,script)
@@ -190,3 +192,19 @@ class PurchaseBrowserTests(unittest.TestCase):
         self.assertIn('envía una vez',after['next'])
         self.assertIn('envía una vez',self.step({'action':'observe'})['next'])
         self.assertNotEqual(errands.get(self.home,self.entry['id'])['status'],'done')
+
+
+class LivelyPageTests(unittest.TestCase):
+    """06-10: a page whose text moves (a carousel, a countdown) made every action «stale»."""
+
+    def test_changing_free_text_is_the_same_observation(self):
+        base = {'url': 'https://shop.example/p', 'document': 'd', 'headings': ['Creatina'], 'errors': [],
+                'busy': False, 'controls': [], 'visible_text': 'Quedan 10:00'}
+        later = {**base, 'visible_text': 'Quedan 09:59'}
+        self.assertEqual(browser.signature(base), browser.signature(later))
+        self.assertNotEqual(browser.signature(base), browser.signature({**base, 'headings': ['Cesta']}))
+
+    def test_a_cookie_banner_is_answered_by_rejecting_never_accepting(self):
+        self.assertIn('reject', browser.CONSENT_JS.lower())
+        self.assertNotRegex(browser.CONSENT_JS, r'accept-?all|aceptar todas')
+

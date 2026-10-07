@@ -665,6 +665,11 @@ class AuditFixTests(Base):
             self.assertEqual(errands.blocked_by(said, offer), {"kind": "other"})
         self.assertEqual(errands.blocked_by("precio 34,99 € en la cesta", offer), {"kind": "price", "price": "34,99 €"})
         self.assertEqual(errands.blocked_by("el navegador no está disponible", offer), {"kind": "other"})
+        # 06-10: cheaper at the shop is not a stop, and it is read without the word «precio».
+        chosen = {"price": "29,99 €", "currency": "EUR"}
+        self.assertEqual(errands.blocked_by("la ficha permite 80 cápsulas veganas por 23,99 €, no por los 29,99 € "
+                                            "elegidos", chosen), {"kind": "cheaper", "price": "23,99 €"})
+        self.assertEqual(errands.blocked_by("precio 31,99 € en la cesta", chosen), {"kind": "price", "price": "31,99 €"})
         entry = errands.create(self.home, "Comprar", offer=offer)
         gateway = FakeGateway([done("BLOQUEADO: precio 24,49 € en la ficha frente a 34,99 € tachados"),
                                done("BLOQUEADO: no se pudo confirmar la cesta")])

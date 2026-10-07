@@ -550,14 +550,22 @@ def is_cart_action(tool_name: str, args: Any) -> bool:
 def offer(chosen: Dict[str, Any]) -> Dict[str, Any]:
     """The chosen option as the errand keeps it: exactly what to buy, where and for how much."""
     keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition", "coupon")
-    return {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
+    kept = {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
+    # The card showed the price with its coupon («23,99 € con IMBACK»): that is the price chosen, and
+    # the coupon goes with it. Kept at the list price, the errand stopped at the shop's 23,99 € (06-10).
+    promotional, code = chosen.get("promotional_price"), chosen.get("promotion_code") or chosen.get("coupon")
+    if promotional and code:
+        kept.update(price=promotional, list_price=chosen.get("price"), coupon=code)
+    return kept
 
 
 def task(chosen: Dict[str, Any]) -> str:
     variant = f" ({chosen['variant']})" if chosen.get("variant") else ""
     shop = f" en {chosen['merchant']}" if chosen.get("merchant") else ""
-    return (f"Comprar {chosen['title']}{variant} × {chosen.get('qty') or 1}{shop} por {chosen['price']}: "
-            f"{chosen['url']}")
+    code = chosen.get("promotion_code") or chosen.get("coupon")
+    price = (f"{chosen['promotional_price']} con el cupón {code}"
+             if chosen.get("promotional_price") and code else chosen['price'])
+    return f"Comprar {chosen['title']}{variant} × {chosen.get('qty') or 1}{shop} por {price}: {chosen['url']}"
 
 
 def title(chosen: Dict[str, Any]) -> str:

@@ -291,12 +291,31 @@ class AccessAlreadyProvided(ValueError):
     access_already_provided = True
 
 
-def request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False):
+CODE_FIELD = r"""(()=>{const seen=e=>e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+for(const e of document.querySelectorAll('input')){
+ if(!seen(e)||e.disabled||['hidden','password','email','search','checkbox','radio','submit'].includes(e.type))continue;
+ const words=[e.autocomplete,e.name,e.id,e.placeholder,e.getAttribute('aria-label'),
+  ...(e.labels?[...e.labels].map(l=>l.innerText):[])].join(' ');
+ if(e.autocomplete==='one-time-code'||/otp|one.?time|verif|c[oó]digo|\bcode\b|pin|token|2fa|mfa/i.test(words))return true;
+ if(e.maxLength===1&&/numeric|tel|number/.test(e.inputMode+' '+e.type))return true;
+}return false})()"""
+
+
+def code_asked(context, *, evaluate=page_evaluate):
+    """Whether the page shows a field to type a verification code in. Unknown counts as asked: a
+    page that cannot be read must not keep a real code wall from the person."""
+    try:
+        return bool(evaluate(context, CODE_FIELD))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False, evaluate=page_evaluate):
     with module('purchase_flow')._locked(home):
-        return _request(home,errand_id,kind,inspect=inspect,replace=replace)
+        return _request(home,errand_id,kind,inspect=inspect,replace=replace,evaluate=evaluate)
 
 
-def _request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False):
+def _request(home, errand_id, kind='vault.save_login', *, inspect=target, replace=False, evaluate=page_evaluate):
     errands = module('errands')
     entry = errands.get(home, errand_id)
     if not entry or entry['status'] not in ('working', 'needs_login'):
@@ -307,6 +326,12 @@ def _request(home, errand_id, kind='vault.save_login', *, inspect=target, replac
         raise ValueError('La página no pertenece a la tienda elegida.')
     if kind not in ('vault.save_login', 'vault.code'):
         raise ValueError('Solicitud de acceso desconocida.')
+    if kind == 'vault.code' and not code_asked(context, evaluate=evaluate):
+        # 06-10: a code was asked of the person on a page with no code field at all (the login
+        # form had not been opened), with no reason and nowhere it was sent.
+        raise ValueError('La página no pide ningún código: no hay un campo para escribirlo. No se lo pidas a la '
+                         'persona. Abre el formulario de iniciar sesión y usa login_fill con el acceso guardado; '
+                         'pide un código solo cuando la tienda muestre su campo.')
     old = entry.get('secure_request') or {}
     if (entry['status'] == 'needs_login' and old.get('kind') == kind and
             old.get('origin') == page_origin and old.get('context') == context['context'] and

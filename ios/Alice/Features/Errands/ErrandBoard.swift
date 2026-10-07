@@ -218,16 +218,26 @@ struct ErrandStack: View {
             }
             if errand.status == .needsLogin, let request = errand.accessRequest {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
+                    let code = errand.access?.isCode == true
+                    Label(code ? errand.language.pick("Verification code", "Código de verificación")
+                               : errand.language.pick("Shop access", "Acceso a la tienda"),
+                          systemImage: code ? "number" : "lock.shield")
                         .font(.headline)
-                    Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
-                                              "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
-                    Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
+                    if code, case let .code(_, hint?) = request.kind {
+                        // Why, and where it went: never a bare «enter the code» (06-10).
+                        Text(hint)
+                    } else {
+                        Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
+                                                  "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
+                    }
+                    Button(code ? errand.language.pick("Enter the code", "Escribir el código")
+                                : errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request
                     }
                     .buttonStyle(.borderedProminent).onAccentLabel()
                     .disabled(sending)
-                    Button(errand.language.pick("Later", "Ahora no")) {
+                    Button(code ? errand.language.pick("I don’t have it", "No lo tengo")
+                                : errand.language.pick("Later", "Ahora no")) {
                         Task { _ = await store.answerSecureRequest(request, value: "") }
                     }
                     .disabled(sending)

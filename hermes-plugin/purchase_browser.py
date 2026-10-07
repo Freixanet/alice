@@ -45,8 +45,11 @@ PAY = re.compile(r'\b(pagar|pago ahora|realizar (el )?pedido|confirmar (el )?ped
 def signature(snapshot):
     # Ignore random control ids; retain document identity, field completion,
     # selected variants, quantities, validation errors and disabled/busy states.
+    # Not the page's free text: a carousel, a countdown or a stock line changes it every second,
+    # and every action on Prozis came back «stale» until the errand gave up (06-10).
     value = {**snapshot, 'url': snapshot['url'].split('#')[0],
              'controls': [{k:v for k,v in c.items() if k != 'id'} for c in snapshot['controls']]}
+    value.pop('visible_text', None)
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
 
 
@@ -63,8 +66,26 @@ def stage(snapshot):
     return 'preparing'
 
 
+# A cookie banner covers the page and takes the clicks meant for it. It is answered the most
+# private way the shop offers (reject the optional ones, or necessary only), never by accepting.
+CONSENT_JS = r'''(()=>{const seen=e=>e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
+const ids=['#onetrust-reject-all-handler','#CybotCookiebotDialogBodyButtonDecline','#didomi-notice-disagree-button',
+'[data-testid=uc-deny-all-button]','.qc-cmp2-summary-buttons button[mode=secondary]','#truste-consent-required',
+'.cmplz-deny','#cookiescript_reject','.cc-deny','[data-cookiefirst-action=reject]'];
+for(const q of ids){const e=document.querySelector(q);if(seen(e)){e.click();return q;}}
+const words=/^(rechazar( todas?| todo| cookies)?|solo (las )?(necesarias|esenciales)|usar solo (las )?necesarias|continuar sin aceptar|denegar|reject( all)?|decline( all)?|only (necessary|essential)|necessary only|refuse|tout refuser|refuser)$/i;
+const box=Array.from(document.querySelectorAll('[id*=cookie i],[class*=cookie i],[id*=consent i],[class*=consent i],[aria-label*=cookie i],[role=dialog]')).filter(seen);
+for(const b of box){for(const e of b.querySelectorAll('button,a,[role=button]')){
+const t=String(e.innerText||e.textContent||'').replace(/\s+/g,' ').trim();if(seen(e)&&words.test(t)){e.click();return t;}}}
+return '';})()'''
+
+
 def observe(entry, inspect, evaluate):
     origin, context, _ = inspect(entry)
+    try:
+        evaluate(context, CONSENT_JS)
+    except Exception:  # noqa: BLE001 — a banner left there is read as part of the page
+        pass
     snapshot = evaluate(context, SNAPSHOT_JS)
     if not isinstance(snapshot, dict) or not isinstance(snapshot.get('controls'), list):
         raise ValueError('No se pudo observar la página del recado. No repitas el último clic.')
@@ -213,7 +234,10 @@ def _run(home, entry, args, errands, inspect, evaluate, sleep):
     changed = after['observation_id'] != before['observation_id']
     metadata['outcome'] = 'changed' if changed else 'unchanged'
     record(home, entry, after, errands, metadata)
-    errands.add_step(home, entry['id'], f"{action}: {control['label']} · " + ('cambio comprobado' if changed else 'sin cambio comprobado'), after['url'])
+    if changed:
+        # Said as the person would: «Pulsado «Añadir a la cesta»», not «click: … · cambio comprobado».
+        done = {'click': 'Pulsado', 'fill': 'Rellenado', 'select': 'Elegido'}.get(action, action)
+        errands.add_step(home, entry['id'], f"{done} «{control['label']}»", after['url'])
     return result(after, outcome=metadata['outcome'], changed=changed)
 
 

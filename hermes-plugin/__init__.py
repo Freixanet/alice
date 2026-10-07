@@ -549,6 +549,11 @@ def _errand_step(tool_name, args, session_id) -> None:
     if not session.startswith(errands.SESSION_PREFIX) or not str(tool_name or "").startswith("browser"):
         return
     code = str((args or {}).get("code") or "") if isinstance(args, dict) else ""
+    # The browser's setup put before the agent's code is Alice's, never a step: its own notes
+    # («Keep page transitions…», «Agent attachment…») were the only steps a purchase showed (06-10).
+    preamble = errands.context_preamble(session[len(errands.SESSION_PREFIX):])
+    if code.startswith(preamble):
+        code = code[len(preamble):]
     # The first comment of the agent's own: not a note put there by Alice or Hermes.
     text = next((c.strip() for c in _STEP.findall(code) if not c.strip().startswith(("alice:", "hermes:"))), "")
     if text:
