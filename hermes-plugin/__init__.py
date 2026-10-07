@@ -1884,6 +1884,10 @@ def _errand_turn(session_id="", user_message=None, **_):
             _ERRAND_TURN_IDS[session] = out["errand_id"]
             _PURCHASE_OPEN.discard(session)
             return {"context": flow.chosen_note(out, chosen)}
+        if not flow.is_purchase_request(user_message):
+            products = _module("product_list.py", "alice_product_list")
+            if products.is_research(user_message):
+                return {"context": products.TURN_NOTE}
         if flow.is_purchase_request(user_message):
             _PURCHASE_OPEN.add(session)
             _PURCHASE_REQUESTS[session] = str(user_message or "")

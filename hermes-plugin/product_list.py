@@ -11,6 +11,7 @@ with no https page or no price would be a dead or misleading card.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List
 from urllib.parse import urlsplit
 
@@ -77,3 +78,19 @@ def check(args: Dict[str, Any]) -> Dict[str, Any]:
         raise ProductListError("Mark one pick at most.")
     return {"ok": True, "shown": len(products),
             "next": "The cards are on screen. Now write one short paragraph: which to choose for what."}
+
+
+# Asking to find, compare or recommend products (not to buy them): «los mejores auriculares…»,
+# «compara estos dos portátiles», «¿qué robot aspirador me recomiendas?».
+_RESEARCH = re.compile(
+    r"\b(compar\w*|mejor(?:es)?|recomi[eé]nd\w*|recomendaci\w*|cu[aá]l(?:es)? (?:me )?(?:compro|elijo|escojo)|"
+    r"opciones de|alternativas? (?:a|al|de)|compare|best|recommend\w*|which \w+ should)\b", re.I)
+
+TURN_NOTE = ("[Alice · productos] Te piden encontrar o comparar productos, no comprarlos. Cuando tengas los "
+             "candidatos, enséñalos con product_list (tarjetas con foto, marca · tienda, precio y precio antes de "
+             "la oferta, tu elección marcada) y después escribe un solo párrafo corto: cuál elegir para qué. Nada "
+             "de tablas ni de repetir los datos de cada producto: las tarjetas ya los muestran.")
+
+
+def is_research(text: Any) -> bool:
+    return bool(_RESEARCH.search(str(text or "")))

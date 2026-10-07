@@ -28,6 +28,12 @@ class ProductListTests(unittest.TestCase):
         with self.assertRaisesRegex(product_list.ProductListError, "At most 6"):
             product_list.check({"products": [item()] * 7})
 
+    def test_comparing_and_recommending_products_is_research(self):
+        for text in ("Busca los 3 mejores auriculares con cancelación de ruido por menos de 200 €",
+                     "compara estos dos portátiles", "¿qué robot aspirador me recomiendas?"):
+            self.assertTrue(product_list.is_research(text), text)
+        self.assertFalse(product_list.is_research("¿qué tiempo hace mañana?"))
+
 
 if __name__ == "__main__":
     unittest.main()
