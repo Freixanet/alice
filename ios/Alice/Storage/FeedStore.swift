@@ -39,9 +39,11 @@ final class FeedStore {
     /// Newest first; the intro posts after the real ones, and hidden once enough real ones exist.
     var posts: [FeedPost] {
         let shown = cache.posts.filter { !$0.deleted }
+        // Debug samples (`-feedSamples`) always show, on top.
+        let samples = shown.filter { $0.isSeeded && $0.id.hasPrefix("sample-") }
         let real = shown.filter { !$0.isSeeded }
-        if real.count >= FeedSeed.retireAfter { return real }
-        return real + shown.filter(\.isSeeded)
+        if real.count >= FeedSeed.retireAfter { return samples + real }
+        return samples + real + shown.filter { $0.isSeeded && !$0.id.hasPrefix("sample-") }
     }
 
     var generation: FeedGeneration { cache.generation }
