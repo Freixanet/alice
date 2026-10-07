@@ -22,7 +22,14 @@ const nodes=Array.from(document.querySelectorAll('button,a[href],input,select,te
 const controls=nodes.map(e=>{
 if(!e.dataset.alicePurchaseControl)e.dataset.alicePurchaseControl=crypto.randomUUID();
 const label=e.labels?.[0]||document.querySelector('label[for="'+CSS.escape(e.id||'')+'"]');
-const name=String(e.getAttribute('aria-label')||text(label||e)||e.placeholder||e.name||e.id||'').slice(0,160);
+let name=String(e.getAttribute('aria-label')||text(label||e)||e.placeholder||e.name||e.id||'').slice(0,160);
+// Several «Añadir ahora» on one page (HSN: an Evowhey offer above the creatine): the page's own product
+// form names this page in its «uenc» (the others carry a «%uenc%» placeholder). Its button says so;
+// a button of another add-to-cart form says it is another product's.
+const addForms=Array.from(document.querySelectorAll('form[action*="/cart/add"]'));
+const pageForm=addForms.find(f=>/\/uenc\//.test(f.action)&&!/%25uenc%25|%uenc%/.test(f.action));
+const owner=e.form||e.closest('form');
+if(pageForm&&owner&&addForms.includes(owner))name+=owner===pageForm?' [este producto]':' [de otro producto]';
 const kind=e.tagName.toLowerCase(),type=e.type||e.getAttribute('role')||kind;
 const numeric=/number|range/.test(type)||/quantity|cantidad|qty|unidades/i.test(e.name+' '+e.id);
 // Track edits without returning or persisting a person's address/email/password.
