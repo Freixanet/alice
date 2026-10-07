@@ -94,8 +94,10 @@ struct SecureRequestSheet: View {
             // space away from it. Codes and single secrets can focus directly.
             .onAppear { if !needsIdentifier { focus = .secret } }
             .onDisappear {
-                // Swiped away: "not now", so Hermes is not left waiting on it.
-                guard !answered else { return }
+                // Swiped away: "not now", so Hermes is not left waiting on it. Not for a purchase:
+                // its card stays with «No lo tengo» / «Ahora no», and closing the sheet to go and
+                // look where the code was sent must not let the purchase go on without it (06-10).
+                guard !answered, request.errandID == nil else { return }
                 Task { _ = await store.answerSecureRequest(request, value: "") }
             }
             .interactiveDismissDisabled(working)
@@ -119,7 +121,7 @@ struct SecureRequestSheet: View {
                 Text("I have an account").tag(false)
                 Text("Create one").tag(true)
             }
-            .pickerStyle(.segmented)
+            .segments()
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
@@ -161,7 +163,7 @@ struct SecureRequestSheet: View {
             }
             if site != nil && request.errandID == nil {
                 Button(usingKey ? String(localized: "Type a code instead") : String(localized: "Never ask me for codes here")) {
-                    withAnimation { usingKey.toggle() }
+                    withMotion { usingKey.toggle() }
                     focus = .secret
                 }
                 .font(.subheadline)

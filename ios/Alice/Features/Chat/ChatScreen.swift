@@ -24,6 +24,7 @@ private struct ChatScreenContent: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
 
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
@@ -173,10 +174,6 @@ private struct ChatScreenContent: View, Equatable {
         experimentalEnabled && experimentalSection != .chat && experimentalSection != .today
     }
 
-    private var experimentalMenu: some View {
-        ExperimentalHomeMenu(selected: $experimentalSection, onSelect: selectExperimental)
-    }
-
     private func selectExperimental(_ section: ExperimentalHomeMenu.Section) {
         composerFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -202,9 +199,19 @@ private struct ChatScreenContent: View, Equatable {
             // They are laid out here instead, with the same 44pt disc and
             // the same glass the composer's controls use.
             .toolbar(.hidden, for: .navigationBar)
-            .modifier(ChatTopChrome {
+            // Register both native bars outside the painted chat surface,
+            // at matching levels, so neither has a separate background layer.
+            .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
+                composerArea
+                    // Where a reply being answered comes to rest, just above it (`ReplyFocus`).
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                        if store.composerTop != top { store.composerTop = top }
+                    }
+            })
+            .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
+                        .modifier(ReplyBackdrop())
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
@@ -263,6 +270,17 @@ private struct ChatScreenContent: View, Equatable {
                 await store.prepareHomeChatIfNeeded(conversationID: id)
             }
         }
+        // What Alice learned is said under the reply it came after (`LessonNotice`). Hermes reviews a
+        // conversation once it pauses (about 90 s), so look again a little after the last message.
+        // Keyed on the dashboard too: at launch the chat opens before the dashboard signs in, and a
+        // refresh then does nothing.
+        .task(id: "\(store.activeID ?? "")#\(store.shownConversation?.messages.count ?? 0)#\(store.dashboardReady)") {
+            guard bot == nil || bot == "default", store.activeID != nil else { return }
+            await store.refreshAgentActions()
+            try? await Task.sleep(for: .seconds(150))
+            guard !Task.isCancelled else { return }
+            await store.refreshAgentActions()
+        }
         .onReceive(NotificationCenter.default.publisher(
             for: UIResponder.keyboardWillShowNotification
         )) { note in
@@ -293,12 +311,6 @@ private struct ChatScreenContent: View, Equatable {
         if let conversation = store.shownConversation, !conversation.messages.isEmpty {
             transcript
                 .simultaneousGesture(dismissKeyboard)
-                // A real conversation reserves the live composer height so the
-                // last message still follows attachments, extra lines, and the
-                // keyboard.
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    composerArea
-                }
         } else {
             // Home is centred in the room between the header and the composer,
             // in both states: its space shrinks with the keyboard exactly as
@@ -333,18 +345,15 @@ private struct ChatScreenContent: View, Equatable {
     @ViewBuilder
     private var composerArea: some View {
         if experimentalEnabled {
-            // The round section button and the composer's own capsule, at the
-            // same 44pt height, bottom-aligned so both grow from the same
-            // baseline as the field takes more lines.
-            HStack(alignment: .bottom, spacing: 10) {
-                experimentalMenu
-                Composer(
-                    focused: $composerFocused,
-                    placeholder: placeholder,
-                    keyboardShown: keyboardShown,
-                    compact: true
-                )
-            }
+            // The composer alone, full width and centred: the round section button beside it is
+            // gone (Notes and Library are in the drawer, Routines in Settings).
+            Composer(
+                focused: $composerFocused,
+                placeholder: placeholder,
+                keyboardShown: keyboardShown,
+                compact: true
+            )
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
             .padding(.bottom, keyboardShown ? 10 : 6)
         } else {
@@ -466,7 +475,7 @@ private struct ChatScreenContent: View, Equatable {
                 // chat again is `/new`, which keeps what was said under Sessions.
                 Button {
                     Haptic.soft.play()
-                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
+                    withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { store.showingFeed = true }
                 } label: {
                     Image(systemName: "rectangle.stack")
                         .font(.system(size: 18, weight: .medium))
@@ -615,7 +624,8 @@ private struct TranscriptView: View {
 
     private func transcriptRow(
         _ message: Message, position: ChatTasks.Position?, latestBusy: Bool,
-        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef], modelChange: ModelChange? = nil
+        superseded: Bool, reaction: Reaction?, errandRefs: [ErrandRef], modelChange: ModelChange? = nil,
+        learned: [AgentAction] = []
     ) -> some View {
         let busy = (position?.isLatest ?? false) && latestBusy
         return MessageRow(
@@ -625,8 +635,11 @@ private struct TranscriptView: View {
             showsAuthor: position?.isFirst ?? true,
             actionsContent: position?.text,
             errandRefs: errandRefs,
-            modelChange: modelChange
+            modelChange: modelChange,
+            learned: learned
         )
+        // Read in its own modifier: a swipe redraws this row's effects, never the transcript.
+        .modifier(ReplyFocus(messageID: message.id))
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -657,10 +670,10 @@ private struct TranscriptView: View {
         Task { @MainActor in
             // After the page that holds it is laid out.
             try? await Task.sleep(for: .milliseconds(250))
-            withAnimation(.snappy(duration: 0.35)) { position.scrollTo(id: target, anchor: .center) }
-            withAnimation(.easeOut(duration: 0.2)) { highlighted = target }
+            withMotion(.snappy(duration: 0.35)) { position.scrollTo(id: target, anchor: .center) }
+            withMotion(.easeOut(duration: 0.2)) { highlighted = target }
             try? await Task.sleep(for: .seconds(1.8))
-            withAnimation(.easeInOut(duration: 0.6)) { highlighted = nil }
+            withMotion(.easeInOut(duration: 0.6)) { highlighted = nil }
         }
     }
 
@@ -715,6 +728,9 @@ private struct TranscriptView: View {
             session: conversation.hermesSessionID
         )
         let modelChanges = ModelChange.changes(in: conversation.messages)
+        // Alice's own chats only; hers carry no bot or the `default` profile.
+        let learned = [nil, "", "default"].contains(conversation.botName)
+            ? LessonNotice.replies(in: conversation.messages, actions: store.keptLessons) : [:]
         let start = firstShownID.flatMap { id in presented.firstIndex { $0.id == id } }
             ?? Self.windowStart(presented, before: presented.count)
         let hiddenCount = start
@@ -761,7 +777,8 @@ private struct TranscriptView: View {
                             message, position: positions[message.id], latestBusy: latestBusy,
                             superseded: answered.contains(message.id), reaction: given[message.id],
                             errandRefs: errands[message.id] ?? [],
-                            modelChange: modelChanges[message.id]
+                            modelChange: modelChanges[message.id],
+                            learned: learned[message.id] ?? []
                         )
                     }
                     if !keyboardShown, conversation.messages.contains(where: { $0.role == .user }) {
@@ -780,9 +797,8 @@ private struct TranscriptView: View {
                 // The composer's own side inset, so the conversation and the
                 // field it is written in share one column.
                 .padding(.horizontal, store.activeBotProfileForModelSelection != nil ? 20 : 18)
-                // Air under the header, so the first message does not start
-                // against the agent's portrait and name, in the space below
-                // the header rather than underneath its floating controls.
+                // The registered header already reserves its height. This extra
+                // breathing room scrolls with the messages.
                 .padding(.top, 28)
                 // Air between the last reply and the composer, so the
                 // conversation ends rather than stopping against the glass.
@@ -792,6 +808,10 @@ private struct TranscriptView: View {
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
+                .background {
+                    ProgressiveBottomScrollEdge()
+                        .allowsHitTesting(false)
+                }
             }
             .scrollIndicators(.hidden)
             .scrollPosition($position)
@@ -816,9 +836,10 @@ private struct TranscriptView: View {
             // up, so what they are reading does not move.
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
+            // Held still while a reply is in front (`AppStore.replyFocusID`).
+            .modifier(ReplyHold())
             // A soft edge below the header as earlier replies leave the viewport.
-            .scrollEdgeEffectStyle(.soft, for: .top)
-            .scrollEdgeEffectStyle(.soft, for: .bottom)
+            .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }
             .onScrollPhaseChange { oldPhase, phase in
                 readerScrolling = Self.isReader(phase)
@@ -844,6 +865,10 @@ private struct TranscriptView: View {
                 )
             } action: { old, tail in
                 lastTail = tail
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--alice-edge-capture")
+                    || ProcessInfo.processInfo.arguments.contains("--alice-top-edge-capture") { return }
+                #endif
                 // Past the end with nobody holding it: a lazy stack opens at
                 // the end of the height it estimated for rows it had not
                 // drawn, then shrinks as they draw, and the chat sat on empty
@@ -890,7 +915,7 @@ private struct TranscriptView: View {
                             // Tapped, the way back down is shown rather than cut to. Following a
                             // reply as it grows stays unanimated (see above).
                             Haptic.tap.play()
-                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.35)) {
+                            withMotion(reduceMotion ? nil : .snappy(duration: 0.35)) {
                                 position.scrollTo(edge: .bottom)
                             }
                         } label: {
@@ -908,32 +933,59 @@ private struct TranscriptView: View {
                         .accessibilityLabel("Jump to latest message")
                         .accessibilityIdentifier("chat.scrollToBottom")
                         .padding(.bottom, 2)
-                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        // Not while a reply is being answered: the chat holds still then.
+                        .modifier(ReplyHidden())
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                     }
                 }
                 // Animates the button only. On the scroll view, every crossing
                 // of the near-bottom line — which is the moment a reader starts
                 // scrolling up — animated whatever the transcript's layout was
                 // doing in that instant, and the conversation lurched.
-                .animation(.snappy(duration: 0.2), value: settled && !following)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: settled && !following)
             }
         }
     }
 }
 
-/// The portrait has its own space. Scrolled text must not remain readable
-/// through the gap around the floating portrait and name.
+/// Register the floating header with the native scroll-edge renderer. Empty
+/// chats retain their existing safe-area layout and centred welcome content.
 private struct ChatTopChrome<Header: View>: ViewModifier {
-    @Environment(\.colorScheme) private var scheme
+    let usesScrollEdges: Bool
     var header: Header
 
-    init(@ViewBuilder header: () -> Header) {
+    init(usesScrollEdges: Bool, @ViewBuilder header: () -> Header) {
+        self.usesScrollEdges = usesScrollEdges
         self.header = header()
     }
 
+    @ViewBuilder
     func body(content: Content) -> some View {
-        content.safeAreaInset(edge: .top, spacing: 0) {
-            header.background(Palette.background(scheme))
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .top, spacing: 0) { header }
+        } else {
+            content.safeAreaInset(edge: .top, spacing: 0) { header }
+        }
+    }
+}
+
+/// Attach the composer at the same level as the header, after the chat's
+/// background. Empty chats already place their own composer in chatContent.
+private struct ChatBottomChrome<ComposerContent: View>: ViewModifier {
+    let usesScrollEdges: Bool
+    var composer: ComposerContent
+
+    init(usesScrollEdges: Bool, @ViewBuilder composer: () -> ComposerContent) {
+        self.usesScrollEdges = usesScrollEdges
+        self.composer = composer()
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if usesScrollEdges {
+            content.safeAreaBar(edge: .bottom, spacing: 0) { composer }
+        } else {
+            content
         }
     }
 }

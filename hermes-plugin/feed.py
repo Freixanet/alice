@@ -719,9 +719,20 @@ class Worker:
                   publishedCount=0, error="")
         logger.info("feed: run %s started (%s)", session, ", ".join(gen.get("reasons") or [gen.get("reason")]))
         try:
-            run_id = self.gateway.start(session, prompt(self.home, started))
+            # The gateway runs a session on an explicit model; the feed uses the errands' fixed one
+            # (without it every run raised TypeError, reported as «could not reach Hermes»).
+            route = _sibling("alice_errands", "errands.py").model_selection(self.home)
         except Exception as exc:  # noqa: BLE001
+            self._settle(f"no model set for background runs: {exc}")
+            return True
+        try:
+            run_id = self.gateway.start(session, prompt(self.home, started), **route)
+        except (OSError, TimeoutError) as exc:
             self._settle(f"could not reach Hermes: {type(exc).__name__}")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("feed: run %s could not start", session)
+            self._settle(f"the run could not start: {type(exc).__name__}")
             return True
         self._set(runId=run_id)
         try:

@@ -43,7 +43,7 @@ enum NoteSaveState: Equatable, Sendable {
         case .saved: nil
         case .saving: "Saving…"
         case .retrying: "Not saved yet — retrying"
-        case .failed: "Not saved — kept on this phone"
+        case .failed: "Not saved yet — kept on this phone and sent when your Mac answers"
         }
     }
 

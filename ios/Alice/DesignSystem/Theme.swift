@@ -63,6 +63,19 @@ enum Accent: String, CaseIterable, Identifiable, Sendable {
     /// which put a white knob on a near-white track and made the switch look
     /// broken rather than on. Only that one is moved; every other accent
     /// already sits mid-tone and is passed through unchanged.
+    /// Text and glyphs drawn on a fill of `primary`: black on the dark theme's light accents, white
+    /// on the light theme's dark ones. White everywhere measured 2.3–2.8:1 on the dark accents (and
+    /// about 1.2:1 on Stone), below the 4.5:1 text needs.
+    func onFill(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? .black : .white
+    }
+
+    /// Text and glyphs drawn on a fill of `control`: Stone's dark control is a mid grey that white
+    /// reads on; every other dark control is the light primary, which needs black.
+    func onControl(_ scheme: ColorScheme) -> Color {
+        self == .stone || scheme != .dark ? .white : .black
+    }
+
     func control(_ scheme: ColorScheme) -> Color {
         switch (self, scheme) {
         case (.stone, .dark): Color(hex: 0x6C6C68)
@@ -145,7 +158,8 @@ enum Palette {
 
     /// Waiting, retrying, needs a look but nothing is lost.
     static func warning(_ scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color(hex: 0xE0B25C) : Color(hex: 0x9A6B10)
+        // 0x8A5F0C: 0x9A6B10 measured 4.22:1 on the paper background, under AA's 4.5.
+        scheme == .dark ? Color(hex: 0xE0B25C) : Color(hex: 0x8A5F0C)
     }
 
     /// Failed, refused, or about to delete.
@@ -191,4 +205,18 @@ extension View {
             .background { Palette.background(scheme).ignoresSafeArea() }
             .containerBackground(Palette.background(scheme), for: .navigation)
     }
+}
+
+
+/// The label of a `.borderedProminent` button on Alice's fills: the accent, or a state colour, both
+/// light in the dark theme. The system's white label measured 1.2–2.8:1 there.
+private struct OnAccentLabel: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+    func body(content: Content) -> some View {
+        content.foregroundStyle(scheme == .dark ? Color.black : Color.white)
+    }
+}
+
+extension View {
+    func onAccentLabel() -> some View { modifier(OnAccentLabel()) }
 }

@@ -112,6 +112,18 @@ class RecordTests(unittest.TestCase):
         self.assertIsNone(log.observe(self.root, "default", tool_name="skill_manage",
                                       args={"action": "patch", "name": "x"}, result=result, status="error"))
 
+    def test_a_staged_skill_write_is_a_proposal(self):
+        staged = '{"success": true, "staged": true, "pending_id": "abc"}'
+        entry = log.observe(self.root, "default", tool_name="skill_manage",
+                            args={"action": "create", "name": "x"}, result=staged, status="ok")
+        self.assertEqual((entry["kind"], entry["target"]), ("skill.proposed", "x"))
+
+    def test_a_lesson_carries_its_summary_and_text(self):
+        # skill_keeper._tell passes these; without them the call raised and nothing was recorded.
+        entry = log.record(self.root, profile="default", session="", tool="skill_manage", kind="skill.learned",
+                           target="calendar", ok=True, summary="Miraré las citas de esta mañana.", text="# Calendar")
+        self.assertEqual((entry["summary"], entry["text"]), ("Miraré las citas de esta mañana.", "# Calendar"))
+
     def test_since_and_profile_filter(self):
         log.record(self.root, profile="a", session="", tool="t", kind="note.saved", target="", ok=True, now=100)
         log.record(self.root, profile="b", session="", tool="t", kind="note.saved", target="", ok=True, now=200)

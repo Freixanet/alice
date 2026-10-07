@@ -179,11 +179,30 @@ class Keeper:
             return default
 
     def _write(self, name: str, data) -> None:
+        import tempfile
         self.dir.mkdir(parents=True, exist_ok=True)
         path = self.dir / name
-        temp = path.with_suffix(".tmp")
-        temp.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+        # A temporary name per write: two processes shared «entries.tmp».
+        fd, temp = tempfile.mkstemp(dir=str(self.dir), prefix="." + path.stem + ".")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, indent=1, ensure_ascii=False))
         os.replace(temp, path)
+
+    def _locked(self):
+        """One writer at a time across the gateway and the dashboard (both run this plugin)."""
+        import contextlib
+        import fcntl
+
+        @contextlib.contextmanager
+        def held():
+            self.dir.mkdir(parents=True, exist_ok=True)
+            with open(self.dir / ".lock", "w") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                try:
+                    yield
+                finally:
+                    fcntl.flock(lock, fcntl.LOCK_UN)
+        return held()
 
     def _meta(self) -> Dict[str, Any]:
         meta = self._read("entries.json", {})
@@ -200,10 +219,11 @@ class Keeper:
         return {"apply": bool(data.get("apply")), "learn": data.get("learn") is not False}
 
     def _set(self, **values) -> Dict[str, Any]:
-        data = self._read("settings.json", {})
-        data = data if isinstance(data, dict) else {}
-        data.update({k: bool(v) for k, v in values.items()}, changed_at=self.now())
-        self._write("settings.json", data)
+        with self._locked():
+            data = self._read("settings.json", {})
+            data = data if isinstance(data, dict) else {}
+            data.update({k: bool(v) for k, v in values.items()}, changed_at=self.now())
+            self._write("settings.json", data)
         return self.settings()
 
     def set_apply(self, apply: bool) -> Dict[str, Any]:
@@ -225,16 +245,17 @@ class Keeper:
         text = (text or "").strip()
         if not text or target not in TARGETS or source not in SOURCES:
             return
-        meta = self._meta()
-        key = f"{target}:{entry_id(text)}"
-        current = meta["entries"].get(key) or {}
-        # The person's word outranks an agent's: an entry they confirmed stays theirs.
-        if current.get("source") in PROTECTED and source not in PROTECTED:
-            return
-        meta["entries"][key] = {"target": target, "source": source, "session": session or None,
-                                "profile": profile or None, "created_at": at or self.now(),
-                                "first_seen": current.get("first_seen") or at or self.now()}
-        self._write("entries.json", meta)
+        with self._locked():
+            meta = self._meta()
+            key = f"{target}:{entry_id(text)}"
+            current = meta["entries"].get(key) or {}
+            # The person's word outranks an agent's: an entry they confirmed stays theirs.
+            if current.get("source") in PROTECTED and source not in PROTECTED:
+                return
+            meta["entries"][key] = {"target": target, "source": source, "session": session or None,
+                                    "profile": profile or None, "created_at": at or self.now(),
+                                    "first_seen": current.get("first_seen") or at or self.now()}
+            self._write("entries.json", meta)
 
     def scan(self, target: str) -> List[Dict[str, Any]]:
         """The current entries, each with what is known of it.

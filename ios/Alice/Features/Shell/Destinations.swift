@@ -35,6 +35,8 @@ struct AliceDestination: Identifiable, Hashable, Sendable {
         let query = needle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return false }
         if title.localizedCaseInsensitiveContains(query) { return true }
+        // The name shown, in the person's language, finds it too.
+        if String(localized: String.LocalizationValue(title)).localizedCaseInsensitiveContains(query) { return true }
         if let technical, technical.localizedCaseInsensitiveContains(query) { return true }
         return synonyms.contains { synonym in
             // Typing part of a word: "notif" finds "notifications".

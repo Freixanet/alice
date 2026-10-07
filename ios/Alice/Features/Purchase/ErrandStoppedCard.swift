@@ -13,6 +13,7 @@ struct ErrandStoppedCard: View {
     let onAcceptPrice: () -> Void
     let onRetry: () -> Void
     var onCancel: () -> Void = {}
+    var onOpenBrowser: () -> Void = {}
 
     @Environment(\.colorScheme) private var scheme
     @State private var showingOptions = false
@@ -35,15 +36,20 @@ struct ErrandStoppedCard: View {
                                                            "Comprarla a \(price.pricesKeptTogether)"),
                                       prominent: true, disabled: sending, busy: sending, tint: .approve,
                                       action: onAcceptPrice)
+            } else if errand.status == .stuck, errand.accessBlocked {
+                PurchaseCapsuleButton(title: language.pick("Open shop to sign in", "Abrir tienda para iniciar sesión"),
+                                      prominent: true, disabled: sending, action: onOpenBrowser)
+                PurchaseCapsuleButton(title: language.pick("Check sign-in and retry", "Comprobar sesión y reintentar"),
+                                      disabled: sending, busy: sending, action: onRetry)
             } else if errand.status == .stuck {
-                PurchaseCapsuleButton(title: language.pick("Carry on from here", "Seguir desde aquí"), prominent: true,
+                PurchaseCapsuleButton(title: language.pick("Retry purchase", "Reintentar compra"), prominent: true,
                                       disabled: sending, busy: sending, tint: .approve, action: onRetry)
             }
-            if setKey != nil, errand.status != .stopped {
+            if setKey != nil, errand.status != .stopped, !errand.accessBlocked {
                 PurchaseCapsuleButton(title: showingOptions ? language.pick("Hide the options", "Ocultar las opciones")
-                                                            : language.pick("See the other options", "Ver otras opciones"),
+                                                            : language.pick("Choose another product", "Elegir otro producto"),
                                       disabled: sending) {
-                    withAnimation(.snappy) { showingOptions.toggle() }
+                    withMotion(.snappy) { showingOptions.toggle() }
                 }
             }
             if errand.status == .stuck {
@@ -73,6 +79,10 @@ struct ErrandStoppedCard: View {
         case .denied: return language.pick("You cancelled this purchase.", "Has cancelado esta compra.")
         case .stopped: return language.pick("This purchase was stopped.", "Esta compra se ha detenido.")
         default:
+            if errand.accessBlocked {
+                return language.pick("Alice couldn’t complete sign-in at this shop. Open the browser to see what it asks for.",
+                                     "Alice no ha podido completar el inicio de sesión en esta tienda. Abre el navegador para ver qué te pide.")
+            }
             if let price = errand.blockedPrice {
                 let was = errand.offerPrice.map { language.pick(", not \($0.pricesKeptTogether)", ", no \($0.pricesKeptTogether)") } ?? ""
                 return language.pick("At \(errand.site.nonEmpty(or: "the shop")) it costs \(price.pricesKeptTogether) in the basket\(was).",

@@ -11,10 +11,12 @@ import UIKit
 struct RootView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @AppStorage(PerformanceHUD.key) private var showsPerformanceHUD = false
     @State private var drawerOpen = false
     @State private var drag: CGFloat = 0
+    @State private var panOpensFeed: Bool?
     /// The feed following the finger, as the drawer does: negative while it is pulled in from
     /// the right, positive while it is pushed back out.
     @State private var feedDrag: CGFloat = 0
@@ -64,6 +66,8 @@ struct RootView: View {
                     onDismiss: { setDrawer(false) }
                 )
                     .equatable()
+                    .accessibilityHidden(!drawerOpen)
+                    .accessibilityAction(.escape) { setDrawer(false) }
                     .frame(width: drawerWidth)
                     .safeAreaPadding(EdgeInsets(
                         top: proxy.safeAreaInsets.top,
@@ -77,6 +81,7 @@ struct RootView: View {
                     onBack: { goBackToBots() },
                     drawerProgress: progress
                 )
+                    .accessibilityHidden(drawerOpen)
                     .overlay {
                         // Grows with the gesture rather than appearing at the end,
                         // so the conversation hands over its prominence gradually.
@@ -269,7 +274,7 @@ struct RootView: View {
                                 if translation > drawerWidth * 0.3 || predicted > 120 {
                                     closeFeed()
                                 } else {
-                                    withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                    withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                                 }
                             }
                         )
@@ -372,7 +377,7 @@ struct RootView: View {
                 .presentationBackground(Palette.background(scheme))
                 .preferredColorScheme(store.theme.colorScheme)
             }
-            .animation(.snappy(duration: 0.28, extraBounce: 0.02), value: drawerOpen)
+            .animation(drawerAnimation, value: drawerOpen)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingBots)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingNotes)
             .animation(.snappy(duration: 0.3, extraBounce: 0.02), value: store.showingAgenda)
@@ -402,6 +407,8 @@ struct RootView: View {
                         // Sideways enough to be meant sideways.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
                         if drawerOpen { return velocity.x < 0 }
+                        // Rightward from one of Alice's replies answers that reply (`ReplySwipe`).
+                        if velocity.x > 0, Date.now.timeIntervalSince(ReplySwipe.touchedAt) < 0.6 { return false }
                         // In a bot's conversation only the way back means
                         // anything: leftward would be going deeper into the
                         // bots from inside one of them, which is where the
@@ -415,14 +422,15 @@ struct RootView: View {
                         // so nothing follows the finger: the drawer it would
                         // otherwise reveal has nothing to do with this bot.
                         guard !inBotChat || drawerOpen else { return }
+                        // Retain the initial route if the finger reverses past its origin.
+                        if panOpensFeed == nil {
+                            panOpensFeed = !drawerOpen && translation < 0
+                        }
                         // Leftward on Alice's own chat pulls the feed in, under the finger.
-                        if !drawerOpen, translation < 0 {
-                            feedDrag = translation
+                        if panOpensFeed == true {
+                            feedDrag = min(0, translation)
                             return
                         }
-                        // A leftward drag is heading for the bots page, which
-                        // arrives as a page rather than by being dragged in.
-                        guard drawerOpen || translation > 0 else { return }
                         drag = drawerOpen ? min(0, translation) : max(0, translation)
                         if offset > 0 {
                             unroundTask?.cancel()
@@ -430,25 +438,36 @@ struct RootView: View {
                         }
                     },
                     onEnd: { translation, predicted in
+                        defer { panOpensFeed = nil }
                         let travelled = abs(translation) > drawerWidth * 0.3
                         let flicked = abs(predicted) > 120
-                        drag = 0
                         guard !inBotChat || drawerOpen else {
                             if travelled || flicked { goBackToBots(fromSwipe: true) }
                             return
                         }
-                        if !drawerOpen, translation < 0 {
+                        if !drawerOpen, panOpensFeed ?? (translation < 0) {
                             if travelled || flicked {
                                 openFeed()
                             } else {
-                                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
+                                withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) { feedDrag = 0 }
                             }
                             return
                         }
-                        if !drawerOpen, travelled || flicked {
+                        let opens = DrawerSettlement.isOpen(
+                            wasOpen: drawerOpen, translation: translation,
+                            predicted: predicted, width: drawerWidth
+                        )
+                        if !drawerOpen, opens {
                             SwipeNavigationTip().invalidate(reason: .actionPerformed)
                         }
-                        setDrawer(drawerOpen ? !(travelled || flicked) : (travelled || flicked))
+                        withMotion(drawerAnimation) { setDrawer(opens) }
+                    },
+                    onCancel: {
+                        panOpensFeed = nil
+                        withMotion(drawerAnimation) {
+                            feedDrag = 0
+                            setDrawer(drawerOpen)
+                        }
                     }
                     )
                     .allowsHitTesting(false)
@@ -508,7 +527,7 @@ struct RootView: View {
         botsCloseTask = Task { @MainActor in
             do {
                 if lead > .zero { try await Task.sleep(for: lead) }
-                withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+                withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
                     botsExitOffset = exitLeading ? -width : width
                 }
                 try await Task.sleep(for: .milliseconds(320))
@@ -571,7 +590,7 @@ struct RootView: View {
     /// Goals leaves the way it came in, off the right.
     private func openFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = true
             feedDrag = 0
         }
@@ -579,7 +598,7 @@ struct RootView: View {
 
     private func closeFeed() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingFeed = false
             feedDrag = 0
         }
@@ -587,7 +606,7 @@ struct RootView: View {
 
     private func closeGoals() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingGoals = false
         }
     }
@@ -595,7 +614,7 @@ struct RootView: View {
     /// The agenda leaves the way it came in, off the right.
     private func closeAgenda() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingAgenda = false
         }
     }
@@ -603,7 +622,7 @@ struct RootView: View {
     /// Notes leaves the way it came in, off the right.
     private func closeNotes() {
         Haptic.soft.play()
-        withAnimation(.snappy(duration: 0.3, extraBounce: 0.02)) {
+        withMotion(.snappy(duration: 0.3, extraBounce: 0.02)) {
             store.showingNotes = false
         }
     }
@@ -613,6 +632,10 @@ struct RootView: View {
     }
 
     private var progress: CGFloat { offset / drawerWidth }
+
+    private var drawerAnimation: Animation? {
+        reduceMotion ? nil : .snappy(duration: 0.28, extraBounce: 0.02)
+    }
 
     /// The display radius whenever Home is out from under the bezel, including
     /// the first frame of the open and the last frame of the close.
@@ -635,6 +658,7 @@ struct RootView: View {
 
     private func setDrawer(_ open: Bool) {
         let wasOpen = drawerOpen
+        let wasDisplaced = offset > 0
         if drawerOpen != open {
             Haptic.soft.play()
         }
@@ -661,7 +685,10 @@ struct RootView: View {
         drag = 0
         drawerOpen = open
         if open { return }
-        if wasOpen {
+        if reduceMotion {
+            unroundTask?.cancel()
+            panelRounded = false
+        } else if wasOpen || wasDisplaced {
             // Stay rounded until the slide has finished and Home is back
             // under the bezel. Turning it off with the close would square
             // the corners while they are still in the middle of the screen.

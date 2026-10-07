@@ -17,14 +17,21 @@ struct SearchScreen: View {
     @Environment(\.dismiss) private var dismiss
     /// Opening a result should leave the drawer behind it closed too.
     let onOpen: () -> Void
-    /// Search can send you to a screen, not only to a conversation. The drawer
-    /// owns those destinations, so it is the drawer that opens them.
+    /// Other destinations retain the drawer's routing; Models and Memory
+    /// stay in this navigation stack so opening them never reveals Home.
     var onOpenDestination: (AliceDestination.Target) -> Void = { _ in }
 
     @State private var query = ""
     @FocusState private var focused: Bool
 
     var body: some View {
+        NavigationStack {
+            searchContent
+                .toolbar(.hidden, for: .navigationBar)
+        }
+    }
+
+    private var searchContent: some View {
         ZStack {
             Palette.background(scheme).ignoresSafeArea()
 
@@ -42,7 +49,12 @@ struct SearchScreen: View {
                     )
                 }
             } else if results.isEmpty && places.isEmpty {
-                hint("Nothing matches “\(query)”")
+                // Said with the query inside the translated sentence, not glued onto it.
+                Text("Nothing matches “\(query)”. Search covers the chats on this phone and Alice’s screens.")
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -80,7 +92,7 @@ struct SearchScreen: View {
     }
 
     private func heading(_ text: String) -> some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .font(.footnote.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 4)
@@ -89,36 +101,54 @@ struct SearchScreen: View {
     }
 
     private func placeRow(_ place: AliceDestination) -> some View {
-        Button {
-            onOpenDestination(place.target)
-            dismiss()
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: place.systemImage)
-                    .font(.system(size: 15))
-                    .frame(width: 22)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(place.title).lineLimit(1)
-                    // Hermes' own word, kept where Alice's differs. Hiding it
-                    // would leave an expert unable to confirm they are in the
-                    // right place, and a newcomer unable to connect what they
-                    // read here with anything written about Hermes.
-                    if let technical = place.technical {
-                        Text(technical)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                Spacer(minLength: 0)
+        Group {
+            if place.target == .models {
+                NavigationLink {
+                    ModelsProvidersScreen()
+                        .toolbar(.visible, for: .navigationBar)
+                        .onAppear { focused = false }
+                } label: { placeLabel(place) }
+            } else if place.target == .memory {
+                NavigationLink {
+                    MemoryScreen()
+                        .toolbar(.visible, for: .navigationBar)
+                        .onAppear { focused = false }
+                } label: { placeLabel(place) }
+            } else {
+                Button {
+                    onOpenDestination(place.target)
+                    dismiss()
+                } label: { placeLabel(place) }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("search.place.\(place.target.rawValue)")
+    }
+
+    private func placeLabel(_ place: AliceDestination) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: place.systemImage)
+                .font(.system(size: 15))
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(LocalizedStringKey(place.title)).lineLimit(1)
+                // Hermes' own word, kept where Alice's differs. Hiding it
+                // would leave an expert unable to confirm they are in the
+                // right place, and a newcomer unable to connect what they
+                // read here with anything written about Hermes.
+                if let technical = place.technical {
+                    Text(LocalizedStringKey(technical))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Palette.card(scheme), in: .rect(cornerRadius: 16))
     }
 
     private func conversationRow(_ result: Result) -> some View {
@@ -145,7 +175,7 @@ struct SearchScreen: View {
     }
 
     private func hint(_ text: String) -> some View {
-        Text(text)
+        Text(LocalizedStringKey(text))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -154,7 +184,7 @@ struct SearchScreen: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 8) {
                 if let heading {
-                    Text(heading)
+                    Text(LocalizedStringKey(heading))
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 4)

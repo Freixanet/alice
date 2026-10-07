@@ -37,8 +37,9 @@ final class HomeKeyboardStabilityTests: XCTestCase {
         let composerTop = app.textFields.firstMatch.frame.minY
         let subtitle = app.staticTexts["You talk to Alice. One thing at a time."]
         XCTAssertTrue(subtitle.exists, "Home's subtitle should be on screen")
-        let blockTop = app.images.firstMatch.exists
-            ? min(app.images.firstMatch.frame.minY, focused.minY) : focused.minY
+        // The day's title is the top of Home's block (it has no logo above it). `app.images.firstMatch`
+        // measured whatever image the hierarchy listed first, which is not part of Home.
+        let blockTop = focused.minY
         let above = blockTop - headerBottom
         let below = composerTop - subtitle.frame.maxY
         print("HOME_CENTRED above=\(above) below=\(below) header=\(headerBottom) composerTop=\(composerTop)")

@@ -420,7 +420,7 @@ struct RichMediaView: View {
                 if case let .failed(reason) = model.phase {
                     Text(reason)
                         .font(.caption2)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .lineLimit(2)
                 } else if model.player != nil {
                     AudioScrubber(
@@ -491,7 +491,7 @@ struct RichMediaView: View {
                     .lineLimit(2)
                     .truncationMode(.middle)
                 if case let .failed(reason) = model.phase {
-                    Text(reason).font(.caption2).foregroundStyle(.red).lineLimit(2)
+                    Text(reason).font(.caption2).foregroundStyle(Palette.danger(scheme)).lineLimit(2)
                 } else {
                     Text(loadingOrDetail(kind: "File")).font(.caption2).foregroundStyle(.secondary)
                 }

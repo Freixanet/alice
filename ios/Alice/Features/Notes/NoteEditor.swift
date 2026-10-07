@@ -105,7 +105,8 @@ struct NoteEditor: View {
             ) {
                 Button("Delete", role: .destructive) { deleteNote() }
             } message: {
-                Text("It is removed from the notes store, with what its agent made of it. This can’t be undone.")
+                // Honest: it can be recovered from Recently Deleted for 30 days.
+                Text("It is removed from the notes store, with what its agent made of it. You can recover it from Recently Deleted for 30 days.")
             }
             .onAppear { store.editingNote = true }
             .onChange(of: content) {
@@ -113,6 +114,12 @@ struct NoteEditor: View {
                 scheduleSave()
             }
             .onChange(of: scenePhase) { _, phase in
+                // Leaving the app: what was typed in the last seconds goes now, not after the
+                // autosave pause that a kill from the app switcher never reached.
+                if phase == .inactive || phase == .background {
+                    save(now: true, explicit: false)
+                    return
+                }
                 if phase == .active, saveState != .saved, saveState != .saving {
                     retry?.cancel()
                     failures = 0

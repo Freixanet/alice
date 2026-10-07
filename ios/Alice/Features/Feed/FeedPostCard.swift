@@ -36,7 +36,7 @@ struct FeedPostCard: View {
 
             FeedBodyText(post: post, collapsed: !expanded)
             Button(expanded ? "Less" : "More") {
-                withAnimation(.snappy) { expanded.toggle() }
+                withMotion(.snappy) { expanded.toggle() }
                 if expanded { onExpand() }
             }
             .font(.footnote.weight(.semibold))

@@ -76,6 +76,21 @@ class ErrandHookTests(unittest.TestCase):
                 result = self.plugin._guard_errand(tool_name=tool, args={"command":"submit order"}, session_id=entry["session_id"])
                 self.assertEqual(result["action"], "block")
 
+    def test_page_code_cannot_press_pay_in_any_errand_without_approval(self):
+        # The P0: a shop with a saved card, and the agent clicking «Realizar pedido» through page code.
+        console = {"expression": "document.querySelector('#place-order').click()"}
+        for entry in (self.errand(), self.errand(offer={"option_id": "chosen", "price": "34,99 €"})):
+            for tool, args in (("browser_console", console),
+                               ("browser_cdp", {"method": "Input.dispatchMouseEvent", "params": {"x": 1, "y": 2}}),
+                               ("browser_dialog", {"action": "accept"})):
+                with self.subTest(tool=tool, offer=bool(entry.get("offer"))):
+                    result = self.plugin._guard_errand(tool_name=tool, args=args, session_id=entry["session_id"])
+                    self.assertEqual(result["action"], "block")
+        # Reading the page through the console stays allowed outside purchases.
+        plain = self.errand()
+        self.assertIsNone(self.plugin._guard_errand(tool_name="browser_console", args={"expression": "document.title"},
+                                                    session_id=plain["session_id"]))
+
     def test_execution_guard_preserves_non_purchase_sessions(self):
         entry = self.errand()
         self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"]))
@@ -406,3 +421,19 @@ class ErrandHookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PaymentCheckTests(unittest.TestCase):
+    """06-10: a test's card payment at hsnstore.com reached the person's chat as a real notice."""
+
+    def test_a_payment_outside_the_real_hermes_home_schedules_nothing(self):
+        plugin = load_plugin()
+        made = []
+        jobs = types.SimpleNamespace(create_job=lambda *a, **k: made.append(k))
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as real, \
+                mock.patch.object(plugin, "_hermes_root", return_value=Path(tmp)), \
+                mock.patch.dict(sys.modules, {"hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: Path(real)),
+                                              "cron.jobs": jobs}):
+            plugin._schedule_payment_check({"id": "abc", "shop": "hsnstore.com"})
+        self.assertEqual(made, [])
+

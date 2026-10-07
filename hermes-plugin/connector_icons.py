@@ -155,14 +155,28 @@ def candidates(page: str, origin: str) -> List[str]:
     return urls
 
 
+def _safe_fetch():
+    import importlib.util
+    import sys as _sys
+
+    name = "alice_safe_fetch"
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
+
+
 def _fetch(url: str, limit: int) -> Tuple[bytes, str]:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "*/*"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT) as response:  # noqa: S310 — https origins only
-        final = urllib.parse.urlsplit(response.geturl())
-        if final.scheme != "https" or _private(final.hostname or ""):
-            raise ValueError("redirected somewhere it should not go")
-        kind = (response.headers.get_content_type() or "").lower()
-        return response.read(limit + 1), kind
+    # Checked before the request and at every redirect, by what the host resolves to (safe_fetch.py):
+    # a name that resolved to 127.0.0.1, or a page's href to the browser's debugging port, got through.
+    data, kind = _safe_fetch().fetch(url, {"User-Agent": USER_AGENT, "Accept": "*/*"}, limit + 1, TIMEOUT)
+    return data, kind.split(";")[0].strip().lower()
 
 
 def _sniff(data: bytes) -> Optional[str]:

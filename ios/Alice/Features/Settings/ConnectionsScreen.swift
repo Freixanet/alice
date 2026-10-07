@@ -153,7 +153,10 @@ struct ConnectionsScreen: View {
                 Task {
                     working.insert(device?.rawValue ?? "")
                     if device == .calendar { problem = await store.disconnectCalendar() }
-                    if device == .health { await store.disconnectHealth(); healthConnected = false }
+                    if device == .health {
+                        problem = await store.disconnectHealth()
+                        if problem == nil { healthConnected = false }
+                    }
                     working.remove(device?.rawValue ?? "")
                 }
             }
@@ -447,7 +450,7 @@ struct ConnectorLogo: View {
         .accessibilityHidden(true)
         .task(id: name) {
             guard image == nil, let loaded = await Self.fetch(name, store: store) else { return }
-            withAnimation(.easeOut(duration: 0.2)) { image = loaded }
+            withMotion(.easeOut(duration: 0.2)) { image = loaded }
         }
     }
 }
@@ -503,7 +506,7 @@ private struct ConnectorSignInSheet: View {
                 if !done, failure == nil {
                     if let raw = flow?.authorizationURL, let url = URL(string: raw) {
                         Button("Open Sign-In Page") { openURL(url) }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.borderedProminent).onAccentLabel()
                     } else {
                         ProgressView()
                     }

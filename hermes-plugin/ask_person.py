@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # The details Alice keeps and the form in Settings shows, in that order.
-FIELDS = ("name", "surname", "id", "address", "postcode", "city", "province", "phone", "email", "country", "currency")
+FIELDS = ("name", "surname", "id", "birthdate", "address", "postcode", "city", "province", "phone", "email", "country", "currency")
 MAX_QUESTIONS = 10
 MAX_CHOICES = 6
 WAIT_SECONDS = 3600

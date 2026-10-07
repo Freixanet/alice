@@ -241,6 +241,7 @@ struct ReminderScopeScreen: View {
                             }
                             .contentShape(.rect)
                             .onTapGesture { open(item) }
+                            .accessibilityAddTraits(.isButton)
                             .swipeActions {
                                 Button("Delete", role: .destructive) { delete(item) }
                             }
@@ -293,6 +294,7 @@ struct ReminderScopeScreen: View {
                     Menu {
                         Toggle(isOn: $showCompleted) { Label("Show Completed", systemImage: "eye") }
                     } label: { Image(systemName: "ellipsis") }
+                    .accessibilityLabel("More")
                 }
             }
             if scope != .completed {
@@ -386,7 +388,7 @@ struct ReminderScopeScreen: View {
         guard case let .reminder(identifier, _) = item.kind else { return }
         do {
             try AgendaSource.setCompleted(identifier, !item.completed)
-            withAnimation(.snappy(duration: 0.2)) { _ = ticking.insert(item.id) }
+            withMotion(.snappy(duration: 0.2)) { _ = ticking.insert(item.id) }
             Task {
                 try? await Task.sleep(for: .milliseconds(600))
                 ticking.remove(item.id)
@@ -437,6 +439,12 @@ struct NewListSheet: View {
         .init(red: 0.56, green: 0.56, blue: 0.58), .init(red: 0.85, green: 0.65, blue: 0.60),
     ]
 
+    /// What VoiceOver says for each swatch, in the same order as `colors`.
+    static let colorNames: [LocalizedStringResource] = [
+        "Red", "Orange", "Yellow", "Green", "Light blue", "Blue",
+        "Indigo", "Pink", "Purple", "Brown", "Grey", "Rose",
+    ]
+
     var body: some View {
         NavigationStack {
             Form {
@@ -458,7 +466,7 @@ struct NewListSheet: View {
                 }
                 Section {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 6), spacing: 14) {
-                        ForEach(Self.colors, id: \.self) { option in
+                        ForEach(Array(Self.colors.enumerated()), id: \.element) { index, option in
                             Button { color = option } label: {
                                 Circle()
                                     .fill(AgendaStyle.color(option))
@@ -471,6 +479,8 @@ struct NewListSheet: View {
                                     }
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(Text(Self.colorNames[index]))
+                            .accessibilityAddTraits(option == color ? .isSelected : [])
                         }
                     }
                     .padding(.vertical, 6)

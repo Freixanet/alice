@@ -79,6 +79,7 @@ struct MemoryProvidersScreen: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button { Task { await load() } } label: { Image(systemName: "arrow.clockwise") }
+                    .accessibilityLabel("Refresh")
                     .disabled(loading)
             }
         }

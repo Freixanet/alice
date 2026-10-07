@@ -76,11 +76,15 @@ struct AgendaItemRow: View {
                     }
                 }
                 .frame(width: 22, height: 22)
-                .contentShape(.circle)
+                // Drawn at 22 pt, touched at 44: the circle alone was a 22 pt target.
+                .contentShape(Rectangle().inset(by: -11))
             }
             .buttonStyle(.plain)
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-            .accessibilityLabel(done ? "Completed" : "Complete")
+            // Says which reminder, and that it is a toggle.
+            .accessibilityLabel(item.title)
+            .accessibilityValue(done ? Text("Completed") : Text("Not completed"))
+            .accessibilityHint(done ? "Marks it as not completed." : "Marks it as completed.")
             .sensoryFeedback(.success, trigger: done) { _, isDone in isDone }
         case .alice:
             Image(systemName: "bell")

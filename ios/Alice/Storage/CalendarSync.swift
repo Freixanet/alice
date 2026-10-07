@@ -182,9 +182,17 @@ enum CalendarSync {
 
         var json: [String: Any] {
             let format = ISO8601DateFormatter()
+            // An all-day event is a date on the person's calendar, not an instant: sent as UTC, a
+            // Madrid «6 October» arrived as 5 October 22:00 and an agent read it as the day before.
+            let day = DateFormatter()
+            day.calendar = Calendar(identifier: .gregorian)
+            day.locale = Locale(identifier: "en_US_POSIX")
+            day.timeZone = .current
+            day.dateFormat = "yyyy-MM-dd"
+            let text = { (date: Date) in allDay ? day.string(from: date) : format.string(from: date) }
             var row: [String: Any] = [
-                "title": title, "start": format.string(from: start),
-                "end": format.string(from: end), "all_day": allDay,
+                "title": title, "start": text(start),
+                "end": text(end), "all_day": allDay,
             ]
             if let location, !location.isEmpty { row["location"] = location }
             if let calendar { row["calendar"] = calendar }

@@ -88,16 +88,27 @@ class Goals:
 
     def _save(self, goals: List[Dict[str, Any]]) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        temp = self.path.with_suffix(".tmp")
-        temp.write_text(json.dumps({"goals": goals}, ensure_ascii=False, indent=1), encoding="utf-8")
+        # A temporary name of its own: two writers shared «goals.tmp» and could swap halves.
+        import tempfile
+        fd, temp = tempfile.mkstemp(dir=str(self.path.parent), prefix=".goals.")
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(json.dumps({"goals": goals}, ensure_ascii=False, indent=1))
         os.replace(temp, self.path)
 
     def _mutate(self, change: Callable[[List[Dict[str, Any]]], Any]) -> Any:
-        with _lock:
-            goals = self._load()
-            result = change(goals)
-            self._save(goals)
-            return result
+        # A file lock as well as the thread lock: the agent's `goals` tool runs in the gateway and the
+        # Goals tab in the dashboard, two processes, and a thread lock let one undo the other's change.
+        import fcntl
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with _lock, open(str(self.path) + ".lock", "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            try:
+                goals = self._load()
+                result = change(goals)
+                self._save(goals)
+                return result
+            finally:
+                fcntl.flock(lock, fcntl.LOCK_UN)
 
     @staticmethod
     def _find(goals: List[Dict[str, Any]], goal_id: str) -> Dict[str, Any]:

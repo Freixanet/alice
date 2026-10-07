@@ -74,9 +74,15 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         let kind: String
         let origin: String
         let site: String
+        var deliveryChannel = ""
+        var deliveryDestination = ""
+        var accountHint = ""
         var request: SecureRequest? {
-            SecureRequest.parse(["request_id": requestID, "kind": kind, "origin": origin, "site": site])
+            SecureRequest.parse(["request_id": requestID, "kind": kind, "origin": origin, "site": site,
+                                 "delivery_channel": deliveryChannel, "delivery_destination": deliveryDestination,
+                                 "account_hint": accountHint])
         }
+        var isCode: Bool { kind == "vault.code" }
     }
 
     let id: String
@@ -106,6 +112,14 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
     var access: Access? = nil
+    var blockedKind: String? = nil
+    var browserTarget: String? = nil
+
+    var accessBlocked: Bool {
+        blockedKind == "access" || (status == .stuck && reason.range(
+            of: "acceso|iniciar sesi[oó]n|log.?in|sign.?in|credentials|contrase[nñ]a",
+            options: [.regularExpression, .caseInsensitive]) != nil)
+    }
 
     var accessRequest: SecureRequest? {
         guard var request = access?.request else { return nil }
@@ -114,10 +128,28 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     }
 
     var language: ChatLanguage { ChatLanguage.of(request) }
-    var lastStep: Step? { steps.last }
+    var lastStep: Step? { steps.last { !Self.isInternal($0.text) } }
 
     /// Where it is in the purchase, a line per stage rather than per click: the steps grouped by
     /// the page they were on, each group named by what that page is for.
+    /// What the errand did, one line per action, as its agent and the plugin wrote them; the same
+    /// line twice in a row once. Notes the browser keeps for itself never reach this list.
+    var actions: [String] {
+        var lines: [String] = []
+        for step in steps {
+            let text = step.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty, !Self.isInternal(text), lines.last != text else { continue }
+            lines.append(text)
+        }
+        return lines
+    }
+
+    /// Notes of the browser's own setup that older plugins recorded as steps.
+    static func isInternal(_ text: String) -> Bool {
+        text.hasPrefix("Keep page transitions") || text.hasPrefix("Parked background tabs")
+            || text.hasPrefix("alice:")
+    }
+
     var milestones: [String] {
         var stages: [String] = []
         var lastPage = ""
@@ -213,8 +245,13 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             offerPrice: (row["offer"] as? [String: Any])?["price"] as? String,
             access: (row["secure_request"] as? [String: Any]).flatMap { raw in
                 guard let requestID = raw["request_id"] as? String else { return nil }
-                return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]))
-            })
+                return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]),
+                              deliveryChannel: text(raw["delivery_channel"]),
+                              deliveryDestination: text(raw["delivery_destination"]),
+                              accountHint: text(raw["account_hint"]))
+            },
+            blockedKind: (row["blocked"] as? [String: Any])?["kind"] as? String,
+            browserTarget: row["browser_target"] as? String)
     }
 }
 

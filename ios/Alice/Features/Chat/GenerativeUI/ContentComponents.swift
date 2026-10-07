@@ -152,7 +152,7 @@ struct EmailDraftCard: View {
                     Label(language.pick("Open in Mail", "Abrir en Mail"), systemImage: "paperplane.fill")
                         .font(.subheadline.weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.borderedProminent).onAccentLabel()
                 .buttonBorderShape(.capsule)
                 .tint(store.accent.primary(scheme))
 
@@ -245,7 +245,7 @@ struct ArticleCard: View {
                 }
                 if article.sections.count > 2 {
                     Button {
-                        withAnimation(.snappy(duration: 0.3)) { expanded.toggle() }
+                        withMotion(.snappy(duration: 0.3)) { expanded.toggle() }
                     } label: {
                         Label(expanded ? language.pick("Show less", "Ver menos") : language.pick("Keep reading", "Seguir leyendo"),
                               systemImage: expanded ? "chevron.up" : "chevron.down")

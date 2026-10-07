@@ -16,6 +16,8 @@ struct AliceApp: App {
     @State private var notifier = Notifier()
     @State private var activities = AgentActivities()
     @State private var pairingLink: PendingPairingLink?
+    /// True at launch and after each trip to the background: then coming back re-reads everything.
+    @State private var needsRefresh = true
 
     init() {
         GestureTips.configure()
@@ -43,6 +45,9 @@ struct AliceApp: App {
                     }
                 }
                 .overlay { LaunchCurtain() }
+                .background(LockWindowHost(
+                    visible: store.appLocked || (store.requireUnlock && scenePhase != .active),
+                    store: store, onUnlock: drainPendingRoute))
                 .environment(store)
                 .environment(speech)
                 .environment(notifier)
@@ -57,9 +62,9 @@ struct AliceApp: App {
                 // no in-app scanner needed, least of all on a first install.
                 .onOpenURL { url in
                     if let link = NotificationLink(url: url) {
-                        // Only the Mac's notifier, through Bark, opens these:
-                        // it is delivering replies and routines already.
-                        if !store.barkRelays { store.barkRelays = true }
+                        // Opening one changes no setting: any app or page can send this link, and
+                        // switching Bark on from it silenced Alice's own notifications for good.
+                        // Bark relaying is turned on in Settings › Notifications.
                         store.open(link)
                         return
                     }
@@ -113,7 +118,11 @@ struct AliceApp: App {
                 .onChange(of: scenePhase) { _, phase in
                     guard phase == .active else {
                         store.isForeground = false
+                        // Saved on the way out too: a kill from the app switcher can go from
+                        // inactive straight to terminated, losing the last edits.
+                        if phase == .inactive { store.persistConversationsImmediately() }
                         if phase == .background {
+                            needsRefresh = true
                             // Locked notes close with the app, as in Notes.
                             store.lockedNotesOpen = false
                             if store.leftForegroundAt == nil { store.leftForegroundAt = Date() }
@@ -140,6 +149,14 @@ struct AliceApp: App {
                         store.appLocked = true
                     }
                     store.leftForegroundAt = nil
+                    // Back from Control Center, a Face ID sheet or a system alert: Alice never left,
+                    // so nothing needs re-reading (this ran about twelve network calls each time).
+                    guard needsRefresh else {
+                        store.isForeground = true
+                        drainPendingRoute()
+                        return
+                    }
+                    needsRefresh = false
                     Task {
                         store.isForeground = true
                         await notifier.refreshPermission()

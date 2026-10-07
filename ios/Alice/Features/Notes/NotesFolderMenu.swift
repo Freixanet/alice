@@ -41,7 +41,7 @@ struct NotesFolderMenu: View {
                 store.notesAsCards ? "View as List" : "View as Gallery",
                 systemImage: store.notesAsCards ? "list.bullet" : "square.grid.2x2"
             ) {
-                withAnimation(.snappy(duration: 0.25)) { store.notesAsCards.toggle() }
+                withMotion(.snappy(duration: 0.25)) { store.notesAsCards.toggle() }
             }
 
             Divider()

@@ -67,16 +67,25 @@ struct ConnectView: View {
     /// QR unless someone installed the Alice plugin; typing still works.
     private var manualConnection: some View {
         Section {
-            TextField("Address", text: $address)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.URL)
-            SecureField("Connection key", text: $key)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
+            // Visible labels: a placeholder alone disappears as soon as something is typed.
+            LabeledContent("Address") {
+                TextField("mac.example.ts.net:8644", text: $address)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .multilineTextAlignment(.trailing)
+            }
+            LabeledContent("Connection key") {
+                SecureField("Required", text: $key)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textContentType(.password)
+                    .multilineTextAlignment(.trailing)
+            }
 
             if let error = store.connectionError {
-                Text(error).foregroundStyle(.red)
+                Text(error).foregroundStyle(Palette.danger(scheme))
             }
 
             Button {
@@ -118,7 +127,7 @@ struct ConnectView: View {
                     Image(systemName: "checkmark.circle.fill")
                     Text("Connected")
                 }
-                .foregroundStyle(.green)
+                .foregroundStyle(Palette.success(scheme))
             }
             if let version = store.manifest?.version {
                 LabeledContent("Version", value: version)
@@ -152,7 +161,7 @@ struct ConnectView: View {
     private var limitedFeatures: some View {
         Section {
             Label("Some features are unavailable", systemImage: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+                .foregroundStyle(Palette.warning(scheme))
             Text("Projects, Memory and Usage need the full Hermes connection.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -195,7 +204,7 @@ struct ConnectView: View {
                             || panelPassword.isEmpty || panelBusy
                     )
                     if let panelError {
-                        Text(panelError).foregroundStyle(.red)
+                        Text(panelError).foregroundStyle(Palette.danger(scheme))
                     }
                 }
 

@@ -10,7 +10,12 @@ struct AppLockView: View {
     @Environment(\.scenePhase) private var scenePhase
     /// Called once the owner is in.
     var onUnlock: () -> Void = {}
+    /// The copy in the lock window above sheets leaves asking to this one, so Face ID asks once.
+    var asksOnAppear = true
     @State private var asking = false
+    /// Asked once per return to the foreground: cancelling Face ID made the scene go inactive and
+    /// active again, which asked again, and again.
+    @State private var askedThisTime = false
 
     var body: some View {
         ZStack {
@@ -39,7 +44,9 @@ struct AppLockView: View {
             .padding(.bottom, 64)
         }
         .task(id: scenePhase) {
-            guard store.appLocked, scenePhase == .active else { return }
+            if scenePhase == .background { askedThisTime = false }
+            guard asksOnAppear, store.appLocked, scenePhase == .active, !askedThisTime else { return }
+            askedThisTime = true
             await unlock()
         }
     }
@@ -49,7 +56,7 @@ struct AppLockView: View {
         asking = true
         defer { asking = false }
         if await Biometrics.authenticate(reason: "Unlock Alice.") {
-            withAnimation(.easeOut(duration: 0.25)) { store.appLocked = false }
+            withMotion(.easeOut(duration: 0.25)) { store.appLocked = false }
             onUnlock()
         }
     }

@@ -28,25 +28,29 @@ actor DashboardClient {
         /// A 200 whose body could not be read as the listing it should be.
         /// Distinct from an empty listing, which is a real answer.
         case unreadable
+        /// A card, password or key would travel unencrypted (plain HTTP outside Tailscale).
+        case insecure
 
         var errorDescription: String? {
             switch self {
             case .notConfigured:
-                "Add your Hermes dashboard in Connect to see this."
+                String(localized: "Add your Hermes dashboard in Connect to see this.")
             case .rejected:
-                "The dashboard did not accept that username and password."
+                String(localized: "The dashboard did not accept that username and password.")
             case let .http(status, detail):
                 if let detail, !detail.isEmpty {
-                    "The dashboard returned \(status): \(detail)"
+                    String(localized: "The dashboard returned \(status): \(detail)")
                 } else {
-                    "The dashboard returned \(status)."
+                    String(localized: "The dashboard returned \(status).")
                 }
             case .unreachable:
-                "The dashboard did not answer. It only listens on your own network."
+                String(localized: "The dashboard did not answer. It only listens on your own network.")
             case .timedOut:
-                "The dashboard took too long to answer."
+                String(localized: "The dashboard took too long to answer.")
             case .unreadable:
-                "The dashboard sent something this app could not read."
+                String(localized: "The dashboard sent something this app could not read.")
+            case .insecure:
+                String(localized: "Cards, passwords and keys are only sent over an encrypted connection. Connect to your Mac through Tailscale or HTTPS to save this.")
             }
         }
     }
@@ -185,7 +189,10 @@ actor DashboardClient {
     func send(
         _ method: String, _ path: String, _ body: [String: Any]? = nil
     ) async throws -> [String: Any] {
-        guard credentials != nil else { throw Failure.notConfigured }
+        guard let credentials else { throw Failure.notConfigured }
+        // A card number, a password or a key never crosses a network unencrypted: plain HTTP is
+        // accepted for the Mac on the home network, but not for these.
+        if Self.carriesSecrets(path, body: body), !Self.encrypted(credentials.url) { throw Failure.insecure }
         let age = try await authenticate()
         do {
             return try await fetch(path, method: method, body: body)
@@ -193,6 +200,54 @@ actor DashboardClient {
             _ = try await authenticate(replacing: age)
             return try await fetch(path, method: method, body: body)
         }
+    }
+
+    /// A request that would carry a card, a password, a key or a token: by its route, or by what its
+    /// body holds, so a new route that sends credentials is covered without being listed here.
+    static func carriesSecrets(_ path: String, body: [String: Any]? = nil) -> Bool {
+        let route = path.split(separator: "?").first.map(String.init) ?? path
+        if route.contains("/vault/") || route.hasSuffix("/secret") || route.hasSuffix("/access")
+            || route.hasSuffix("/card") || route == "api/env" || route == "api/providers/validate"
+            || route == "api/webhooks"
+            || (route.hasPrefix("api/memory/providers/") && (route.hasSuffix("/config") || route.hasSuffix("/setup"))) {
+            return true
+        }
+        return body.map(holdsSecrets) ?? false
+    }
+
+    private static let secretFields: Set<String> = [
+        "env", "bearer_token", "token", "secret", "password", "api_key", "apikey", "access_token",
+        "card_number", "cvc", "otp", "values",
+    ]
+
+    private static func holdsSecrets(_ value: Any) -> Bool {
+        if let object = value as? [String: Any] {
+            return object.contains { key, inner in
+                (secretFields.contains(key.lowercased()) && !isEmpty(inner)) || holdsSecrets(inner)
+            }
+        }
+        if let list = value as? [Any] { return list.contains(where: holdsSecrets) }
+        return false
+    }
+
+    private static func isEmpty(_ value: Any) -> Bool {
+        switch value {
+        case let text as String: text.isEmpty
+        case let object as [String: Any]: object.isEmpty
+        case let list as [Any]: list.isEmpty
+        case is NSNull: true
+        default: false
+        }
+    }
+
+    /// HTTPS, this device, or Tailscale (WireGuard-encrypted end to end).
+    static func encrypted(_ url: URL) -> Bool {
+        if url.scheme?.lowercased() == "https" { return true }
+        let host = (url.host ?? "").lowercased()
+        if host == "localhost" || host == "127.0.0.1" || host == "::1" || host.hasSuffix(".ts.net") { return true }
+        let octets = host.split(separator: ".").compactMap { Int($0) }
+        if octets.count == 4, octets[0] == 100, (64...127).contains(octets[1]) { return true }
+        return host.hasPrefix("fd7a:115c:a1e0")
     }
 
     private func fetch(

@@ -50,9 +50,10 @@ struct HealthConnectCard: View {
                 .font(.subheadline.weight(.semibold))
                 .frame(minWidth: 110)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).onAccentLabel()
             .buttonBorderShape(.capsule)
-            .tint(.pink)
+            // The accent, not pink: white on pink measured 3.65:1.
+            .tint(store.accent.primary(scheme))
             .disabled(working)
             Label(language.pick("One summary per day goes only to your own Hermes. Alice never writes to Health.",
                                 "Solo va un resumen por día a tu propio Hermes. Alice nunca escribe en Salud."), systemImage: "lock")
@@ -74,7 +75,7 @@ struct HealthConnectCard: View {
         defer { working = false }
         problem = await store.connectHealth()
         if problem == nil {
-            withAnimation(.snappy) { connected = true }
+            withMotion(.snappy) { connected = true }
             store.sendAppNote("The person connected Health. Carry on with the task.")
         }
     }
@@ -123,8 +124,8 @@ struct HealthConnectionRow: View {
         .confirmationDialog("Disconnect Health?", isPresented: $confirmingDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) {
                 Task {
-                    await store.disconnectHealth()
-                    connected = false
+                    problem = await store.disconnectHealth()
+                    if problem == nil { connected = false }
                 }
             }
         } message: {

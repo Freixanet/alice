@@ -32,7 +32,7 @@ struct PairingAdminScreen: View {
                                 Text(user.platform).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                             }
                             if let age = user.ageMinutes { Text("Requested \(Int(age)) min ago").font(.caption).foregroundStyle(.secondary) }
-                            Button("Approve") { Task { await approve(user) } }.buttonStyle(.borderedProminent).controlSize(.small)
+                            Button("Approve") { Task { await approve(user) } }.buttonStyle(.borderedProminent).onAccentLabel().controlSize(.small)
                         }.padding(.vertical, 3)
                     }
                 }
@@ -56,6 +56,7 @@ struct PairingAdminScreen: View {
                             }
                             Spacer()
                             Button(role: .destructive) { revoke = user } label: { Image(systemName: "person.crop.circle.badge.minus") }
+                                .accessibilityLabel("Revoke access for \(user.userName ?? user.userID)")
                         }
                     }
                 }
@@ -67,7 +68,7 @@ struct PairingAdminScreen: View {
                     Text("This only removes pending requests for the selected profile. Approved users are unchanged.")
                 }
             }
-            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled) } }
+            if let failure { Section("Last error") { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled) } }
         }
         .navigationTitle("Pairing")
         .navigationBarTitleDisplayMode(.inline)

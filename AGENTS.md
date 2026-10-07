@@ -75,6 +75,32 @@ xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B
 A successful device build is the local iOS check. Report that simulator unit/UI
 tests were not run; never run UI tests on the user's real iPhone (real data).
 
+### Installing on the user's Mac and iPhone: one source, one agent at a time
+
+Several agents (Codex, Claude, others) work on Alice from different folders. Whatever is
+installed last wins, so an install from a stale or private copy silently removes the
+work of another agent. On 2026-10-05 this happened twice: a build replaced another
+agent's iPhone build, and the running plugin came from a non-git folder
+(`…/work/deploy-alice`) that no repository contained.
+
+- **Install only from a git checkout of a pushed branch**, never from a scratch,
+  `/tmp` or "deploy" copy. Commit first; the installed state must be reproducible
+  from a commit.
+- **The Mac's plugin:** install with `hermes-plugin/install.sh` from that checkout. It
+  backs up the current plugin to `~/.hermes/backups/alice-plugin-<time>` and writes the
+  commit it installed to `~/.hermes/plugins/alice/INSTALLED_FROM`. Before installing,
+  read `INSTALLED_FROM`: if it names a commit your branch does not contain, someone
+  else's work is running; merge it into your branch (or ask the user) before replacing
+  it. Then restart `ai.hermes.gateway`, wait for port 8644, then
+  `ai.hermes.dashboard` (9119), one at a time.
+- **The iPhone:** read the installed build number right before installing
+  (`xcrun devicectl device info apps --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B`), not
+  only at the start of the task, and look for newer `Alice.app` device builds made by
+  other agents (under `/private/tmp` and `~/Documents/Codex`). If another agent installed
+  something newer, ask the user before replacing it. Use the next build number above the installed one.
+- **Say where it came from:** every report of an install names the branch and commit
+  installed, for the plugin and for the app.
+
 Record exact commands, results and important omissions in the PR. If a check
 fails, diagnose it; do not weaken the check or update snapshots merely to turn it
 green. Do not merge, tag, deploy or claim universal compatibility from incomplete
@@ -132,9 +158,10 @@ defined but not run is still pending.
 - [ ] iPhone builds: the build number only goes up (passed to `xcodebuild` as
       `CURRENT_PROJECT_VERSION`, never set in `project.yml`). Before saying an install
       arrived, read the version off the device (`xcrun devicectl device info apps`).
-- [ ] The Mac's Hermes plugin: back up `~/.hermes/plugins/alice` to
-      `~/.hermes/backups/` before deploying, then restart `ai.hermes.gateway` and, after
-      it answers, `ai.hermes.dashboard` — one at a time.
+- [ ] The Mac's Hermes plugin: install only with `hermes-plugin/install.sh` from a
+      committed checkout (it backs up and records `INSTALLED_FROM`; see "Installing on
+      the user's Mac and iPhone"), then restart `ai.hermes.gateway` and, after it
+      answers, `ai.hermes.dashboard` — one at a time.
 - [ ] Never test in the person's shared agent browser (CDP on 127.0.0.1:9222); use
       a separate temporary Chrome on another port.
 - [ ] End every report with three parts: **checked** (with the evidence),

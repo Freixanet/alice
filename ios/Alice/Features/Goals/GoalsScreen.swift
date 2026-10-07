@@ -37,7 +37,7 @@ struct GoalsScreen: View {
                     Text("Tell Alice something you want to get done — a project, a change, a list that weighs on you — and she'll make a plan and work on it.")
                 } actions: {
                     Button("Add a Goal") { adding = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).onAccentLabel()
                 }
                 .listRowBackground(Color.clear)
             }
@@ -345,11 +345,14 @@ struct GoalDetailScreen: View {
                     if done { Circle().fill(store.accent.primary(scheme)).padding(4) }
                 }
                 .frame(width: 22, height: 22)
-                .contentShape(.circle)
+                // Drawn at 22 pt, touched at 44.
+                .contentShape(Rectangle().inset(by: -11))
             }
             .buttonStyle(.plain)
             .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 5 }
-            .accessibilityLabel(done ? "Done" : "Mark as done")
+            .accessibilityLabel(step.text)
+            .accessibilityValue(done ? Text("Done") : Text("Not done"))
+            .accessibilityHint(done ? "Marks this step as not done." : "Marks this step as done.")
             .sensoryFeedback(.success, trigger: done) { _, now in now }
             VStack(alignment: .leading, spacing: 2) {
                 Text(step.text)
@@ -376,7 +379,7 @@ struct GoalDetailScreen: View {
         do {
             if let updated = try await store.changeGoal(goalID, body),
                let index = goals.firstIndex(where: { $0.id == goalID }) {
-                withAnimation(.snappy) { goals[index] = updated }
+                withMotion(.snappy) { goals[index] = updated }
             }
             problem = nil
         } catch {

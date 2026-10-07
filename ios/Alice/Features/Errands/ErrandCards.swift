@@ -36,19 +36,22 @@ struct PurchaseCapsuleButton: View {
     var symbol: String? = nil
     /// A colour of its own for the prominent one, such as blue on «Permitir».
     var tint: Color? = nil
+
+    /// White on a given tint (the approve blue); on the accent, whatever reads on it.
+    private var onProminent: Color { tint == nil ? store.accent.onControl(scheme) : .white }
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Group {
                 if busy {
-                    ProgressView().tint(prominent ? .white : .primary)
+                    ProgressView().tint(prominent ? onProminent : .primary)
                 } else {
                     Label { Text(title) } icon: { if let symbol { Image(systemName: symbol) } }
                 }
             }
             .font(.headline)
-            .foregroundStyle(prominent ? Color.white : Color.primary)
+            .foregroundStyle(prominent ? onProminent : Color.primary)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(prominent ? (tint ?? store.accent.control(scheme)) : Palette.muted(scheme), in: .capsule)
             .opacity(disabled ? 0.5 : 1)
@@ -195,6 +198,9 @@ struct ErrandBrowserCard: View {
     let onOpen: () -> Void
 
     @State private var still: UIImage?
+    /// Once the browser has been on the shop, the page stays: a consent page, a payment frame or a
+    /// blank tab between two of the shop's pages hid it and showed it again, over and over (06-10).
+    @State private var reachedShop = false
 
     private var language: ChatLanguage { errand.language }
     private var live: LiveBrowser { store.liveBrowser }
@@ -208,11 +214,10 @@ struct ErrandBrowserCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: errand.status == .done ? "checkmark.circle" : "globe")
-                    .font(.title3)
-                    .foregroundStyle(errand.status == .done ? Palette.success(scheme) : Color.primary)
-                    .frame(width: 44, height: 44)
-                    .background(Palette.muted(scheme), in: .rect(cornerRadius: 12))
+                BrowserStatusIcon(state: errand.status == .working ? .browsing
+                    : errand.status.needsPerson ? .needsUser
+                    : errand.status == .stuck ? .failed
+                    : errand.status == .done ? .complete : .idle)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(language.pick("Browser", "Navegador")).font(.body.weight(.medium))
                     Text("\(errand.status.label(language)) · \(errand.title)")
@@ -221,7 +226,6 @@ struct ErrandBrowserCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if errand.status == .working { LivePulse(color: Palette.success(scheme)) }
             }
 
             if showsPage {
@@ -229,21 +233,23 @@ struct ErrandBrowserCard: View {
                     .frame(height: 190)
                     .frame(maxWidth: .infinity)
                     .clipShape(.rect(cornerRadius: 18))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18)
-                            .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-                    }
                 PurchaseCapsuleButton(title: language.pick("Open browser", "Abrir navegador"), action: onOpen)
             }
         }
         .padding(14)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
         .accessibilityElement(children: .contain)
-        .onAppear { if following { live.watch() } }
-        .onDisappear { if following { live.unwatch() } }
+        // The purchase's own tab, never whichever tab the browser has in front: following that one
+        // flicked between the shop, a blank tab and other agents' pages (06-10).
+        .onAppear { if following { live.pin(errand.browserTarget); live.watch() } }
+        .onDisappear { if following { live.unwatch(); live.pin(nil) } }
+        .onChange(of: errand.browserTarget) { _, target in if following { live.pin(target) } }
+        .onChange(of: live.url, initial: true) { _, url in
+            if !reachedShop, BrowserDestination.reached(url, site: errand.site) { reachedShop = true }
+        }
         .onChange(of: following) { was, now in
             if was && !now { still = live.image; live.unwatch() }
-            if now && !was { still = nil; live.watch() }
+            if now && !was { still = nil; live.pin(errand.browserTarget); live.watch() }
         }
     }
 
@@ -255,7 +261,7 @@ struct ErrandBrowserCard: View {
         case .still: return errand.status != .denied && errand.status != .stopped
         case .live:
             return errand.status != .denied && errand.status != .stopped
-                && BrowserDestination.reached(live.url, site: errand.site)
+                && (reachedShop || BrowserDestination.reached(live.url, site: errand.site))
         }
     }
 
@@ -296,7 +302,7 @@ struct ErrandProgressCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button { withAnimation(.snappy) { expanded.toggle() } } label: {
+            Button { withMotion(.snappy) { expanded.toggle() } } label: {
                 HStack(spacing: 12) {
                     ShopLogo(errandID: logoID, image: logo)
                     VStack(alignment: .leading, spacing: 1) {
@@ -311,7 +317,7 @@ struct ErrandProgressCard: View {
                                     .foregroundStyle(.secondary)
                             }
                             .fixedSize()
-                            if !errand.steps.isEmpty {
+                            if !doneSteps.isEmpty {
                                 Image(systemName: "chevron.down")
                                     .font(.footnote.weight(.semibold))
                                     .foregroundStyle(.secondary)
@@ -326,19 +332,18 @@ struct ErrandProgressCard: View {
                 .contentShape(.rect)
             }
             .buttonStyle(.plain)
-            .disabled(errand.steps.isEmpty)
+            .disabled(doneSteps.isEmpty)
             .accessibilityHint(language.pick("Shows the steps", "Muestra los pasos"))
 
             if expanded {
+                // What was done, in order. The action under way is the line below, not repeated here.
                 VStack(alignment: .leading, spacing: 8) {
-                    let stages = errand.milestones
-                    ForEach(Array(stages.enumerated()), id: \.offset) { index, stage in
+                    ForEach(Array(doneSteps.enumerated()), id: \.offset) { _, step in
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
-                            Image(systemName: index == stages.count - 1 && errand.status == .working
-                                  ? "circle.dotted" : "checkmark.circle")
+                            Image(systemName: "checkmark.circle")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(stage).font(.subheadline).foregroundStyle(.secondary)
+                            Text(step).font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -360,6 +365,12 @@ struct ErrandProgressCard: View {
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
+    }
+
+    /// The actions finished: all of them once it stops, all but the one under way while it works.
+    private var doneSteps: [String] {
+        let all = errand.actions
+        return errand.status == .working ? Array(all.dropLast()) : all
     }
 
     @ViewBuilder private var statusMark: some View {
@@ -386,7 +397,7 @@ struct ErrandProgressCard: View {
             if errand.checkout?.status == .replaced {
                 return language.pick("Preparing the checkout again…", "Preparando el checkout de nuevo…")
             }
-            return errand.milestones.last ?? language.pick("Getting started…", "Empezando…")
+            return errand.actions.last ?? language.pick("Getting started…", "Empezando…")
         case .done:
             return errand.receipt?.paid == true ? language.pick("Order placed", "Pedido realizado")
                                                 : errand.summary.nonEmpty(or: language.pick("Done", "Hecho"))
@@ -890,7 +901,7 @@ struct ErrandQuestionsCard: View {
                     }
                 }
                 if index > 0 {
-                    Button { withAnimation(.snappy) { index -= 1 } } label: {
+                    Button { withMotion(.snappy) { index -= 1 } } label: {
                         Label(language.pick("Back", "Atrás"), systemImage: "chevron.left").font(.subheadline)
                     }
                     .buttonStyle(.plain)
@@ -971,6 +982,7 @@ struct ErrandConfirmCard: View {
 struct PurchaseProductSheet: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     let image: URL?
     let seller: String
@@ -983,6 +995,9 @@ struct PurchaseProductSheet: View {
     var onBuyQuantity: ((Int) -> Void)? = nil
     var shipping: String = ""
     var condition: String = ""
+    var couponLabel: String? = nil
+    var conditionalPromotion = false
+    var productURL: URL? = nil
 
     @State private var quantity = 1
     @State private var chosen = 0
@@ -993,7 +1008,6 @@ struct PurchaseProductSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 CardImage(image: image, page: nil, symbol: "bag", fits: true)
-                    .background(Color.white)
                     .frame(height: 300)
                     .clipShape(.rect(cornerRadius: 28))
                     .overlay(alignment: .topTrailing) {
@@ -1016,6 +1030,13 @@ struct PurchaseProductSheet: View {
                                 .strikethrough().foregroundStyle(.secondary)
                         }
                     }
+                    if let couponLabel {
+                        Text(couponLabel).font(.body.weight(.medium))
+                        if conditionalPromotion {
+                            Text(language.pick("Subject to coupon terms", "Sujeto a las condiciones del cupón"))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                     if !shipping.isEmpty {
                         Text(language.pick("Shipping: \(shipping)", "Envío: \(shipping)"))
                             .font(.footnote).foregroundStyle(.secondary)
@@ -1032,7 +1053,10 @@ struct PurchaseProductSheet: View {
                         if let onBuyQuantity { onBuyQuantity(quantity) } else { onBuy() }
                     }
                     .padding(.top, 10)
-                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { dismiss() }
+                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) {
+                        if let productURL { openURL(productURL) }
+                    }
+                    .disabled(productURL == nil)
                 }
                 .padding(.top, 18)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1051,7 +1075,7 @@ struct PurchaseProductSheet: View {
     private var optionPicker: some View {
         HStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.offset) { index, name in
-                Button { withAnimation(.snappy) { chosen = index } } label: {
+                Button { withMotion(.snappy) { chosen = index } } label: {
                     Text(name).font(.body)
                         .frame(maxWidth: .infinity, minHeight: 44)
                         .background {

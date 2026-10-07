@@ -125,7 +125,7 @@ struct ChangeEventCard: View {
                         if let refused = await store.connectCalendar() { problem = refused } else { await locate(force: true) }
                     }
                 }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(accent)
+                .buttonStyle(.borderedProminent).onAccentLabel().buttonBorderShape(.capsule).tint(accent)
             } else if looked, found == nil {
                 Text(language.pick(
                     "I can't identify a unique event in your calendar that day.",
@@ -183,13 +183,13 @@ struct ChangeEventCard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).onAccentLabel()
             .buttonBorderShape(.capsule)
             .tint(change.kind == .cancel ? Palette.danger(scheme) : accent)
             .disabled(working)
 
             Button(language.pick("No, thanks", "No, gracias")) {
-                withAnimation(.snappy(duration: 0.25)) { dismissed = true }
+                withMotion(.snappy(duration: 0.25)) { dismissed = true }
                 if !superseded { store.sendQuickReply(language.pick("No, leave it.", "No, déjala como está.")) }
             }
             .font(.subheadline)

@@ -261,16 +261,47 @@ class AccessTests(unittest.TestCase):
         backend.resolve_password.return_value = 'FAKE-test-password'
         written = []
         def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/login'
             if 'flatMap' in script:  # the inspection: a two-step login shows only the email
                 return json.dumps([{'index':0,'name':'email','type':'email','autocomplete':'username','label':'Email'}])
             written.append(script)
             return {'filled':1}
         with mock.patch('agent.redact.register_vault_redaction_value'):
-            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend)
+            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend,
+                                    sleep=lambda _:None)
         self.assertEqual(out['step'],'identifier')
         self.assertIn('segundo paso',out['next'])
         self.assertIn('fixture@example.com',written[0])
         self.assertNotIn('FAKE-test-password',written[0])
+
+    def test_two_step_login_presses_continue_and_fills_the_password(self):
+        # 06-10: the email was filled three times on Prozis and «Continuar» never pressed.
+        try:
+            import agent.vault_login_classifier  # noqa: F401
+        except ImportError:
+            self.skipTest('Hermes is not importable here')
+        backend = mock.Mock()
+        backend.get_meta.return_value = types.SimpleNamespace(kind='login',origin='https://example.com',identifier='fixture@example.com')
+        backend.resolve_password.return_value = 'FAKE-test-password'
+        state = {'step': 'email'}; written = []
+        def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/login'
+            if script == access.NEXT_STEP_JS:
+                state['step'] = 'password'; return 'pressed'
+            if 'flatMap' in script:
+                fields = [{'index':0,'name':'email','type':'email','autocomplete':'username','label':'Email'}]
+                if state['step'] == 'password':
+                    fields.append({'index':1,'name':'password','type':'password','autocomplete':'current-password','label':'Contraseña'})
+                return json.dumps(fields)
+            written.append(script)
+            return {'filled':2 if state['step'] == 'password' else 1}
+        with mock.patch('agent.redact.register_vault_redaction_value'):
+            out = access.fill_login(self.home,self.entry['id'],'vault-fixture',inspect=self.inspect,evaluate=evaluate,backend=backend,
+                                    sleep=lambda _:None)
+        self.assertNotIn('step', out)
+        self.assertIn('FAKE-test-password', written[-1])
 
     def test_other_origin_credentials_are_rejected_before_secret_resolution(self):
         backend = mock.Mock();backend.get_meta.return_value=types.SimpleNamespace(kind='login',origin='https://other.example')
@@ -317,6 +348,29 @@ class CartRevalidationTests(unittest.TestCase):
         self.assertTrue(out['ok']); self.assertIn('menos',out['next'])
         entry=errands.get(self.home,self.entry['id'])
         self.assertEqual(entry['status'],'working'); self.assertEqual(entry['offer']['price'],'24,49 €')
+    def test_a_coupon_price_is_checked_after_the_coupon_goes_in(self):
+        # 06-10: 34,99 € before IMBACK was taken for a new price of the 27,99 € chosen.
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        out=self.check()
+        self.assertFalse(out['ok']); self.assertTrue(out['coupon_pending']); self.assertIn('IMBACK',out['next'])
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+        self.amount='27,99 €'
+        self.assertTrue(self.check()['ok'])
+    def test_a_coupon_off_the_total_keeps_the_chosen_price(self):
+        # 06-10: Prozis left the line at 34,99 € and took IMBACK off the total (27,99 €).
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'qty':1,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        self.qty='1'
+        with mock.patch.object(prices.module('shop_engine'),'errand_total',return_value={'text':'27,99 €'}):
+            out=self.check()
+        self.assertTrue(out['ok'])
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+    def test_a_coupon_the_shop_refuses_stops_after_trying(self):
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        for _ in range(2): self.assertTrue(self.check().get('coupon_pending'))
+        out=self.check()
+        self.assertTrue(out['price_changed'])
+        entry=errands.get(self.home,self.entry['id'])
+        self.assertEqual(entry['status'],'stuck'); self.assertIn('IMBACK',entry['reason'])
     def test_a_stuck_purchase_can_be_cancelled(self):
         self.amount='39,99 €'; self.check()
         self.assertEqual(errands.stop(self.home,self.entry['id'])['status'],'stopped')
@@ -337,3 +391,48 @@ class CartRevalidationTests(unittest.TestCase):
         changed=lambda ctx,script:'79,97 €'
         self.assertFalse(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=changed))
         self.assertFalse(prices.payment_ready(self.home,{**entry,'checkout_evidence':None},inspect=self.inspect,evaluate=self.evaluate))
+
+
+class CodeRequestTests(unittest.TestCase):
+    """06-10: a code was asked of the person on a page with no field for one."""
+
+    def test_a_code_is_asked_only_where_the_page_has_a_field_for_it(self):
+        self.assertFalse(access.code_asked({}, evaluate=lambda c, e: False))
+        self.assertTrue(access.code_asked({}, evaluate=lambda c, e: True))
+
+    def test_an_unreadable_page_does_not_hide_a_real_code_wall(self):
+        def broken(c, e):
+            raise OSError("gone")
+        self.assertTrue(access.code_asked({}, evaluate=broken))
+
+
+class SignInContinueTests(unittest.TestCase):
+    """06-10: «continue» pressed the first submit of a checkout form («Modificar»); «Finalizar compra»
+    was in the same form."""
+
+    def test_a_checkout_contact_email_is_not_a_sign_in(self):
+        entry = errands.create(Path(tempfile.mkdtemp()), 'Comprar', profile='test')
+        backend = mock.Mock()
+        backend.get_meta.return_value = types.SimpleNamespace(kind='login', origin='https://example.com', identifier='a@b.c')
+        backend.resolve_password.return_value = 'FAKE'
+        def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/es/es/checkout/index'
+            return json.dumps([{'index':0,'name':'email','type':'email','autocomplete':'email','label':'Email'}])
+        try:
+            import agent.vault_login_classifier  # noqa: F401
+        except ImportError:
+            self.skipTest('Hermes is not importable here')
+        home = Path(tempfile.mkdtemp()); entry = errands.create(home, 'Comprar', profile='test')
+        with mock.patch('agent.redact.register_vault_redaction_value'), \
+                self.assertRaisesRegex(ValueError, 'contacto del pedido'):
+            access.fill_login(home, entry['id'], 'v', inspect=lambda e: ('https://example.com', {'context':'c','target':'t'}, None),
+                              evaluate=evaluate, backend=backend, sleep=lambda _: None)
+
+    def test_continue_never_presses_a_generic_or_paying_button(self):
+        script = access.NEXT_STEP_JS
+        self.assertNotIn('requestSubmit', script)
+        self.assertNotIn("type==='submit'", script)
+        for word in ('finaliz', 'pag', 'modific', 'aplicar'):
+            self.assertIn(word, script)
+

@@ -170,7 +170,7 @@ struct AgentActionsScreen: View {
     private func chip(_ profile: String?) -> some View {
         let selected = agent == profile
         return Button {
-            withAnimation(.snappy(duration: 0.2)) { agent = profile }
+            withMotion(.snappy(duration: 0.2)) { agent = profile }
         } label: {
             HStack(spacing: 6) {
                 if let profile { AgentFace(profile: profile, size: 18) }

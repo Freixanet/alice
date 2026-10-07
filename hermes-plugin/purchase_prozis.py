@@ -19,9 +19,16 @@ FILLER = re.compile(r"^(compra(r|me)?|pide|pedir|quiero|necesito|busca(r|me)?|en
                     r"los|las|de|del|en|y|o|con|para|por|que|prozis|tienda|web|online|porfa|favor)$", re.I)
 
 
+def plain(text):
+    """Without accents and in one case: «cómprame» is the filler «comprame», not a product word."""
+    import unicodedata
+    text = unicodedata.normalize('NFKD', str(text or ''))
+    return ''.join(c for c in text if not unicodedata.combining(c)).casefold()
+
+
 def keywords(request):
     """The product words, as six-letter stems: «creatina» and the English slug «creatine» both match."""
-    words = re.findall(r"[^\W\d_]+", request.casefold())
+    words = re.findall(r"[^\W\d_]+", plain(request))
     return list(dict.fromkeys(w[:6] for w in words if len(w) > 2 and not FILLER.match(w)))[:4]
 
 
@@ -32,7 +39,7 @@ def search_request(request, country):
     words = keywords(request)
     if not words:
         return None
-    query = ' '.join(re.sub(r'(?i)^(compra(r|me)?|quiero|necesito)\s+', '', request).split())
+    query = ' '.join(re.sub(r'(?i)^(compra(r|me)?|quiero|necesito)\s+', '', plain(request)).split())
     query = ' '.join(w for w in re.findall(r"[^\W_]+", query) if not FILLER.match(w)) or ' '.join(words)
     from urllib.parse import quote
     return {'url': 'https://www.prozis.com/es/es/search?text=' + quote(query),
@@ -109,7 +116,8 @@ def wait_added(browser, title, variant, qty):
     while True:
         line = browser.read('.top-mini-cart-container .cart-item') or ''
         units = browser.read('.top-mini-cart-container .cart-item .item-qty')
-        if title.casefold() in line.casefold() and variant.casefold() in line.casefold() and units == str(qty):
+        squeeze = lambda s: s.casefold().replace(' ', '')
+        if squeeze(title) in squeeze(line) and squeeze(variant) in squeeze(line) and units == str(qty):
             return
         if time.monotonic() >= deadline:
             raise ValueError('Prozis no confirmó el artículo y sus unidades antes de abrir la cesta temporal.')
