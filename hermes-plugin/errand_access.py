@@ -101,6 +101,17 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
     if selected.get('handle') and handle != selected['handle']:
         raise ValueError('Usa el acceso elegido en la tarjeta de este recado, no otro acceso guardado.')
     page_origin, context, _ = inspect(entry)
+    if not selected.get('handle'):
+        # Not chosen in this errand's card yet: the newest login the person gave for this shop,
+        # whatever older handle the agent remembers from earlier turns (06-10: it kept the oldest,
+        # whose password no longer worked).
+        try:
+            newest = [l for l in vault_logins(page_origin) if origin(l.get('origin') or '') == page_origin]
+        except Exception:  # noqa: BLE001
+            newest = []
+        if newest and handle != newest[0]['handle'] and any(l['handle'] == handle for l in newest):
+            handle = newest[0]['handle']
+            backend = None
     if backend is None:
         from agent.vault_backends import backend_for_handle
         backend = backend_for_handle(handle)
