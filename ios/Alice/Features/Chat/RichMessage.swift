@@ -1519,6 +1519,7 @@ struct RichMessageView: View {
 /// The reply's own words, selectable where they are drawn. A hold brings up
 /// the system handles in the chat; a tap still reveals the reply's actions.
 private struct SelectableReplyText: UIViewRepresentable {
+    @Environment(\.allowsRichTextSelection) private var allowsSelection
     let attributed: AttributedString
     var font: UIFont
     var lineSpacing: CGFloat
@@ -1548,6 +1549,14 @@ private struct SelectableReplyText: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onTap = onTap
         view.tintColor = link
+        // In the chat a hold opens the reply's menu: the view's own holds (selection, the loupe,
+        // a link's preview) stand aside. Taps, links included, still work.
+        for press in view.gestureRecognizers ?? [] where press is UILongPressGestureRecognizer {
+            press.isEnabled = allowsSelection
+        }
+        for menu in view.interactions where menu is UIContextMenuInteraction && !allowsSelection {
+            view.removeInteraction(menu)
+        }
         if let tap = view.gestureRecognizers?.first(where: { $0.name == "alice.replyTap" }) {
             for case let press as UILongPressGestureRecognizer in view.gestureRecognizers ?? [] {
                 tap.require(toFail: press)

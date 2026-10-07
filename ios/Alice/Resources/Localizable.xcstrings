@@ -7101,6 +7101,16 @@
         }
       }
     },
+    "Hold for Reply, Copy, Select and Share.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mantén pulsado para Responder, Copiar, Seleccionar y Compartir."
+          }
+        }
+      }
+    },
     "Hold for actions.": {
       "localizations": {
         "es": {
@@ -13227,6 +13237,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Ver las %lld"
+          }
+        }
+      }
+    },
+    "Select": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seleccionar"
           }
         }
       }

@@ -99,6 +99,12 @@ struct MessageRow: View {
         } else {
             RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras,
                             bubbled: bubbled)
+                // A hold is the menu, so the words are not selected in place; Select opens them.
+                .environment(\.allowsRichTextSelection, false)
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: 22))
+                .contextMenu {
+                    if canShowActions { ReplyMenu(message: actionsMessage, selecting: $selectingText) }
+                }
         }
     }
 
@@ -339,9 +345,7 @@ struct MessageRow: View {
                     }
                     }
                     .accessibilityHint(
-                        canRevealExtras
-                            ? "Shows actions. Hold to select text."
-                            : (canSelectReplyText ? "Hold to select text." : "")
+                        canShowActions ? "Hold for Reply, Copy, Select and Share." : ""
                     )
 
                     if message.role == .assistant, message.choosesModelInAPicker {
@@ -413,11 +417,6 @@ struct MessageRow: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    // Only once the reply has finished: acting on half an
-                    // answer copies or shares something that is still changing.
-                    if showingExtras, canShowActions {
-                        MessageActions(message: actionsMessage)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !learned.isEmpty {
@@ -471,7 +470,8 @@ struct MessageRow: View {
         modelChoices = (try? String(data: JSONEncoder().encode(all), encoding: .utf8)) ?? "{}"
     }
 
-    private var canRevealExtras: Bool { canShowActions || developerLine != nil }
+    /// A tap shows only the developer line now; what to do with a reply is in its hold menu.
+    private var canRevealExtras: Bool { developerLine != nil }
 
     private var canSelectReplyText: Bool {
         !message.pending && !actionsMessage.content.isEmpty
@@ -638,112 +638,6 @@ private struct ChollometroDeals: View {
     }
 }
 
-/// The row of things you can do with a finished reply.
-///
-/// Glyphs chosen to match what a reader coming from another model client
-/// expects: overlapping squares for copy, the tray-and-arrow iOS share, a
-/// speaker for reading aloud, and the two-arrow cycle for another attempt.
-private struct MessageActions: View {
-    @Environment(AppStore.self) private var store
-    @Environment(ReadAloud.self) private var speech
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.givenReaction) private var given
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    let message: Message
-    @State private var copied = false
-    @State private var copyFeedbackID = 0
-
-    var body: some View {
-        // Adjacent targets never overlap; the first glyph aligns with the text.
-        HStack(spacing: 0) {
-            // First, because they answer: a yes or a no to what the reply
-            // proposed, sent as his turn. The one given stays filled.
-            if store.canReact(to: message) {
-                ForEach(Reaction.allCases, id: \.self) { reaction in
-                    reactionButton(reaction)
-                }
-            }
-
-            Button {
-                UIPasteboard.general.string = message.content
-                Haptic.success.play()
-                withMotion(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = true }
-                copyFeedbackID &+= 1
-            } label: {
-                ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
-            }
-            .accessibilityLabel(copied ? "Copied" : "Copy")
-
-            ShareLink(item: message.content) {
-                ActionIcon("square.and.arrow.up", slot: 14)
-            }
-            .accessibilityLabel("Share")
-
-            Button {
-                speech.toggle(message.content, id: message.id)
-            } label: {
-                ActionIcon(
-                    speech.isSpeaking(message.id) ? "speaker.slash" : "speaker.wave.2",
-                    slot: 17.33
-                )
-            }
-            .accessibilityLabel(
-                speech.isSpeaking(message.id) ? "Stop reading" : "Read aloud"
-            )
-
-            // A routine's report was not an answer to anything the person
-            // said, so there is nothing to ask again.
-            if message.routineName == nil {
-                Button {
-                    Haptic.tap.play()
-                    store.retry(message.id)
-                } label: {
-                    ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
-                }
-                .disabled(store.isSending)
-                .accessibilityLabel("Try again")
-            }
-        }
-        // Align the first glyph with the paragraph while retaining its hit area.
-        .padding(.leading, -(ActionIcon.targetSize - 16.67) / 2 + 0.67)
-        .foregroundStyle(.secondary)
-        // Each icon gives a little under the finger, as the chat's cards do.
-        .buttonStyle(.pressable)
-        .padding(.top, 2)
-        .task(id: copyFeedbackID) {
-            guard copyFeedbackID > 0 else { return }
-            do { try await Task.sleep(for: .seconds(1.5)) }
-            catch { return }
-            withMotion(reduceMotion ? nil : .snappy(duration: 0.2)) { copied = false }
-        }
-        .onChange(of: message.id) {
-            copied = false
-            copyFeedbackID = 0
-        }
-    }
-}
-
-extension MessageActions {
-    private func reactionButton(_ reaction: Reaction) -> some View {
-        let chosen = given == reaction
-        return Button {
-            guard !chosen else { return }
-            ReactionTip().invalidate(reason: .actionPerformed)
-            Task { await store.react(reaction, to: message) }
-        } label: {
-            // 16.67: the thumb paints 17pt of ink at 16pt, as the copy
-            // squares do (`scripts/measure-symbol-ink.swift`).
-            ActionIcon(chosen ? reaction.symbol + ".fill" : reaction.symbol, slot: 16.67)
-                .foregroundStyle(chosen ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
-                .symbolEffect(.bounce, value: reduceMotion ? false : chosen)
-        }
-        .disabled(store.isSending && !chosen)
-        .sensoryFeedback(.selection, trigger: chosen) { _, now in now }
-        .accessibilityLabel(reaction == .yes ? Text("Answer yes") : Text("Answer no"))
-        .accessibilityValue(chosen ? Text("Chosen") : Text(verbatim: ""))
-        .accessibilityHint("Sends it to the agent as your answer")
-    }
-}
 
 /// His answer with a thumb: the thumb itself, large, as a single emoji is in
 /// Messages, under the start of the reply it answers when that was not the
@@ -822,6 +716,32 @@ private struct ActionIcon: View {
 
 /// Holding a message you sent: copy it, rewrite it, pick out part of it, or
 /// pass the prompt on.
+/// A finished reply's hold menu: answer it, copy it, pick words out of it, or send it on.
+private struct ReplyMenu: View {
+    @Environment(AppStore.self) private var store
+    let message: Message
+    @Binding var selecting: Bool
+
+    private var author: String {
+        guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
+        return store.botCurrentName(for: bot)
+    }
+
+    var body: some View {
+        Button("Reply", systemImage: "arrowshape.turn.up.left") {
+            store.replyingTo = ReplyQuote(messageID: message.id, author: author, content: message.content)
+        }
+        Button("Copy", systemImage: "doc.on.doc") {
+            UIPasteboard.general.string = message.content
+            Haptic.success.play()
+        }
+        Button("Select", systemImage: "selection.pin.in.out") { selecting = true }
+        ShareLink(item: message.content) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
 private struct SentMessageMenu: View {
     @Environment(AppStore.self) private var store
     let message: Message
