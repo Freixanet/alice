@@ -100,6 +100,9 @@ def record(home, entry, snapshot, errands, action=None):
     previous = entry.get('browser_observation') or {}
     progress = snapshot['observation_id'] != previous.get('id')
     state = {'id': snapshot['observation_id'], 'stage': snapshot['stage'], 'url': snapshot['url'], 'at': time.time(),
+             # The controls the agent was shown, by id: what it may still act on if the page moves.
+             'controls': {c['id']: c['label'] for c in snapshot['controls'] if not c.get('secret')},
+             'document': snapshot.get('document'), 'headings': snapshot.get('headings'),
              'progress_at': time.time() if progress else previous.get('progress_at', time.time()),
              'unchanged': 0 if progress else int(previous.get('unchanged', 0)) + 1}
     if action is not None:
@@ -181,11 +184,23 @@ def _run(home, entry, args, errands, inspect, evaluate, sleep):
         record(home, entry, before, errands)
         return result(before)
     previous = entry.get('browser_observation') or {}
-    if args.get('observation_id') != before['observation_id'] or previous.get('id') != before['observation_id']:
+    control = next((c for c in before['controls'] if c['id'] == args.get('control_id')), None)
+    seen = previous.get('controls') or {}
+    # The page moved since it was observed (a basket drawer opening, a carousel). The action still
+    # goes ahead when the very control chosen is there, unchanged and on the same page: refusing it
+    # every time left a purchase unable to reach the basket (06-10). Anything else is stale.
+    # Never after an action whose result is unknown, and never the control just pressed: a second
+    # «Añadir a la cesta» would add a second unit.
+    last = previous.get('action') or {}
+    same_control = bool(control) and seen.get(control['id']) == control['label'] \
+        and previous.get('url', '').split('#')[0] == before['url'].split('#')[0] \
+        and previous.get('document') == before.get('document') and previous.get('headings') == before.get('headings') \
+        and last.get('outcome') not in ('executing', 'unknown') and last.get('control') != control['label']
+    if (args.get('observation_id') != before['observation_id'] or previous.get('id') != before['observation_id']) \
+            and not same_control:
         record(home, entry, before, errands)
         return {**result(before, outcome='stale'), 'ok': False,
                 'error': 'La página cambió: ninguna acción se ejecutó. Decide usando esta nueva observación.'}
-    control = next((c for c in before['controls'] if c['id'] == args.get('control_id')), None)
     if not control or control['disabled'] or control['secret'] or before['busy']:
         raise ValueError('El control no está disponible o requiere la tarjeta segura de Alice. Observa antes de actuar.')
     if action == 'click':

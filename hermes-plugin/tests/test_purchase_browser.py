@@ -208,3 +208,20 @@ class LivelyPageTests(unittest.TestCase):
         self.assertIn('reject', browser.CONSENT_JS.lower())
         self.assertNotRegex(browser.CONSENT_JS, r'accept-?all|aceptar todas')
 
+
+class MovingPageActionTests(unittest.TestCase):
+    """06-10: a basket drawer kept moving and every click after «Añadir a la cesta» was stale."""
+
+    def setUp(self):
+        self.case = PurchaseBrowserTests('test_one_action_returns_verified_state_on_same_url')
+        self.case.setUp()
+        self.addCleanup(self.case.doCleanups)
+
+    def test_the_same_control_on_a_moved_page_still_acts(self):
+        case = self.case
+        args = case.action()
+        # The basket drawer opened: one more control on the same document, the same headings.
+        case.snapshot['controls'].append({**case.snapshot['controls'][0], 'id': 'drawer', 'label': 'Ver cesta'})
+        out = case.step({**args, 'observation_id': 'old'})
+        self.assertNotEqual(out['outcome'], 'stale')
+

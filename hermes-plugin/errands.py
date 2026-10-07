@@ -1778,6 +1778,7 @@ class Engine:
         repeat_recoveries = 0
         self_fixed = False
         went_cheaper = False
+        coupon_pushed = False
         stalls = 0
         judge_failures = 0
         outcome_asked = 0
@@ -1925,6 +1926,17 @@ class Engine:
                     continue
                 if blocked["kind"] == "cheaper":
                     blocked = {"kind": "other"}
+                offer_now = entry.get("offer") if isinstance(entry.get("offer"), dict) else {}
+                if blocked["kind"] == "price" and offer_now.get("coupon") and not coupon_pushed:
+                    # A coupon price chosen and a higher basket: the coupon goes in before anyone is
+                    # asked to accept a price. The agent gave up without trying it (06-10).
+                    coupon_pushed = True
+                    text = (CONTINUATION + f" La cesta marca {blocked['price']} porque aún no tiene el cupón "
+                            f"{offer_now['coupon']}: no es un cambio de precio. Abre la cesta o el checkout, "
+                            "escribe el cupón en su campo de código promocional, aplícalo, espera a que cambie el "
+                            "total y llama a `purchase_check_cart`. Solo si la tienda rechaza el cupón, termina "
+                            "con «BLOQUEADO: precio … — la tienda no acepta el cupón».")
+                    continue
                 if blocked["kind"] == "datum":
                     # A datum only the person has (date of birth, ID number): one question in the
                     # errand's card, kept for every later purchase; the errand goes on with it.
