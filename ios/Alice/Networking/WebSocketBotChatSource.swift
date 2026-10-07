@@ -582,7 +582,7 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         guard !body.isEmpty else {
             throw HermesRPCClient.Failure(reason: "That slash command is empty.")
         }
-        if let fast = await fastReasoning(body, liveSessionID: liveSessionID, profile: profile) {
+        if let fast = await directSetting(body, liveSessionID: liveSessionID, profile: profile) {
             return fast
         }
         var params: [String: Any] = [
@@ -597,35 +597,61 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         return Self.slashOutput(result, command: body)
     }
 
-    /// Reasoning levels `/reasoning` sets through `config.set`; display words (show, hide…) and
-    /// anything else still go to the slash worker.
-    nonisolated static let reasoningEfforts: Set<String> = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+    /// Settings Hermes changes in-process through `config.get`/`config.set`: the command, its config
+    /// key, the values it takes there, and how its current value is worded (the way the slash worker
+    /// words it, so `SlashReply` presents it the same).
+    struct DirectSetting: Sendable {
+        let command: String
+        let key: String
+        let values: [String]
+        let label: String
+        let extra: [String]
+    }
 
-    /// `/reasoning` and `/reasoning <level>` answered in-process with `config.get`/`config.set`.
-    /// Through `slash.exec` Hermes starts a slash worker per command — a whole second process with
-    /// the MCP fleet — about ten seconds for a one-word setting. The reply is worded the way the
-    /// worker words it, so `SlashReply` presents it the same. nil: not one of these, or a Hermes
-    /// without these keys — then the worker answers as before.
-    private func fastReasoning(_ body: String, liveSessionID: String, profile: String?) async -> String? {
+    nonisolated static let directSettings: [DirectSetting] = [
+        DirectSetting(command: "reasoning", key: "reasoning",
+                      values: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+                      label: "Reasoning effort", extra: ["show", "hide"]),
+        DirectSetting(command: "fast", key: "fast", values: ["normal", "fast"], label: "Fast mode", extra: []),
+        DirectSetting(command: "approvals", key: "approval_mode", values: ["manual", "smart", "off"],
+                      label: "Approval mode", extra: []),
+    ]
+
+    /// A setting command answered in-process. Through `slash.exec` Hermes starts a slash worker on
+    /// a chat's first command — a second process with the MCP fleet — about ten seconds for a
+    /// one-word setting. nil: not one of these (or a Hermes without the key) — the worker answers.
+    private func directSetting(_ body: String, liveSessionID: String, profile: String?) async -> String? {
         let words = body.split(whereSeparator: \.isWhitespace).map { String($0).lowercased() }
-        guard words.first == "reasoning", words.count <= 2 else { return nil }
-        var params: [String: Any] = ["session_id": liveSessionID, "key": "reasoning"]
+        guard let first = words.first, words.count <= 2,
+              let setting = Self.directSettings.first(where: { $0.command == first })
+        else { return nil }
+        var params: [String: Any] = ["session_id": liveSessionID, "key": setting.key]
         if let profile, !profile.isEmpty { params["profile"] = profile }
         if words.count == 2 {
-            let level = words[1]
-            guard Self.reasoningEfforts.contains(level) else { return nil }
-            params["value"] = level
+            let value = words[1]
+            guard setting.values.contains(value) else { return nil }
+            params["value"] = value
             guard (try? await rpc.call("config.set", JSONObject(params))) != nil else { return nil }
-            return "Reasoning effort set to '\(level)' for this session."
+            return "\(setting.label) set to '\(value)' for this session."
         }
         guard let result = try? await rpc.call("config.get", JSONObject(params)),
-              let effort = result["value"] as? String, !effort.isEmpty else { return nil }
-        let shown = (result["display"] as? String) != "hide"
-        return """
-        Reasoning effort: \(effort)
-        Reasoning display: \(shown ? "on" : "off")
-        Usage: /reasoning <none|minimal|low|medium|high|xhigh|max|ultra|show|hide> [--global]
-        """
+              let current = result["value"] as? String, !current.isEmpty else { return nil }
+        let usage = "Usage: /\(setting.command) <\((setting.values + setting.extra).joined(separator: "|"))>"
+        var lines = [usage]
+        if setting.command == "reasoning" {
+            lines.append("Reasoning display: \((result["display"] as? String) == "hide" ? "off" : "on")")
+        }
+        // Last, so a reader of "label: value" at the end finds it.
+        lines.append("\(setting.label): \(current)")
+        return lines.joined(separator: "\n")
+    }
+
+    /// Starts this chat's slash worker ahead of a command the person is typing, so the command
+    /// does not wait for it. A read-only command no one sees; the worker then serves the real one.
+    func warmSlashWorker(liveSessionID: String, profile: String? = nil) async {
+        var params: [String: Any] = ["session_id": liveSessionID, "command": "personality"]
+        if let profile, !profile.isEmpty { params["profile"] = profile }
+        _ = try? await rpc.call("slash.exec", JSONObject(params), within: .seconds(60))
     }
 
     /// Text Alice can put in the chat from a `slash.exec` result.

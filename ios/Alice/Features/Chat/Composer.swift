@@ -179,8 +179,10 @@ struct Composer: View {
         } message: {
             Text(verbatim: (attachmentFailures[store.activeID ?? ""] ?? []).joined(separator: "\n\n"))
         }
-        .onChange(of: store.draft) { _, _ in
+        .onChange(of: store.draft) { old, new in
             commandsDismissed = false
+            // A command is on its way: Hermes' command process starts now, not after the send.
+            if old.isEmpty, new.hasPrefix("/") { Task { await store.warmCommands() } }
         }
         .onChange(of: store.activeChat.id) { _, _ in
             dictation.stop()

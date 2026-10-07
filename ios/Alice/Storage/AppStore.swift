@@ -8005,9 +8005,28 @@ final class AppStore {
         return switched
     }
 
+    /// The person began typing a slash command in Alice's chat: its live session (kept warm for the
+    /// send) gets Hermes' slash worker started, the ~10 s a chat's first command otherwise waited.
+    /// Once per live session; the worker then stays with it.
+    func warmCommands() async {
+        guard let id = activeID,
+              let conversation = conversations.first(where: { $0.id == id }),
+              conversation.routedBotName == nil, !conversation.isRecoveredHistory, !conversation.isAgentTask
+        else { return }
+        await prepareHomeChatIfNeeded(conversationID: id)
+        guard let live = warmHomeSessions[id]?.session.liveID, !commandWarmed.contains(live),
+              let source = await botChatSource()
+        else { return }
+        commandWarmed.insert(live)
+        await source.warmSlashWorker(liveSessionID: live)
+    }
+
     /// Resumes Alice's chat as the person opens it, so the send that follows
     /// does not first wait on `session.resume` (or, for a new chat, on
     /// creating one).
+    /// Live sessions whose slash worker `warmCommands` already started.
+    @ObservationIgnored private var commandWarmed: Set<String> = []
+
     func prepareHomeChatIfNeeded(conversationID: String) async {
         guard let conversation = conversations.first(where: { $0.id == conversationID }),
               conversation.routedBotName == nil, !conversation.isRecoveredHistory
