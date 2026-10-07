@@ -1962,7 +1962,7 @@ def _keep_errand_tools_visible() -> None:
 
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
-            for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
+            for name in ("errand_start", "checkout_request", "card_request", "purchase_options", "product_list",
                          "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart", "purchase_browser"):
                 if name not in core:
                     core.append(name)
