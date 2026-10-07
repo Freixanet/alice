@@ -56,12 +56,13 @@ and other tools. Tool-specific files point here rather than duplicate policy.
   on, or restart a person's real Hermes as part of routine tests. Read-only live
   contract checks must be clearly distinguished from fixture tests.
 
-### This Mac: physical iPhone only, no simulator
+### This Mac: physical iPhone first; simulators only with permission
 
-This Mac (Intel, 16 GB) has no iOS simulators or simulator runtimes installed, on
-purpose: booting one made the machine unusable. Do not create simulators, download
-simulator runtimes (`xcodebuild -downloadPlatform`), or run `scripts/verify-ios.sh`
-here; it depends on a simulator. To ship a change to the user's iPhone:
+This Mac (Intel, 16 GB) gets slow while a simulator runs. Ask the user before booting
+or creating a simulator, downloading simulator runtimes (`xcodebuild -downloadPlatform`)
+or running `scripts/verify-ios.sh` (it depends on one); with their yes it is fine. Shut
+the simulator down when done (`xcrun simctl shutdown all`). To ship a change to the
+user's iPhone:
 
 ```bash
 xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
