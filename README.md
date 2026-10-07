@@ -9,11 +9,13 @@ on your own Mac or server.
 [![Quality](https://github.com/Freixanet/alice/actions/workflows/quality.yml/badge.svg)](https://github.com/Freixanet/alice/actions/workflows/quality.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Status:** a personal project in active daily use and development. It is not on the App
-Store; you build it with Xcode. It needs iOS 26 and a Hermes you run yourself. It is an
-independent project, not a Nous Research product.
+**Status:** an open-source beta for developers, in daily use and active development.
+Today you install it by building it with Xcode; a TestFlight beta is the next milestone.
+It needs iOS 26 and a Hermes you run yourself. Alice is independent: built on Nous
+Research's open Hermes agent, not affiliated with Nous Research. Follow it at
+[myalice.app](https://myalice.app).
 
-[Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Guía en español](docs/getting-connected.md)
+[Get started](#get-started) · [What it does](#what-it-does) · [What's next](#whats-next) · [How it is built](#how-it-is-built) · [Requirements and known constraints](#requirements-and-known-constraints) · [Guía en español](docs/getting-connected.md)
 
 ## From a thought to a task
 
@@ -38,7 +40,7 @@ side of that work:
 
 ## What it does
 
-### Works today, used daily
+### Works today
 
 - **Chat with Hermes and its agents.** Streaming replies, tool activity, Markdown,
   attachments and model choice. Each agent keeps its own conversation and Hermes session.
@@ -59,7 +61,7 @@ side of that work:
 - **Other channels.** The same Alice answers in Telegram and in iMessage (through
   [Photon](https://photon.codes)). iMessage replies are reformatted as plain text messages.
 
-### Built, still being proven in daily use
+### In beta: built, being hardened in daily use
 
 - **Buying online up to the payment.** Alice first clarifies the product, searches
   the Shop catalog and the shop, and shows verified product options. Your choice
@@ -90,6 +92,16 @@ side of that work:
 - **Learning from corrections.** When you correct Alice, the lesson is kept as a standing
   instruction, quoting your words. Skills Hermes writes are applied automatically after a
   safety review.
+
+## What's next
+
+- **Next: TestFlight beta.** Install Alice without building it yourself.
+- **Planned:**
+  - **Public beta**, open to anyone, after the TestFlight beta.
+  - **Purchases you can leave unattended.** Today buying online stops at your "Pay" and
+    still needs you watching.
+  - **App Store**, to install it like any other app.
+  - **WhatsApp**, when WhatsApp's official agent API is public.
 
 ## Get started
 
@@ -177,19 +189,18 @@ Decisions that shape it:
 More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairing.md),
 [Hermes contracts](docs/hermes-contracts.md), [security](SECURITY.md).
 
-## Limitations
+## Requirements and known constraints
 
-- **Not on the App Store.** You need Xcode and an Apple developer account to install it.
-- **Not a hosted service.** It needs a Hermes you run yourself and a model provider you
-  pay for.
-- **Agents depend on the model.** Long web tasks, buying in particular, succeed or fail
-  with the model's ability. Smaller models skip steps that larger ones follow.
-- **Not all checks run on the development Mac.** It is an Intel machine with no iOS
-  simulator, so UI tests there do not run. The app is checked by building and installing
-  it on a real iPhone, and CI runs the simulator suites.
+- **Distributed as source today.** You build it with Xcode and an Apple developer account.
+  A TestFlight beta is next.
+- **Self-hosted by design.** It runs on a Hermes you run yourself and the model provider
+  you choose. There is no Alice cloud holding your data.
+- **Model-agnostic.** It uses the model you configure. Long web tasks, buying in
+  particular, are only as good as that model. Smaller models skip steps that larger ones
+  follow.
 - **iOS wakes background apps when it chooses.** When the phone is locked, a notification
   or approval can wait until you open the app.
-- **WhatsApp is not supported.** WhatsApp's official agent API is not public yet, and
+- **Telegram and iMessage today.** WhatsApp's official agent API is not public yet, and
   Alice does not use unofficial WhatsApp Web clients.
 
 ## Quality
@@ -199,6 +210,9 @@ More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairi
 - **CI:** runs a secret scan, type and lint checks, bundle budgets, the plugin tests, the
   Playwright suites and the iOS simulator suites
   ([workflow](.github/workflows/quality.yml)).
+- **On a real iPhone:** the development Mac is an Intel machine with no iOS simulator, so
+  UI tests do not run there. The app is checked by building and installing it on a real
+  iPhone, and CI runs the simulator suites.
 - **Commands:**
 
   ```bash
@@ -209,9 +223,11 @@ More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairi
 
 What each suite does and does not prove is in [docs/verification.md](docs/verification.md).
 
-## Who built it
+## Founder
 
-Designed and directed by Marc Freixanet. Much of the code was written with AI coding agents
+<!-- [MIS DATOS]: a short bio, and optionally a photo and links, go here. -->
+
+**Marc Freixanet**, founder. Designed and directed Alice. Much of the code was written with AI coding agents
 (Claude Code, Codex) working under the rules in [AGENTS.md](AGENTS.md). That file holds
 the contracts, the verification steps and a checklist that asks every change for evidence.
 The 700+ commit history shows how features were specified, reviewed and fixed, including
