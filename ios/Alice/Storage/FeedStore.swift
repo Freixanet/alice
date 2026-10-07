@@ -219,6 +219,12 @@ final class FeedStore {
     // MARK: Seeds
 
     private func seedIfNew() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-feedSamples") {
+            cache.posts = FeedSamples.posts()
+            return
+        }
+        #endif
         guard !cache.seeded else { return }
         cache.seeded = true
         cache.posts += FeedSeed.posts()

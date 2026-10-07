@@ -108,7 +108,8 @@ struct FeedPostCard: View {
                     Text("Do it")
                         .font(.subheadline.weight(.medium))
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(.borderedProminent)
+                .tint(.primary)
                 .buttonBorderShape(.capsule)
                 .frame(minHeight: 44)
                 .accessibilityHint(post.offer ?? "")

@@ -85,6 +85,7 @@ struct AliceApp: App {
                     #if DEBUG
                     store.seedChannelAlertForUITests()
                     store.seedLongBotChatForUITests()
+                    if ProcessInfo.processInfo.arguments.contains("-feedSamples") { store.showingFeed = true }
                     #endif
                     await store.restoreConnection()
                     await store.restoreDashboard()
