@@ -160,12 +160,16 @@ def _safe_fetch():
     import sys as _sys
 
     name = "alice_safe_fetch"
-    if name not in _sys.modules:
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
-        module = importlib.util.module_from_spec(spec)
-        _sys.modules[name] = module
-        spec.loader.exec_module(module)
-    return _sys.modules[name]
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
 
 
 def _fetch(url: str, limit: int) -> Tuple[bytes, str]:

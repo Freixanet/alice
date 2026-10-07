@@ -107,12 +107,16 @@ def _money():
     import sys as _sys
 
     name = "alice_money"
-    if name not in _sys.modules:
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
-        module = importlib.util.module_from_spec(spec)
-        _sys.modules[name] = module
-        spec.loader.exec_module(module)
-    return _sys.modules[name]
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
 
 
 def _purchases():
@@ -121,12 +125,16 @@ def _purchases():
     import sys as _sys
 
     name = "alice_purchases"
-    if name not in _sys.modules:
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "purchases.py")
-        module = importlib.util.module_from_spec(spec)
-        _sys.modules[name] = module
-        spec.loader.exec_module(module)
-    return _sys.modules[name]
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "purchases.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
 
 
 def payment_pending(home: Path, entry: Dict[str, Any], now: Optional[float] = None) -> bool:
@@ -412,12 +420,16 @@ def _safe_fetch():
     import sys as _sys
 
     name = "alice_safe_fetch"
-    if name not in _sys.modules:
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
-        module = importlib.util.module_from_spec(spec)
-        _sys.modules[name] = module
-        spec.loader.exec_module(module)
-    return _sys.modules[name]
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "safe_fetch.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
 
 
 def _fetch(url: str, limit: int, accept: str) -> Tuple[bytes, str]:
@@ -2333,8 +2345,11 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     out = {k: v for k, v in entry.items() if k not in hidden}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}
-    if out.get("status") == "stuck" and access_blocked(entry):
-        out["blocked"] = {"kind": "access"}
+    try:
+        if out.get("status") == "stuck" and access_blocked(entry):
+            out["blocked"] = {"kind": "access"}
+    except Exception:  # noqa: BLE001 — one unreadable reason must not hide every purchase from the phone
+        pass
     if isinstance(out.get("secure_request"), dict):
         out["secure_request"] = {k: v for k, v in out["secure_request"].items() if k not in ("context", "target")}
     # Only the owned page target is public; cookies, browser context and secrets stay private.

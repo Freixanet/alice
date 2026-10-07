@@ -62,12 +62,16 @@ def _money():
     import sys as _sys
 
     name = "alice_money"
-    if name not in _sys.modules:
-        spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
-        module = importlib.util.module_from_spec(spec)
-        _sys.modules[name] = module
-        spec.loader.exec_module(module)
-    return _sys.modules[name]
+    # Under the loader's lock: a module half-loaded by another thread had no `parse` yet and
+    # broke the phone's purchase list mid-approval (06-10).
+    import threading as _threading
+    with _sys.__dict__.setdefault('_alice_module_load_lock', _threading.RLock()):
+        if name not in _sys.modules:
+            spec = importlib.util.spec_from_file_location(name, Path(__file__).resolve().parent / "money.py")
+            module = importlib.util.module_from_spec(spec)
+            _sys.modules[name] = module
+            spec.loader.exec_module(module)
+        return _sys.modules[name]
 
 
 # ── Store: the options shown in each chat, and which one was chosen ────────────
