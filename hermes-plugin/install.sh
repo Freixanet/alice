@@ -40,6 +40,8 @@ mkdir -p "$staging"
 cp -R "$here/." "$staging/"
 rm -rf "$dest"
 mv "$staging" "$dest"
+# Which source this is: the plugin's version never changed (always 1.0.0), so nobody could tell.
+git -C "$here" rev-parse --short HEAD > "$dest/INSTALLED_FROM" 2>/dev/null || print "unknown" > "$dest/INSTALLED_FROM"
 
 # pypdf (BSD) for PDF forms, into the plugin's own folder: Hermes' environment is not touched.
 python=$hermes_home/hermes-agent/venv/bin/python
