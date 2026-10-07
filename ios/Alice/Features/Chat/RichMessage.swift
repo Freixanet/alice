@@ -1999,7 +1999,8 @@ struct ReplyBubble<Content: View>: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
-            Spacer(minLength: 32)
+            // Room on the right for a swipe to reply to carry it without reaching the edge.
+            Spacer(minLength: 56)
         }
     }
 }

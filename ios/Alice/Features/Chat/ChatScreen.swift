@@ -203,20 +203,15 @@ private struct ChatScreenContent: View, Equatable {
             // at matching levels, so neither has a separate background layer.
             .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
                 composerArea
+                    // Where a reply being answered comes to rest, just above it (`ReplyFocus`).
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                        if store.composerTop != top { store.composerTop = top }
+                    }
             })
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
-                        // Behind a reply being answered, like the rest of the chat; a tap lets go.
-                        .blur(radius: store.replyFocusID == nil ? 0 : 8)
-                        .opacity(store.replyFocusID == nil ? 1 : 0.5)
-                        .allowsHitTesting(store.replyFocusID == nil)
-                        .overlay {
-                            if store.replyFocusID != nil {
-                                Color.clear.contentShape(.rect).onTapGesture { withMotion(.easeOut(duration: 0.15)) { store.replyingTo = nil } }
-                            }
-                        }
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.replyFocusID)
+                        .modifier(ReplyBackdrop())
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
@@ -645,16 +640,8 @@ private struct TranscriptView: View {
         )
         .replySwipe(message, author: replyAuthor(message), enabled: message.role == .assistant
                     && !message.pending && !message.content.isEmpty)
-        // One reply swiped or being answered: everything else steps back behind it, and a tap
-        // there lets go of the reply.
-        .visualEffect { [behind = store.replyFocusID.map { $0 != message.id } ?? false] effect, _ in
-            effect.blur(radius: behind ? 8 : 0).opacity(behind ? 0.5 : 1)
-        }
-        .overlay {
-            if let focus = store.replyFocusID, focus != message.id {
-                Color.clear.contentShape(.rect).onTapGesture { withMotion(.easeOut(duration: 0.15)) { store.replyingTo = nil } }
-            }
-        }
+        // Read in its own modifier: a swipe redraws this row's effects, never the transcript.
+        .modifier(ReplyFocus(messageID: message.id))
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -825,8 +812,7 @@ private struct TranscriptView: View {
                 // conversation ends rather than stopping against the glass.
                 // At rest the field sits on the home indicator and needs a
                 // little more room than when the keyboard has lifted it.
-                // Answering one reply, it sits just above the composer instead.
-                .padding(.bottom, store.replyingTo != nil ? 14 : (keyboardShown ? 52 : 56))
+                .padding(.bottom, keyboardShown ? 52 : 56)
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
@@ -849,15 +835,6 @@ private struct TranscriptView: View {
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
             }
-            // The reply being answered comes down to the composer, once now and once the keyboard is up.
-            .task(id: store.replyingTo?.messageID) {
-                guard let id = store.replyingTo?.messageID else { return }
-                for wait in [0.0, 0.3] {
-                    if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
-                    guard !Task.isCancelled else { return }
-                    withMotion(.snappy(duration: 0.25)) { position.scrollTo(id: id, anchor: .bottom) }
-                }
-            }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             // While the reader is at the end, the end stays put as the lazy
             // rows draw and change the height: the transcript opened at the
@@ -868,7 +845,7 @@ private struct TranscriptView: View {
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
             // Held still while a reply is in front (`AppStore.replyFocusID`).
-            .scrollDisabled(store.replyFocusID != nil)
+            .modifier(ReplyHold())
             // A soft edge below the header as earlier replies leave the viewport.
             .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }

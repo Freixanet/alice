@@ -2,50 +2,45 @@ import SwiftUI
 import UIKit
 
 /// Swipe one of Alice's replies to the right to answer that reply, as in Messages: it follows the
-/// finger, an arrow comes in on its left, a tap of haptics says "let go now", the rest of the chat
-/// blurs behind it, and on release the keyboard opens with the reply quoted above it.
+/// finger up to a stop, an arrow comes in on its left, a haptic says "let go now", the rest of the
+/// chat blurs behind it, and on release the keyboard opens and the reply rests above the composer.
+///
+/// Everything the swipe changes is drawn by modifiers on single rows (`ReplyFocus`, `ReplyHold`,
+/// `ReplyBackdrop`), so the transcript itself is never rebuilt while the finger moves.
 struct ReplySwipe: ViewModifier {
     let message: Message
     let author: String
     let enabled: Bool
 
     @Environment(AppStore.self) private var store
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var offset: CGFloat = 0
     @State private var armed = false
-    @State private var width: CGFloat = 0
 
-    /// How far the reply travels before letting go answers it, and the most it ever moves.
-    static let threshold: CGFloat = 44
+    /// How far the reply travels, and where letting go answers it.
+    static let travel: CGFloat = 40
     /// The last moment a finger came down on a reply. A swipe right that starts there is this
     /// reply's, not the drawer's (`RootView`).
     @MainActor static var touchedAt = Date.distantPast
 
-    private var progress: CGFloat { min(1, offset / Self.threshold) }
-
-    /// Shrunk by as much as it moved, from its leading edge: its right side never goes further
-    /// right than it was, so a wide reply never reaches the edge of the screen.
-    private var scale: CGFloat { width > 0 ? (width - offset) / width : 1 }
+    private var progress: CGFloat { min(1, offset / Self.travel) }
 
     func body(content: Content) -> some View {
         content
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
-            .scaleEffect(scale, anchor: .leading)
             .offset(x: offset)
             .overlay(alignment: .leading) {
                 Image(systemName: "arrowshape.turn.up.left.fill")
-                    .font(.title3.weight(.semibold))
+                    .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
-                    .scaleEffect(armed ? 1 : 0.6 + 0.3 * progress)
+                    .scaleEffect(armed ? 1 : 0.7)
                     .opacity(progress)
-                    // Comes in from behind the screen's edge, a step ahead of the reply.
-                    .offset(x: offset / 2 - 20)
+                    .offset(x: -14 + offset / 2)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
             .gesture(ReplyPan(
                 enabled: enabled,
                 onTouch: { Self.touchedAt = .now },
+                onBegin: begin,
                 onChange: follow,
                 onEnd: release
             ))
@@ -55,25 +50,27 @@ struct ReplySwipe: ViewModifier {
             }
     }
 
-    private func follow(_ translation: CGFloat) {
-        let x = max(0, translation)
-        // Follows the finger up to the threshold and stops there.
-        offset = min(x, Self.threshold)
-        if x > 0, store.replySwipingID != message.id {
-            withMotion(.easeOut(duration: 0.15)) { store.replySwipingID = message.id }
-        }
-        let nowArmed = x >= Self.threshold
-        if nowArmed != armed { armed = nowArmed }
+    private func begin() {
+        withMotion(.easeOut(duration: 0.18)) { store.replySwipingID = message.id }
     }
 
-    private func release(_ translation: CGFloat, _: CGFloat) {
+    private func follow(_ translation: CGFloat) {
+        // With the finger up to the stop, and not a point further.
+        offset = min(max(0, translation), Self.travel)
+        let nowArmed = translation >= Self.travel
+        if nowArmed != armed {
+            withMotion(.snappy(duration: 0.15)) { armed = nowArmed }
+        }
+    }
+
+    private func release(_ translation: CGFloat) {
         let answering = armed
-        withMotion(.snappy(duration: 0.2)) {
+        withMotion(.snappy(duration: 0.22)) {
             offset = 0
+            armed = false
             if answering { answer() }
             store.replySwipingID = nil
         }
-        armed = false
     }
 
     private func answer() {
@@ -81,36 +78,97 @@ struct ReplySwipe: ViewModifier {
     }
 }
 
-/// Only a pan that starts out rightward and sideways: scrolling the chat is never taken.
+/// Every row's part in a reply being swiped or answered: the others blur and let go of it on a
+/// tap; the one answered comes down to rest just above the composer, drawn over the rest.
+struct ReplyFocus: ViewModifier {
+    let messageID: String
+    @Environment(AppStore.self) private var store
+
+    func body(content: Content) -> some View {
+        let focus = store.replyFocusID
+        let behind = focus != nil && focus != messageID
+        // Read only by the row being answered, so the keyboard moving redraws that row alone.
+        let rest: CGFloat? = store.replyingTo?.messageID == messageID ? store.composerTop - 14 : nil
+        content
+            .visualEffect { effect, proxy in
+                effect
+                    .blur(radius: behind ? 10 : 0)
+                    .opacity(behind ? 0.35 : 1)
+                    .offset(y: rest.map { $0 - proxy.frame(in: .global).maxY } ?? 0)
+            }
+            .zIndex(focus == messageID ? 1 : 0)
+            .overlay {
+                if behind {
+                    Color.clear
+                        .contentShape(.rect)
+                        .onTapGesture { withMotion(.snappy(duration: 0.22)) { store.replyingTo = nil } }
+                }
+            }
+    }
+}
+
+/// The chat holds still while a reply is in front.
+struct ReplyHold: ViewModifier {
+    @Environment(AppStore.self) private var store
+    func body(content: Content) -> some View {
+        content.scrollDisabled(store.replyFocusID != nil)
+    }
+}
+
+/// The chat's header blurs with the rest behind a reply in front; a tap on it lets go.
+struct ReplyBackdrop: ViewModifier {
+    @Environment(AppStore.self) private var store
+    func body(content: Content) -> some View {
+        let behind = store.replyFocusID != nil
+        content
+            .visualEffect { effect, _ in effect.blur(radius: behind ? 10 : 0).opacity(behind ? 0.35 : 1) }
+            .allowsHitTesting(!behind)
+            .overlay {
+                if behind {
+                    Color.clear
+                        .contentShape(.rect)
+                        .onTapGesture { withMotion(.snappy(duration: 0.22)) { store.replyingTo = nil } }
+                }
+            }
+    }
+}
+
+/// Only a pan that starts out rightward and sideways. It runs alongside the chat's scroll and,
+/// the moment it begins, takes the touch from it, so the chat never drifts under a swipe.
 private struct ReplyPan: UIGestureRecognizerRepresentable {
     let enabled: Bool
     let onTouch: () -> Void
+    let onBegin: () -> Void
     let onChange: (CGFloat) -> Void
-    let onEnd: (CGFloat, CGFloat) -> Void
+    let onEnd: (CGFloat) -> Void
 
     func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator {
         Coordinator(onTouch: onTouch)
+    }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.delegate = context.coordinator
+        pan.cancelsTouchesInView = true
+        pan.isEnabled = enabled
+        return pan
     }
 
     func updateUIGestureRecognizer(_ pan: UIPanGestureRecognizer, context: Context) {
         pan.isEnabled = enabled
     }
 
-    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
-        let pan = UIPanGestureRecognizer()
-        pan.isEnabled = enabled
-        pan.delegate = context.coordinator
-        pan.cancelsTouchesInView = true
-        return pan
-    }
-
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
-        let translation = pan.translation(in: pan.view).x
         switch pan.state {
-        case .began, .changed:
-            onChange(translation)
+        case .began:
+            // Measured from here, so the reply does not jump by the distance it took to begin.
+            pan.setTranslation(.zero, in: pan.view)
+            context.coordinator.stopScrolling(from: pan.view)
+            onBegin()
+        case .changed:
+            onChange(pan.translation(in: pan.view).x)
         case .ended, .cancelled, .failed:
-            onEnd(translation, translation + pan.velocity(in: pan.view).x * 0.15)
+            onEnd(pan.translation(in: pan.view).x)
         default:
             break
         }
@@ -129,7 +187,27 @@ private struct ReplyPan: UIGestureRecognizerRepresentable {
         func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
             guard let pan = recognizer as? UIPanGestureRecognizer else { return true }
             let velocity = pan.velocity(in: pan.view)
-            return velocity.x > 0 && velocity.x > abs(velocity.y) * 1.2
+            return velocity.x > 0 && velocity.x > abs(velocity.y) * 1.3
+        }
+
+        func gestureRecognizer(
+            _ recognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            other.view is UIScrollView
+        }
+
+        /// Cancels the enclosing scroll view's pan: turning it off and on ends its touch.
+        func stopScrolling(from view: UIView?) {
+            var current = view
+            while let next = current {
+                if let scroll = next as? UIScrollView {
+                    scroll.panGestureRecognizer.isEnabled = false
+                    scroll.panGestureRecognizer.isEnabled = true
+                    return
+                }
+                current = next.superview
+            }
         }
     }
 }

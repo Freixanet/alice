@@ -217,7 +217,7 @@ struct Composer: View {
         .onChange(of: store.replyingTo) { _, quote in
             if quote != nil { focused.wrappedValue = true }
         }
-        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.replyingTo)
+
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.editingMessageID)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
