@@ -8505,8 +8505,8 @@ final class AppStore {
             guard !call.isEmpty, let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
             return String(data: data, encoding: .utf8)
         }
-        // A question for the person, or purchase options: the whole call, to draw the card from.
-        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) {
+        // A question for the person, purchase options or compared products: the whole call, to draw the card from.
+        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) || ProductList.isTool(name) {
             guard let args = dictionary(payload["args"]),
                   let data = try? JSONSerialization.data(withJSONObject: args)
             else { return nil }
