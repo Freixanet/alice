@@ -696,7 +696,9 @@ def approved_message(checkout: Dict[str, Any]) -> str:
         f"{APPROVED_PREFIX} La persona ha aprobado pagar {total} en {checkout.get('merchant') or checkout.get('site')}. "
         f"Justo antes de pulsar pagar, mira el total de la página: si es exactamente {total}, {how}; si es otro, "
         "NO pagues y vuelve a llamar a `checkout_request` con lo que "
-        "muestra ahora. Después de pagar, registra `purchase_outcome` con el número de pedido, el total, "
+        "muestra ahora. Si el pago no llegó a enviarse y «Mis pedidos» de la tienda dice que no hay ningún "
+        "pedido, registra `purchase_outcome` con not_charged, no unknown: la persona lee «no se ha hecho ni "
+        "cobrado», no una duda. Después de pagar, registra `purchase_outcome` con el número de pedido, el total, "
         "los artículos, la tarjeta y la entrega prevista; si no ves cómo acabó, `unknown`, nunca otro intento.")
 
 
