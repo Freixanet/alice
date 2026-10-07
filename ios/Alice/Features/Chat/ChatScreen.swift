@@ -638,8 +638,6 @@ private struct TranscriptView: View {
             modelChange: modelChange,
             learned: learned
         )
-        .replySwipe(message, author: replyAuthor(message), enabled: message.role == .assistant
-                    && !message.pending && !message.content.isEmpty)
         // Read in its own modifier: a swipe redraws this row's effects, never the transcript.
         .modifier(ReplyFocus(messageID: message.id))
         .environment(\.replySuperseded, superseded)
@@ -655,12 +653,6 @@ private struct TranscriptView: View {
         // Parts of one task sit closer than separate messages.
         .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
         .id(message.id)
-    }
-
-    /// Who a reply is quoted from: the agent asked by name, or Alice.
-    private func replyAuthor(_ message: Message) -> String {
-        guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
-        return store.botCurrentName(for: bot)
     }
 
     /// Scrolls to a message a receipt pointed at, loading earlier pages if it

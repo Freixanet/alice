@@ -105,6 +105,9 @@ struct MessageRow: View {
                 .contextMenu {
                     if canShowActions { ReplyMenu(message: actionsMessage, selecting: $selectingText) }
                 }
+                // Only the words swipe to be answered: cards and carousels keep their own swipes.
+                .replySwipe(actionsMessage, author: ReplyMenu.author(of: actionsMessage, in: store),
+                            enabled: !message.pending && !message.content.isEmpty)
         }
     }
 
@@ -722,14 +725,15 @@ private struct ReplyMenu: View {
     let message: Message
     @Binding var selecting: Bool
 
-    private var author: String {
+    /// Who a reply is quoted from: the agent asked by name, or Alice.
+    @MainActor static func author(of message: Message, in store: AppStore) -> String {
         guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
         return store.botCurrentName(for: bot)
     }
 
     var body: some View {
         Button("Reply", systemImage: "arrowshape.turn.up.left") {
-            store.replyingTo = ReplyQuote(messageID: message.id, author: author, content: message.content)
+            store.replyingTo = ReplyQuote(messageID: message.id, author: Self.author(of: message, in: store), content: message.content)
         }
         Button("Copy", systemImage: "doc.on.doc") {
             UIPasteboard.general.string = message.content
