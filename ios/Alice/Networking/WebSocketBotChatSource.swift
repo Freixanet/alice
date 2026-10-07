@@ -582,6 +582,9 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         guard !body.isEmpty else {
             throw HermesRPCClient.Failure(reason: "That slash command is empty.")
         }
+        if let fast = await fastReasoning(body, liveSessionID: liveSessionID, profile: profile) {
+            return fast
+        }
         var params: [String: Any] = [
             "session_id": liveSessionID,
             "command": body,
@@ -592,6 +595,37 @@ struct WebSocketBotChatSource: BotChatSessionSource {
         // while it went on to succeed.
         let result = try await rpc.call("slash.exec", JSONObject(params), within: .seconds(300))
         return Self.slashOutput(result, command: body)
+    }
+
+    /// Reasoning levels `/reasoning` sets through `config.set`; display words (show, hide…) and
+    /// anything else still go to the slash worker.
+    nonisolated static let reasoningEfforts: Set<String> = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]
+
+    /// `/reasoning` and `/reasoning <level>` answered in-process with `config.get`/`config.set`.
+    /// Through `slash.exec` Hermes starts a slash worker per command — a whole second process with
+    /// the MCP fleet — about ten seconds for a one-word setting. The reply is worded the way the
+    /// worker words it, so `SlashReply` presents it the same. nil: not one of these, or a Hermes
+    /// without these keys — then the worker answers as before.
+    private func fastReasoning(_ body: String, liveSessionID: String, profile: String?) async -> String? {
+        let words = body.split(whereSeparator: \.isWhitespace).map { String($0).lowercased() }
+        guard words.first == "reasoning", words.count <= 2 else { return nil }
+        var params: [String: Any] = ["session_id": liveSessionID, "key": "reasoning"]
+        if let profile, !profile.isEmpty { params["profile"] = profile }
+        if words.count == 2 {
+            let level = words[1]
+            guard Self.reasoningEfforts.contains(level) else { return nil }
+            params["value"] = level
+            guard (try? await rpc.call("config.set", JSONObject(params))) != nil else { return nil }
+            return "Reasoning effort set to '\(level)' for this session."
+        }
+        guard let result = try? await rpc.call("config.get", JSONObject(params)),
+              let effort = result["value"] as? String, !effort.isEmpty else { return nil }
+        let shown = (result["display"] as? String) != "hide"
+        return """
+        Reasoning effort: \(effort)
+        Reasoning display: \(shown ? "on" : "off")
+        Usage: /reasoning <none|minimal|low|medium|high|xhigh|max|ultra|show|hide> [--global]
+        """
     }
 
     /// Text Alice can put in the chat from a `slash.exec` result.
