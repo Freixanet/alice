@@ -396,6 +396,16 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
         else:
             priced.append(option)
     kept = priced
+    # A pack, a bundle or «X + something» is another product unless the person asked for one
+    # (HSN: «Creatina … + saborizantes - mix pack» offered for «creatina de 500 g»).
+    bundle = re.compile(r"\bpack\b|\blote\b|\bbundle\b|\bkit\b|\bcombo\b|\bmix\b|\s\+\s", re.I)
+    if not bundle.search(requested):
+        single = [o for o in kept if not bundle.search(str(o.get("title") or ""))]
+        if single:
+            for option in kept:
+                if option not in single:
+                    discarded.append({"title": option["title"], "why": "es un pack o un lote; la persona pidió el producto solo"})
+            kept = single
     # A size the person named («de 500 g») is the product they want: other sizes and formats
     # (1000 mg capsules, a pack) are other products, not a choice to make.
     sizes = _sizes(requested)

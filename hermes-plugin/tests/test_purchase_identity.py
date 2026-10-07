@@ -33,3 +33,10 @@ class SizeTests(unittest.TestCase):
         self.assertEqual(flow._sizes("Creatina Excell (100% Creapure®) en polvo 500g"), {"500g"})
         self.assertEqual(flow._sizes("bote de 0,5 kg"), {"500g"})
         self.assertEqual(flow._sizes("Creatina Excell 1000mg"), set())
+
+
+class BundleTests(unittest.TestCase):
+    def test_a_pack_is_left_out_when_the_product_alone_was_asked_for(self):
+        bundle = __import__("re").compile(r"\bpack\b|\blote\b|\bbundle\b|\bkit\b|\bcombo\b|\bmix\b|\s\+\s", __import__("re").I)
+        self.assertTrue(bundle.search("Creatina Excell (100% Creapure®) en polvo + saborizantes - mix pack"))
+        self.assertFalse(bundle.search("Creatina Excell (100% Creapure®) en polvo"))
