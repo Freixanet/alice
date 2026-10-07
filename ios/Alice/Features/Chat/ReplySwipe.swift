@@ -18,6 +18,8 @@ struct ReplySwipe: ViewModifier {
 
     /// How far the reply travels, and where letting go answers it.
     static let travel: CGFloat = 40
+    /// The most a reply gives past `travel`, however far the finger goes.
+    static let give: CGFloat = 18
     /// The last moment a finger came down on a reply. A swipe right that starts there is this
     /// reply's, not the drawer's (`RootView`).
     @MainActor static var touchedAt = Date.distantPast
@@ -32,6 +34,7 @@ struct ReplySwipe: ViewModifier {
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.primary)
                     .scaleEffect(armed ? 1 : 0.7)
+                    .animation(.snappy(duration: 0.15), value: armed)
                     .opacity(progress)
                     .offset(x: -14 + offset / 2)
                     .allowsHitTesting(false)
@@ -50,26 +53,23 @@ struct ReplySwipe: ViewModifier {
             }
     }
 
-    private func begin() {
-        withMotion(.easeOut(duration: 0.18)) { store.replySwipingID = message.id }
-    }
+    private func begin() {}
 
     private func follow(_ translation: CGFloat) {
-        // With the finger up to the stop, and not a point further.
-        offset = min(max(0, translation), Self.travel)
-        let nowArmed = translation >= Self.travel
-        if nowArmed != armed {
-            withMotion(.snappy(duration: 0.15)) { armed = nowArmed }
-        }
+        let x = max(0, translation)
+        // Free up to the haptic; past it the reply resists, giving at most a little more.
+        offset = x <= Self.travel ? x : Self.travel + Self.give * (1 - exp(-(x - Self.travel) / 70))
+        let nowArmed = x >= Self.travel
+        if nowArmed != armed { armed = nowArmed }
     }
 
     private func release(_ translation: CGFloat) {
         let answering = armed
-        withMotion(.snappy(duration: 0.22)) {
+        armed = false
+        // Back to its place on a soft spring; the blur and the keyboard come in with it.
+        withMotion(.spring(response: 0.32, dampingFraction: 0.82)) {
             offset = 0
-            armed = false
             if answering { answer() }
-            store.replySwipingID = nil
         }
     }
 

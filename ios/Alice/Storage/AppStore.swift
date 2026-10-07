@@ -9188,11 +9188,9 @@ final class AppStore {
 
     /// The reply of Alice's the next message answers, swiped right in the chat (`ReplySwipe`).
     var replyingTo: ReplyQuote?
-    /// The reply being swiped, while the finger is down: the rest of the chat blurs behind it.
-    var replySwipingID: String?
-    /// The reply in front while it is swiped or being answered: everything else blurs, and the
+    /// The reply in front while it is being answered: everything else blurs, and the
     /// chat holds still, until it is sent or let go.
-    var replyFocusID: String? { replySwipingID ?? replyingTo?.messageID }
+    var replyFocusID: String? { replyingTo?.messageID }
     /// The composer's top edge on screen; the reply being answered rests just above it.
     var composerTop: CGFloat = 0
 
