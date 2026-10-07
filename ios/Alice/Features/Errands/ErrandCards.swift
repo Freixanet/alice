@@ -239,14 +239,17 @@ struct ErrandBrowserCard: View {
         .padding(14)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
         .accessibilityElement(children: .contain)
-        .onAppear { if following { live.watch() } }
-        .onDisappear { if following { live.unwatch() } }
+        // The purchase's own tab, never whichever tab the browser has in front: following that one
+        // flicked between the shop, a blank tab and other agents' pages (06-10).
+        .onAppear { if following { live.pin(errand.browserTarget); live.watch() } }
+        .onDisappear { if following { live.unwatch(); live.pin(nil) } }
+        .onChange(of: errand.browserTarget) { _, target in if following { live.pin(target) } }
         .onChange(of: live.url, initial: true) { _, url in
             if !reachedShop, BrowserDestination.reached(url, site: errand.site) { reachedShop = true }
         }
         .onChange(of: following) { was, now in
             if was && !now { still = live.image; live.unwatch() }
-            if now && !was { still = nil; live.watch() }
+            if now && !was { still = nil; live.pin(errand.browserTarget); live.watch() }
         }
     }
 

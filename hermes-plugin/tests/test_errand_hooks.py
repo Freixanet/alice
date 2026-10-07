@@ -421,3 +421,19 @@ class ErrandHookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PaymentCheckTests(unittest.TestCase):
+    """06-10: a test's card payment at hsnstore.com reached the person's chat as a real notice."""
+
+    def test_a_payment_outside_the_real_hermes_home_schedules_nothing(self):
+        plugin = load_plugin()
+        made = []
+        jobs = types.SimpleNamespace(create_job=lambda *a, **k: made.append(k))
+        with tempfile.TemporaryDirectory() as tmp, tempfile.TemporaryDirectory() as real, \
+                mock.patch.object(plugin, "_hermes_root", return_value=Path(tmp)), \
+                mock.patch.dict(sys.modules, {"hermes_constants": types.SimpleNamespace(get_hermes_home=lambda: Path(real)),
+                                              "cron.jobs": jobs}):
+            plugin._schedule_payment_check({"id": "abc", "shop": "hsnstore.com"})
+        self.assertEqual(made, [])
+

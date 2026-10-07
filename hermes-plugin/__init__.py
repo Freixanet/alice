@@ -339,8 +339,11 @@ def _isolate_errand_browser(tool_name=None, args=None, session_id="", **_):
                          (isinstance(n, ast.Attribute) and (n.attr.startswith("_") or n.attr in {"send_cdp", "execute_cdp", "request"}))
                          for n in nodes)
             bypass = bypass or bool(re.search(r"\b(fetch|XMLHttpRequest|WebSocket|sendBeacon)\b", args["code"]))
-        except SyntaxError:
-            bypass = True
+        except SyntaxError as exc:
+            # Said as what it is: answered as a security refusal, a stray indent made the agent
+            # believe it could not go back to the product page, and it gave up (06-10).
+            return {"action": "block", "message": f"El código tiene un error de sintaxis (línea {exc.lineno}: "
+                    f"{exc.msg}); no se ejecutó nada. Corrígelo (sangría, paréntesis, comillas) y vuelve a enviarlo."}
         if bypass:
             return {"action":"block", "message":"Usa los helpers de navegador ya importados para leer y operar la página. Este recado no permite imports, archivos, intérpretes ni transporte HTTP/CDP directo que evite comprobar el total."}
     return {"action": "modify",
@@ -630,6 +633,13 @@ def _schedule_payment_check(entry) -> None:
     from hermes_constants import get_hermes_home
 
     root = _hermes_root()
+    # Only for the real Hermes home: the plugin's own tests write payments into a temporary one,
+    # and their checks reached the person's chat as «a card payment at hsnstore.com» (06-10).
+    try:
+        # A profile's home sits inside the root (~/.hermes/profiles/x under ~/.hermes).
+        Path(get_hermes_home()).resolve().relative_to(Path(root).resolve())
+    except ValueError:
+        return
     if not _purchases().mark(root, entry["id"], check_scheduled=True):
         return  # a refill of the same payment: its check is already on the way
     from cron.jobs import create_job
