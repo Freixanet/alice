@@ -882,7 +882,15 @@ def errand_cart(evaluate: Callable[[str], Any], title: str, variant: str, qty: i
     """The errand's basket as its page shows it now: the line naming the product, its units and
     unit price. Says where the cart is when this page has no such line."""
     page = Page(evaluate)
-    line = cart_line(page, title, variant)
+    # Away from the cart page only a cart drawer counts: a product page's own description names
+    # the product with other amounts in it (HSN: «8,75 €» taken for a 27,98 € basket, and adopted
+    # as «cheaper»).
+    try:
+        here = str(evaluate("location.pathname") or "")
+    except Exception:  # noqa: BLE001
+        here = ""
+    on_cart = bool(re.search(r"/(cart|cesta|carrito|basket|bag|checkout|panier|warenkorb|carrello)", here, re.I))
+    line = cart_line(page, title, variant, scoped=not on_cart)
     if line is None:
         link = cart_link(page)
         raise ValueError("La cesta no muestra una línea con «" + title + "» en esta página"
