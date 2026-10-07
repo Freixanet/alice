@@ -16,10 +16,11 @@ struct ProductList: Hashable, Sendable {
 
         var id: String { url.absoluteString + title }
 
-        /// "Sony · elcorteingles.es": who makes it and where the price is from.
+        /// The brand, as Muse shows it; the shop only when there is no brand. A long shop name
+        /// ("Tienda oficial de Roborock en España") cut the line short and said nothing new.
         var byline: String {
-            let shop = merchant.isEmpty ? (url.host() ?? "").replacingOccurrences(of: "www.", with: "") : merchant
-            return [brand, shop].filter { !$0.isEmpty }.joined(separator: " · ")
+            if !brand.isEmpty { return brand }
+            return merchant.isEmpty ? (url.host() ?? "").replacingOccurrences(of: "www.", with: "") : merchant
         }
     }
 
@@ -51,7 +52,19 @@ struct ProductListCard: View {
     let list: ProductList
     @Environment(\.openURL) private var openURL
 
+    @Environment(\.colorScheme) private var scheme
+
     var body: some View {
+        // As wide as a reply bubble, with the same room on the right and the same corners.
+        HStack(spacing: 0) {
+            rows
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
+            Spacer(minLength: 56)
+        }
+    }
+
+    private var rows: some View {
         VStack(spacing: 0) {
             ForEach(Array(list.products.enumerated()), id: \.element.id) { index, product in
                 if index > 0 { Divider().padding(.leading, 96) }
@@ -66,8 +79,6 @@ struct ProductListCard: View {
                 .accessibilityHint("Opens the product page")
             }
         }
-        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .frame(maxWidth: 360, alignment: .leading)
     }
 
     private func row(_ product: ProductList.Product) -> some View {
