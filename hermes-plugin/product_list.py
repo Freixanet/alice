@@ -20,9 +20,9 @@ MAX_PRODUCTS = 6
 SCHEMA: Dict[str, Any] = {
     "name": "product_list",
     "description": (
-        "Show products you found as cards in the chat — picture, name, brand · shop, price, the price "
-        "before an offer — when the person asks to find, compare or research products and has not asked "
-        "to buy. 2 to 6 products, your pick marked. Call it once your research is done, then write one "
+        "Show products you found in shops as cards in the chat — picture, name, brand · shop, price, the "
+        "price before an offer — when you recommend products to someone who asked for options or which to "
+        "get, and has not asked to buy. Not for explaining how models they named differ: answer that in text. 2 to 6 products, your pick marked. Call it once your research is done, then write one "
         "short paragraph naming which to choose for what (do not repeat each product's details: the cards "
         "show them). To buy, use the purchase steps instead; these cards buy nothing."
     ),
@@ -86,10 +86,12 @@ _RESEARCH = re.compile(
     r"\b(compar\w*|mejor(?:es)?|recomi[eé]nd\w*|recomendaci\w*|cu[aá]l(?:es)? (?:me )?(?:compro|elijo|escojo)|"
     r"opciones de|alternativas? (?:a|al|de)|compare|best|recommend\w*|which \w+ should)\b", re.I)
 
-TURN_NOTE = ("[Alice · productos] Te piden encontrar o comparar productos, no comprarlos. Cuando tengas los "
-             "candidatos, enséñalos con product_list (tarjetas con foto, marca · tienda, precio y precio antes de "
-             "la oferta, tu elección marcada) y después escribe un solo párrafo corto: cuál elegir para qué. Nada "
-             "de tablas ni de repetir los datos de cada producto: las tarjetas ya los muestran.")
+TURN_NOTE = ("[Alice · productos] Te piden productos, no comprarlos. Si recomiendas productos concretos que "
+             "has encontrado en tiendas, con su precio, enséñalos con product_list (tarjetas con foto, marca · "
+             "tienda, precio y precio antes de la oferta, tu elección marcada) y después escribe un solo párrafo "
+             "corto: cuál elegir para qué. Nada de tablas ni de repetir los datos que muestran las tarjetas. Si "
+             "solo quieren entender en qué se diferencian unos modelos que ya nombran, responde en texto: una "
+             "lista corta de diferencias, sin tarjetas.")
 
 
 def is_research(text: Any) -> bool:
