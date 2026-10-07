@@ -74,7 +74,9 @@ final class FeedStore {
                 server: payload.feedPosts, local: cache.posts.filter { !$0.isSeeded }, outbox: cache.outbox
             )
             // New posts slide in and gone ones fold away, rather than the list jumping.
-            withMotion(.snappy) { cache.posts = merged + seeded }
+            // Debug samples (`-feedSamples`) go on top, where a review looks first.
+            let samples = seeded.filter { $0.id.hasPrefix("sample-") }
+            withMotion(.snappy) { cache.posts = samples + merged + seeded.filter { !$0.id.hasPrefix("sample-") } }
             if let text = payload.brief?.text { cache.brief = text }
         }
         cache.generation = payload.feedGeneration
@@ -233,7 +235,8 @@ final class FeedStore {
 
     private func retireSeedsIfDue() {
         let real = cache.posts.filter { !$0.isSeeded && !$0.deleted }.count
-        if real >= FeedSeed.retireAfter { cache.posts.removeAll(where: \.isSeeded) }
+        // Debug samples (`-feedSamples`) stay for the whole review, next to the real posts.
+        if real >= FeedSeed.retireAfter { cache.posts.removeAll { $0.isSeeded && !$0.id.hasPrefix("sample-") } }
     }
 
     // MARK: Storage

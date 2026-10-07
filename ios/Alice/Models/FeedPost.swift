@@ -250,7 +250,7 @@ enum FeedSamples {
                   sources: [FeedSource] = [], basis: String? = nil, offer: String? = nil) -> FeedPost {
             FeedPost(id: "sample-\(id)", kicker: kicker, category: "", headline: headline, body: body,
                      sourceLinks: sources, storyKey: nil, createdAt: now.addingTimeInterval(-hours * 3600),
-                     whyThis: nil, language: "es", basis: basis, offer: offer)
+                     whyThis: nil, language: "es", basis: basis, offer: offer, isSeeded: true)
         }
         let indeed = FeedSource(ref: "src_01", title: "Indeed Hiring Lab", url: URL(string: "https://www.hiringlab.org")!)
         let gurman = FeedSource(ref: "src_02", title: "Bloomberg", url: URL(string: "https://www.bloomberg.com")!)
