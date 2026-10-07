@@ -13,17 +13,24 @@ struct ReplySwipe: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var offset: CGFloat = 0
     @State private var armed = false
+    @State private var width: CGFloat = 0
 
-    /// How far the reply travels before letting go answers it.
-    static let threshold: CGFloat = 52
+    /// How far the reply travels before letting go answers it, and the most it ever moves.
+    static let threshold: CGFloat = 44
     /// The last moment a finger came down on a reply. A swipe right that starts there is this
     /// reply's, not the drawer's (`RootView`).
     @MainActor static var touchedAt = Date.distantPast
 
     private var progress: CGFloat { min(1, offset / Self.threshold) }
 
+    /// Shrunk by as much as it moved, from its leading edge: its right side never goes further
+    /// right than it was, so a wide reply never reaches the edge of the screen.
+    private var scale: CGFloat { width > 0 ? (width - offset) / width : 1 }
+
     func body(content: Content) -> some View {
         content
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            .scaleEffect(scale, anchor: .leading)
             .offset(x: offset)
             .overlay(alignment: .leading) {
                 Image(systemName: "arrowshape.turn.up.left.fill")
@@ -32,7 +39,7 @@ struct ReplySwipe: ViewModifier {
                     .scaleEffect(armed ? 1 : 0.6 + 0.3 * progress)
                     .opacity(progress)
                     // Comes in from behind the screen's edge, a step ahead of the reply.
-                    .offset(x: offset / 2 - 22)
+                    .offset(x: offset / 2 - 20)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -50,17 +57,20 @@ struct ReplySwipe: ViewModifier {
 
     private func follow(_ translation: CGFloat) {
         let x = max(0, translation)
-        // Past the threshold it barely gives, and stops well short of the screen's edge.
-        offset = x < Self.threshold ? x : min(Self.threshold + 8, Self.threshold + (x - Self.threshold) * 0.1)
-        if x > 4, store.replySwipingID != message.id { store.replySwipingID = message.id }
+        // Follows the finger up to the threshold and stops there.
+        offset = min(x, Self.threshold)
+        if x > 0, store.replySwipingID != message.id {
+            withMotion(.easeOut(duration: 0.15)) { store.replySwipingID = message.id }
+        }
         let nowArmed = x >= Self.threshold
         if nowArmed != armed { armed = nowArmed }
     }
 
     private func release(_ translation: CGFloat, _: CGFloat) {
-        if armed { answer() }
-        withMotion(.spring(duration: 0.3, bounce: 0.25)) {
+        let answering = armed
+        withMotion(.snappy(duration: 0.2)) {
             offset = 0
+            if answering { answer() }
             store.replySwipingID = nil
         }
         armed = false

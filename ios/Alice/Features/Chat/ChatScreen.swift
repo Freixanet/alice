@@ -213,7 +213,7 @@ private struct ChatScreenContent: View, Equatable {
                         .allowsHitTesting(store.replyFocusID == nil)
                         .overlay {
                             if store.replyFocusID != nil {
-                                Color.clear.contentShape(.rect).onTapGesture { store.replyingTo = nil }
+                                Color.clear.contentShape(.rect).onTapGesture { withMotion(.easeOut(duration: 0.15)) { store.replyingTo = nil } }
                             }
                         }
                         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.replyFocusID)
@@ -647,14 +647,14 @@ private struct TranscriptView: View {
                     && !message.pending && !message.content.isEmpty)
         // One reply swiped or being answered: everything else steps back behind it, and a tap
         // there lets go of the reply.
-        .blur(radius: store.replyFocusID.map { $0 == message.id ? 0 : 8 } ?? 0)
-        .opacity(store.replyFocusID.map { $0 == message.id ? 1 : 0.5 } ?? 1)
+        .visualEffect { [behind = store.replyFocusID.map { $0 != message.id } ?? false] effect, _ in
+            effect.blur(radius: behind ? 8 : 0).opacity(behind ? 0.5 : 1)
+        }
         .overlay {
             if let focus = store.replyFocusID, focus != message.id {
-                Color.clear.contentShape(.rect).onTapGesture { store.replyingTo = nil }
+                Color.clear.contentShape(.rect).onTapGesture { withMotion(.easeOut(duration: 0.15)) { store.replyingTo = nil } }
             }
         }
-        .animation(reduceMotionAware, value: store.replyFocusID)
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -674,10 +674,6 @@ private struct TranscriptView: View {
     private func replyAuthor(_ message: Message) -> String {
         guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
         return store.botCurrentName(for: bot)
-    }
-
-    private var reduceMotionAware: Animation? {
-        reduceMotion ? nil : .easeOut(duration: 0.2)
     }
 
     /// Scrolls to a message a receipt pointed at, loading earlier pages if it
@@ -829,7 +825,8 @@ private struct TranscriptView: View {
                 // conversation ends rather than stopping against the glass.
                 // At rest the field sits on the home indicator and needs a
                 // little more room than when the keyboard has lifted it.
-                .padding(.bottom, keyboardShown ? 52 : 56)
+                // Answering one reply, it sits just above the composer instead.
+                .padding(.bottom, store.replyingTo != nil ? 14 : (keyboardShown ? 52 : 56))
                 // At least a screenful, aligned to the top, so a short
                 // conversation is not pinned to the foot of the view.
                 .frame(minHeight: area.size.height, alignment: .top)
@@ -851,6 +848,15 @@ private struct TranscriptView: View {
             .onDisappear { store.errandBoard.unwatch() }
             .onChange(of: store.focusedMessage, initial: true) { _, focus in
                 bringIntoView(focus, in: presented)
+            }
+            // The reply being answered comes down to the composer, once now and once the keyboard is up.
+            .task(id: store.replyingTo?.messageID) {
+                guard let id = store.replyingTo?.messageID else { return }
+                for wait in [0.0, 0.3] {
+                    if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                    guard !Task.isCancelled else { return }
+                    withMotion(.snappy(duration: 0.25)) { position.scrollTo(id: id, anchor: .bottom) }
+                }
             }
             .defaultScrollAnchor(.bottom, for: .initialOffset)
             // While the reader is at the end, the end stays put as the lazy
