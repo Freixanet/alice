@@ -53,6 +53,16 @@ struct MessageRow: View {
     /// The experimental interface draws every reply's words in a bubble, in Alice's chat and the agents'.
     private var bubblesReplies: Bool { store.developerMode && homeInterface == .experimental }
 
+    /// The reply's language: its own words once there are some; before that (cards drawn while it
+    /// still streams) the person's message it answers. From the empty reply it read English first.
+    private var replyLanguage: ChatLanguage {
+        if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return ChatLanguage.of(message.content)
+        }
+        let asked = store.shownConversation?.messages.last { $0.role == .user && $0.createdAt <= message.createdAt }
+        return ChatLanguage.of(asked?.content ?? "")
+    }
+
     @ViewBuilder
     private func inBubble<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         if bubblesReplies { ReplyBubble { content() } } else { content() }
@@ -217,7 +227,7 @@ struct MessageRow: View {
                 // Said where it happened: the model changed (chosen, or Hermes fell back because the
                 // usual one failed), with nothing else in the chat to show it.
                 if let modelChange {
-                    Label(modelChange.said(in: ChatLanguage.of(message.content)), systemImage: "arrow.triangle.2.circlepath")
+                    Label(modelChange.said(in: replyLanguage), systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -298,7 +308,7 @@ struct MessageRow: View {
                     // its words about them. Drawn under the words, the text arrived afterwards above a
                     // card already on screen, and the chat read out of order.
                     ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
-                        PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
+                        PurchaseOptionsCard(detail: call.detail, language: replyLanguage,
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
                                             replyProfile: message.mentionProfile,
                                             onLoaded: { purchaseSets[call.id] = $0 })
@@ -337,7 +347,7 @@ struct MessageRow: View {
                     } else if store.pendingHomeModelConfirmation?.replyID == message.id {
                         ModelConfirmationCard()
                     } else if let set = message.tools.reversed().compactMap({ purchaseSets[$0.id] }).first,
-                              let recommendation = set.recommendation(ChatLanguage.of(message.content)) {
+                              let recommendation = set.recommendation(replyLanguage) {
                         replyBody(recommendation, bubbled: bubblesReplies)
                     } else if !message.content.isEmpty {
                         // Markdown as blocks — headings, lists, tables, code,
@@ -361,7 +371,7 @@ struct MessageRow: View {
                     if message.role == .assistant, message.choosesModelInAPicker {
                         if let chosen = chosenModel {
                             // Done: the picker changed it (or it already was that one).
-                            Label(ChatLanguage.of(message.content).pick("Model changed to \(chosen)", "Modelo cambiado a \(chosen)"),
+                            Label(replyLanguage.pick("Model changed to \(chosen)", "Modelo cambiado a \(chosen)"),
                                   systemImage: "checkmark.circle.fill")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(Palette.success(scheme))
@@ -431,7 +441,7 @@ struct MessageRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if !learned.isEmpty {
                     Button { showingLessons = true } label: {
-                        Label(LessonNotice.said(in: ChatLanguage.of(message.content)), systemImage: "graduationcap")
+                        Label(LessonNotice.said(in: replyLanguage), systemImage: "graduationcap")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

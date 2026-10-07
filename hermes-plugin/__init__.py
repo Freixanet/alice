@@ -2287,6 +2287,24 @@ def _register_task_tools(ctx) -> None:
                 except Exception:  # noqa: BLE001
                     logging.getLogger(__name__).warning("purchases: could not show the cards from the evidence", exc_info=True)
                     shown = None
+                flow = _purchase_flow()
+                request = _PURCHASE_REQUESTS.get(session, "")
+                if (shown and shown.get('ok') and len(shown.get('options') or []) == 1
+                        and flow.requested_identity(request)[0]):
+                    # The one option asked for: started here, as the evidence lands, not shown as a
+                    # card to tap while the search is still running (a tap then was lost, 07-10).
+                    option_id = str(shown['options'][0].get('id') or '')
+                    chosen = flow.choose(_hermes_root(), session, option_id, qty=1, commit=False)
+                    if chosen is not None:
+                        started = _start_purchase(session, chosen)
+                        flow.choose(_hermes_root(), session, option_id, qty=chosen.get("qty", 1))
+                        _ERRAND_TURN_IDS[session] = started["errand_id"]
+                        _PURCHASE_OPEN.discard(session)
+                        return _agent_json({"ok": True, "started": True, "errand_id": started["errand_id"],
+                                            "next": ("Era la única opción y es la pedida: la compra ya está en marcha. "
+                                                     "Dilo en una línea («Marchando: preparo la compra; te enseño el "
+                                                     "total antes de pagar») y termina el turno. No llames a "
+                                                     "purchase_options ni pidas que elija.")})
                 if shown and shown.get('ok'):
                     result['set'] = shown['set']
                     result['cards'] = shown['options']

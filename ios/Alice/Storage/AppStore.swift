@@ -8652,6 +8652,18 @@ final class AppStore {
     func sendQuickReply(_ text: String, replyProfile: String? = nil, followsLatestAgent: Bool = true) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }
+        // A product tapped while Alice is still working: sent as a message once the turn ends.
+        // Sent now it became a note to the running turn, which the purchase never saw (07-10).
+        if reply.contains("[elección:"), isSending, let chat = activeID {
+            Task { [weak self] in
+                while let self, self.sendingConversations.contains(chat) {
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+                guard let self, self.activeID == chat else { return }
+                self.sendQuickReply(reply, replyProfile: replyProfile, followsLatestAgent: followsLatestAgent)
+            }
+            return
+        }
         let savedDraft = draft
         let savedMentions = draftMentions
         let savedAttachments = draftAttachments

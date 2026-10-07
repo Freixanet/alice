@@ -67,6 +67,10 @@ struct PurchaseOptionSet: Hashable, Sendable {
         guard let best = options.first(where: \.recommended) else { return nil }
         let name = best.variant.isEmpty || best.title.localizedCaseInsensitiveContains(best.variant)
             ? best.title : "\(best.title) · \(best.variant)"
+        // One option is not a choice: nothing to «open a card to choose» between.
+        if options.count == 1 {
+            return language.pick("It's the one that matches: \(name).", "Es la que encaja: \(name).")
+        }
         let recommendation = language.pick("I recommend \(name).", "Te recomiendo \(name).")
         return recommendation + "\n" + language.pick("Open a card to choose your product.", "Abre una tarjeta para elegir el producto.")
     }
