@@ -119,7 +119,7 @@ struct SecureRequestSheet: View {
                 Text("I have an account").tag(false)
                 Text("Create one").tag(true)
             }
-            .pickerStyle(.segmented)
+            .segments()
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }

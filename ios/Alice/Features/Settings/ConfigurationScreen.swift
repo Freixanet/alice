@@ -47,7 +47,7 @@ struct ConfigurationScreen: View {
                         Text("Manual").tag("manual")
                         Text("Off").tag("off")
                     }
-                    .pickerStyle(.segmented)
+                    .segments()
                 } header: {
                     Text("Safety")
                 } footer: {

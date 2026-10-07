@@ -134,7 +134,7 @@ struct MacLoadScreen: View {
                         Text(item.rawValue).tag(item)
                     }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }

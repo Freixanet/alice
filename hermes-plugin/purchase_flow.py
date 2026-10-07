@@ -33,6 +33,13 @@ MAX_OPTIONS = 1000
 CHANNELS = ("catalog", "browser")
 CURRENCY = re.compile(r"^[A-Z]{3}$")
 CHOICE = re.compile(r"^\s*(?:@[\w-]+\s+)?\[elecci[oó]n:([0-9a-f]{8}-[1-9][0-9]*)\]")
+# The app's swipe-to-reply puts the reply answered first, as Markdown quote lines.
+QUOTE = re.compile(r"^(?:[ \t]*>[^\n]*\n)+\s*")
+
+
+def without_quote(text: Any) -> str:
+    """The person's own words, without a quoted reply of Alice's before them."""
+    return QUOTE.sub("", str(text or ""), count=1)
 # A request to buy: the chat clarifies and shows options first; nothing starts on its own.
 PURCHASE_REQUEST = re.compile(
     r"\b(c[oó]mpra(me|lo|la|los|las)?|comprar|p[ií]de(me|lo|la)?|pedir|carrito|cesta|a[nñ]ade\w*\s+al\s+carrito"
@@ -415,12 +422,12 @@ def choose(home: Path, session: str, option_id: str, now: Optional[float] = None
 
 
 def chosen_id(text: Any) -> Optional[str]:
-    found = CHOICE.match(str(text or ""))
+    found = CHOICE.match(without_quote(text))
     return found.group(1) if found else None
 
 
 def is_purchase_request(text: Any) -> bool:
-    text = " ".join(str(text or "").split())
+    text = " ".join(without_quote(text).split())
     return bool(text) and not text.startswith(("[respuesta:", "[elecci", "[Continuing")) \
         and bool(PURCHASE_REQUEST.search(text))
 

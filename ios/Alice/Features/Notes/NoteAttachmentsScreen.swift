@@ -8,6 +8,7 @@ import UIKit
 /// the page still lists the links.
 struct NoteAttachmentsScreen: View {
     let scope: NotesScope
+    var title: LocalizedStringKey = "Attachments"
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -83,7 +84,7 @@ struct NoteAttachmentsScreen: View {
         .scrollContentBackground(.hidden)
         .contentMargins(.top, 36, for: .scrollContent)
         .background { Palette.background(scheme).ignoresSafeArea() }
-        .navigationTitle("Attachments")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
     }
 

@@ -46,7 +46,7 @@ struct MCPScreen: View {
                 Picker("MCP view", selection: $pane) {
                     ForEach(MCPPane.allCases) { item in Text(item.rawValue).tag(item) }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .listRowBackground(Palette.card(scheme))
             }
 
@@ -622,7 +622,7 @@ private struct AddMCPServerSheet: View {
                         Text("HTTP / SSE").tag("http")
                         Text("stdio").tag("stdio")
                     }
-                    .pickerStyle(.segmented)
+                    .segments()
                 }
                 .listRowBackground(Palette.card(scheme))
 

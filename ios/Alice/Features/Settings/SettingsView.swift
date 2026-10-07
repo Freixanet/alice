@@ -63,6 +63,17 @@ struct SettingsView: View {
                 }
                 .accessibilityIdentifier("settings.activity")
                 .accessibilityValue(store.unreadActivity > 0 ? Text("\(store.unreadActivity) unread") : Text(""))
+                // Beside Activity, where each routine's results arrive (it left the drawer).
+                NavigationLink {
+                    RoutinesScreen()
+                        .onAppear { store.markNoticesSeen(.routines) }
+                } label: {
+                    SettingsMenuLabel(
+                        "Routines", systemImage: "clock",
+                        value: store.unreadNotices(in: .routines) > 0 ? Text("\(store.unreadNotices(in: .routines))") : nil
+                    )
+                }
+                .accessibilityIdentifier("settings.routines")
                 if store.dashboardReady {
                     NavigationLink { MemoryScreen() } label: {
                         SettingsMenuLabel("Memory", systemImage: "person.text.rectangle")
@@ -78,7 +89,11 @@ struct SettingsView: View {
             }
             .listRowBackground(Palette.card(scheme))
         }
+        // Room between the bar's back button and the first section, «Connection».
+        .contentMargins(.top, 20, for: .scrollContent)
         .navigationTitle("Settings")
+        // The system's small centred title, not a large one over the list.
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // A page, not a sheet: it goes back the way it came, with a chevron.
             ToolbarItem(placement: .topBarLeading) {
@@ -177,7 +192,7 @@ struct AppearanceSettingsView: View {
                         Text(choice.label).tag(choice)
                     }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .labelsHidden()
             }
             Section("Colour") {

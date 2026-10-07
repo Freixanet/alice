@@ -22,7 +22,7 @@ struct ComponentGallery: View {
                     Text("Español").tag(ChatLanguage.spanish)
                     Text("English").tag(ChatLanguage.english)
                 }
-                .pickerStyle(.segmented)
+                .segments()
 
                 if let sandbox {
                     ForEach(GallerySection.allCases) { section in

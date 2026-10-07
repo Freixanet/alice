@@ -24,6 +24,7 @@ private struct ChatScreenContent: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
 
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
@@ -173,10 +174,6 @@ private struct ChatScreenContent: View, Equatable {
         experimentalEnabled && experimentalSection != .chat && experimentalSection != .today
     }
 
-    private var experimentalMenu: some View {
-        ExperimentalHomeMenu(selected: $experimentalSection, onSelect: selectExperimental)
-    }
-
     private func selectExperimental(_ section: ExperimentalHomeMenu.Section) {
         composerFocused = false
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -206,10 +203,15 @@ private struct ChatScreenContent: View, Equatable {
             // at matching levels, so neither has a separate background layer.
             .modifier(ChatBottomChrome(usesScrollEdges: hasTranscript) {
                 composerArea
+                    // Where a reply being answered comes to rest, just above it (`ReplyFocus`).
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { top in
+                        if store.composerTop != top { store.composerTop = top }
+                    }
             })
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
+                        .modifier(ReplyBackdrop())
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
@@ -343,18 +345,15 @@ private struct ChatScreenContent: View, Equatable {
     @ViewBuilder
     private var composerArea: some View {
         if experimentalEnabled {
-            // The round section button and the composer's own capsule, at the
-            // same 44pt height, bottom-aligned so both grow from the same
-            // baseline as the field takes more lines.
-            HStack(alignment: .bottom, spacing: 10) {
-                experimentalMenu
-                Composer(
-                    focused: $composerFocused,
-                    placeholder: placeholder,
-                    keyboardShown: keyboardShown,
-                    compact: true
-                )
-            }
+            // The composer alone, full width and centred: the round section button beside it is
+            // gone (Notes and Library are in the drawer, Routines in Settings).
+            Composer(
+                focused: $composerFocused,
+                placeholder: placeholder,
+                keyboardShown: keyboardShown,
+                compact: true
+            )
+            .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
             .padding(.bottom, keyboardShown ? 10 : 6)
         } else {
@@ -639,6 +638,8 @@ private struct TranscriptView: View {
             modelChange: modelChange,
             learned: learned
         )
+        // Read in its own modifier: a swipe redraws this row's effects, never the transcript.
+        .modifier(ReplyFocus(messageID: message.id))
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -835,6 +836,8 @@ private struct TranscriptView: View {
             // up, so what they are reading does not move.
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
+            // Held still while a reply is in front (`AppStore.replyFocusID`).
+            .modifier(ReplyHold())
             // A soft edge below the header as earlier replies leave the viewport.
             .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }
@@ -930,6 +933,8 @@ private struct TranscriptView: View {
                         .accessibilityLabel("Jump to latest message")
                         .accessibilityIdentifier("chat.scrollToBottom")
                         .padding(.bottom, 2)
+                        // Not while a reply is being answered: the chat holds still then.
+                        .modifier(ReplyHidden())
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                     }
                 }

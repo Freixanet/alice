@@ -10,6 +10,10 @@ import UIKit
 /// only, as in Notes: the person's own folders get a handle, the places do not.
 struct NotesFoldersScreen: View {
     var onClose: () -> Void = {}
+    /// "Library" when shown as one of the Library's parts.
+    var title: LocalizedStringKey = "Folders"
+    /// Off inside the Library, whose page already has its back button.
+    var closes = true
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -178,19 +182,21 @@ struct NotesFoldersScreen: View {
         ))
         .contentMargins(.top, 36, for: .scrollContent)
         .background { Palette.background(scheme).ignoresSafeArea() }
-        .navigationTitle("Folders")
+        .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .searchable(text: $query, prompt: "Search notes")
         .onChange(of: query) { _, text in
             if !text.isEmpty { editingFolders = false }
         }
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button(action: onClose) {
-                    Image(systemName: "chevron.left")
+            if closes {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onClose) {
+                        Image(systemName: "chevron.left")
+                    }
+                    .accessibilityLabel("Back")
+                    .accessibilityIdentifier("notes.back")
                 }
-                .accessibilityLabel("Back")
-                .accessibilityIdentifier("notes.back")
             }
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Button {

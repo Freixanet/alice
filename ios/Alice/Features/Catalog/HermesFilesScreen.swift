@@ -100,7 +100,7 @@ struct HermesFilesScreen: View {
                 Picker("Files surface", selection: $mode) {
                     ForEach(HermesFilesMode.allCases) { item in Text(item.rawValue).tag(item) }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .listRowBackground(Palette.card(scheme))
             }
 

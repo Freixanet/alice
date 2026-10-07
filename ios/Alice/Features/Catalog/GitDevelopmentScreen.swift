@@ -323,7 +323,7 @@ struct GitDevelopmentScreen: View {
             Picker("Scope", selection: $reviewScope) {
                 ForEach(GitReviewScope.allCases) { scope in Text(scope.label).tag(scope) }
             }
-            .pickerStyle(.segmented)
+            .segments()
             .listRowBackground(Palette.card(scheme))
 
             if reviewScope == .sinceRef {
@@ -786,7 +786,7 @@ private struct GitDiffSheet: View {
                         Picker("Diff", selection: $mode) {
                             ForEach(allowedModes) { Text($0.label).tag($0) }
                         }
-                        .pickerStyle(.segmented)
+                        .segments()
                     }
                 }
                 Section {
@@ -964,7 +964,7 @@ private struct GitWorktreeAddSheet: View {
                         Text("New branch").tag(false)
                         Text("Existing branch").tag(true)
                     }
-                    .pickerStyle(.segmented)
+                    .segments()
                 }
 
                 if existing {

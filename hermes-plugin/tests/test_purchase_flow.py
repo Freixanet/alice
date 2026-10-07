@@ -177,6 +177,14 @@ class WordsTests(unittest.TestCase):
         self.assertEqual(flow.chosen_id("@compras [elección:a1b2c3d4-2] Producto"), "a1b2c3d4-2")
         self.assertIsNone(flow.chosen_id("la segunda"))
 
+    def test_a_choice_after_a_quoted_reply(self):
+        # 06-10: the app sent a tapped option behind the reply being answered, and no purchase began.
+        quoted = "> He encontrado cinco formatos en Prozis. Te recomiendo la de 300 g.\n\n"
+        self.assertEqual(flow.chosen_id(quoted + "[elección:772ab209-1] Creatina · Prozis · 29,99 €"),
+                         "772ab209-1")
+        self.assertFalse(flow.is_purchase_request(quoted + "gracias"))
+        self.assertTrue(flow.is_purchase_request("> ¿Qué tal el día?\n\ncómprame creatina en HSN"))
+
     def test_a_cart_action_is_told_apart_from_reading(self):
         self.assertTrue(flow.is_cart_action("browser_click", {"text": "Añadir a la cesta"}))
         self.assertTrue(flow.is_cart_action("browser_exec", {"code": "click('Add to bag')"}))
