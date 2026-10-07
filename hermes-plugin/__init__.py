@@ -1894,6 +1894,26 @@ def _errand_turn(session_id="", user_message=None, **_):
             flow.remember_request(_hermes_root(), session, str(user_message or ""))
             _LOOKED.discard(session)
             again = flow.reshow(_hermes_root(), session, str(user_message or ""))
+            if again and len(again["options"]) == 1 and flow.requested_identity(str(user_message or ""))[0]:
+                # The one asked-for option, asked for again: an errand still alive for it is said as
+                # it is; otherwise the purchase starts anew. Shown the old card, Alice once told the
+                # person «ya tienes el recado en marcha» after they had cancelled it.
+                option_id = str(again["options"][0].get("id") or "")
+                live = next((e for e in errands.listing(_hermes_root())
+                             if e.get("origin_session") == session
+                             and (e.get("offer") or {}).get("option_id") == option_id
+                             and e.get("status") in ("working", "queued", "needs_approval", "needs_input",
+                                                     "needs_login", "needs_card")), None)
+                if live:
+                    return {"context": (f"[Alice · compra] Ya hay un recado vivo para esto («{live.get('title')}»), "
+                                        f"en estado {live.get('status')}. Dilo tal cual en una línea; no empieces otro.")}
+                chosen = flow.choose(_hermes_root(), session, option_id, qty=1, commit=False)
+                if chosen is not None:
+                    out = _start_purchase(session, chosen)
+                    flow.choose(_hermes_root(), session, option_id, qty=chosen.get("qty", 1))
+                    _ERRAND_TURN_IDS[session] = out["errand_id"]
+                    _PURCHASE_OPEN.discard(session)
+                    return {"context": flow.chosen_note(out, chosen)}
             if again:
                 # Asked again for what was already searched here: the same cards are back on
                 # screen (the app draws them under this reply). No new search, no answer from
