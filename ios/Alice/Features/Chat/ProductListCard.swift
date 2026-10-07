@@ -56,12 +56,10 @@ struct ProductListCard: View {
 
     var body: some View {
         // As wide as a reply bubble, with the same room on the right and the same corners.
-        HStack(spacing: 0) {
-            rows
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
-            Spacer(minLength: 56)
-        }
+        rows
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
+            .chatWide()
     }
 
     private var rows: some View {

@@ -211,7 +211,7 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 ForEach(errandRefs, id: \.self) { ref in
-                    ErrandChatBlock(ref: ref).frame(maxWidth: .infinity, alignment: .leading)
+                    ErrandChatBlock(ref: ref).chatWide()
                 }
             case .assistant:
                 // Said where it happened: the model changed (chosen, or Hermes fell back because the
@@ -290,6 +290,7 @@ struct MessageRow: View {
                     if BrowserActivity.used(message.tools), working {
                         LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools),
                                         caption: BrowserActivity.caption(message.tools))
+                            .chatWide()
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
 
@@ -301,10 +302,11 @@ struct MessageRow: View {
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
                                             replyProfile: message.mentionProfile,
                                             onLoaded: { purchaseSets[call.id] = $0 })
+                            .chatWide()
                     }
                     ForEach(message.tools.filter { ProductList.isTool($0.name) && $0.status == .done }) { call in
                         if let list = ProductList.parse(call.detail) {
-                            ProductListCard(list: list).frame(maxWidth: .infinity, alignment: .leading)
+                            ProductListCard(list: list)
                         }
                     }
                     ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
@@ -376,7 +378,7 @@ struct MessageRow: View {
                     // The errand this turn started, after everything the turn said.
                     if message.role == .assistant {
                         ForEach(errandRefs, id: \.self) { ref in
-                            ErrandChatBlock(ref: ref)
+                            ErrandChatBlock(ref: ref).chatWide()
                         }
                     }
 

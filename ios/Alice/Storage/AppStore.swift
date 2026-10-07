@@ -8006,15 +8006,24 @@ final class AppStore {
     }
 
     /// Resumes Alice's chat as the person opens it, so the send that follows
-    /// does not first wait on `session.resume`. Only a chat Hermes already
-    /// has: creating one here would open an empty session for a chat the
-    /// person may never write in, and the create path needs the opening
-    /// history the send assembles.
+    /// does not first wait on `session.resume` (or, for a new chat, on
+    /// creating one).
     func prepareHomeChatIfNeeded(conversationID: String) async {
         guard let conversation = conversations.first(where: { $0.id == conversationID }),
-              conversation.routedBotName == nil, !conversation.isRecoveredHistory,
-              let storedID = conversation.hermesSessionID, !storedID.isEmpty
+              conversation.routedBotName == nil, !conversation.isRecoveredHistory
         else { return }
+        guard let storedID = conversation.hermesSessionID, !storedID.isEmpty else {
+            // A new chat is opened in Hermes now, as it appears, not when the first message or
+            // command is sent: making a session loads the agent, its tools and plugins, seconds a
+            // command like /reasoning spent under a thinking indicator.
+            if !dashboardReady { await restoreDashboard() }
+            guard let source = await botChatSource(),
+                  let session = try? await openHomeSession(source: source, conversationID: conversationID,
+                                                           earlier: conversation.messages)
+            else { return }
+            warmHomeSessions[conversationID] = (session, Date())
+            return
+        }
         if let warm = warmHomeSessions[conversationID], warm.session.storedID == storedID,
            Date().timeIntervalSince(warm.at) < Self.warmHomeSessionLifetime {
             return

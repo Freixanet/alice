@@ -2009,8 +2009,23 @@ struct ReplyBubble<Content: View>: View {
                 .padding(.vertical, 12)
                 .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
             // Room on the right for a swipe to reply to carry it without reaching the edge.
-            Spacer(minLength: 56)
+            Spacer(minLength: ChatLayout.trailingRoom)
         }
+    }
+}
+
+/// One width for everything Alice puts in the chat: a reply bubble at its widest, and the wide
+/// components (the browser, product and purchase cards, errands) always that wide, as in Muse.
+enum ChatLayout {
+    /// What is left free on the right of Alice's side of the chat.
+    static let trailingRoom: CGFloat = 24
+}
+
+extension View {
+    /// As wide as a reply bubble can grow.
+    func chatWide() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, ChatLayout.trailingRoom)
     }
 }
 

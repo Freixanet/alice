@@ -29,7 +29,7 @@ SCHEMA: Dict[str, Any] = {
     "parameters": {"type": "object", "properties": {
         "products": {"type": "array", "minItems": 1, "maxItems": MAX_PRODUCTS, "items": {
             "type": "object", "properties": {
-                "title": {"type": "string", "description": "The product's name"},
+                "title": {"type": "string", "description": "The full title as the shop lists it, with its key features (model, capacity, what is included): it tells the products apart"},
                 "brand": {"type": "string"},
                 "merchant": {"type": "string", "description": "The shop or site the price is from"},
                 "price": {"type": "string", "description": "As shown, e.g. '69,99 €'"},
