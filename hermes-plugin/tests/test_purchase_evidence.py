@@ -317,6 +317,21 @@ class CartRevalidationTests(unittest.TestCase):
         self.assertTrue(out['ok']); self.assertIn('menos',out['next'])
         entry=errands.get(self.home,self.entry['id'])
         self.assertEqual(entry['status'],'working'); self.assertEqual(entry['offer']['price'],'24,49 €')
+    def test_a_coupon_price_is_checked_after_the_coupon_goes_in(self):
+        # 06-10: 34,99 € before IMBACK was taken for a new price of the 27,99 € chosen.
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        out=self.check()
+        self.assertFalse(out['ok']); self.assertTrue(out['coupon_pending']); self.assertIn('IMBACK',out['next'])
+        self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
+        self.amount='27,99 €'
+        self.assertTrue(self.check()['ok'])
+    def test_a_coupon_the_shop_refuses_stops_after_trying(self):
+        errands.update(self.home,self.entry['id'],offer={**self.offer,'price':'27,99 €','list_price':'34,99 €','coupon':'IMBACK'})
+        for _ in range(2): self.assertTrue(self.check().get('coupon_pending'))
+        out=self.check()
+        self.assertTrue(out['price_changed'])
+        entry=errands.get(self.home,self.entry['id'])
+        self.assertEqual(entry['status'],'stuck'); self.assertIn('IMBACK',entry['reason'])
     def test_a_stuck_purchase_can_be_cancelled(self):
         self.amount='39,99 €'; self.check()
         self.assertEqual(errands.stop(self.home,self.entry['id'])['status'],'stopped')

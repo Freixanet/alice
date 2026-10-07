@@ -791,11 +791,24 @@ def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, 
         note = ('La cesta cobra ' + real + ', menos que los ' + offer['price'] + ' elegidos: sigue con ese precio '
                 'sin preguntar y menciónalo en el resumen final.')
         return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
+    coupon = str(offer.get('coupon') or '')
+    tries = int(entry.get('coupon_checks') or 0)
+    if coupon and old_price and amount[0] > old_price[0] and tries < 2:
+        # The coupon price was chosen and the basket shows more: most often the coupon is simply not
+        # in yet (34,99 € before IMBACK, 27,99 € after). That is a step to do, never a price for the
+        # person to accept (06-10); only after it was tried does a higher total stop the errand.
+        errands.update(home, errand_id, coupon_checks=tries + 1)
+        return {'ok': False, 'coupon_pending': True, 'price': real,
+                'next': (f"La cesta cobra {real} porque aún no tiene el cupón {coupon}. Escríbelo en el campo de "
+                         "cupón o código promocional de la cesta o del checkout, aplícalo, espera a que se "
+                         "actualice el total y vuelve a llamar a `purchase_check_cart`. No pares ni lo cuentes "
+                         "como un cambio de precio.")}
     if not module('money').same(real,offer['price'],offer['currency']):
         # The evidence is kept with the real price: when the person accepts it, this cart is
         # already checked and the errand goes straight on to the checkout.
         errands.update(home,errand_id,status='stuck',blocked={'kind':'price','price':real},cart_evidence=evidence,
-                       reason='La cesta cobra ' + real + ' por el formato elegido, frente a ' + offer['price'] + '.')
+                       reason='La cesta cobra ' + real + ' por el formato elegido, frente a ' + offer['price']
+                       + (' con el cupón ' + coupon + ', que la tienda no ha aplicado.' if coupon else '.'))
         return {'ok':False,'price_changed':True,'old':offer['price'],'price':real,'next':'Termina el turno. La persona puede aceptar el cambio real desde su tarjeta.'}
     errands.update(home,errand_id,cart_evidence=evidence)
     return {'ok':True,'price':real,'qty':offer.get('qty',1),'next':note}
