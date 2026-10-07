@@ -1926,6 +1926,19 @@ def _errand_turn(session_id="", user_message=None, **_):
                     "No busques ni compruebes nada de nuevo salvo que pida otra cosa: recomienda esa en una o dos "
                     "líneas, di que toque su tarjeta, y termina el turno.")}
             note = flow.turn_note(_purchase_context())
+            # The errands of this chat as they are: earlier replies in the history («ya tienes el
+            # recado en marcha») are not evidence. Twice after a cancel, Alice repeated that line and
+            # started nothing.
+            mine = [e for e in errands.listing(_hermes_root()) if e.get("origin_session") == session]
+            alive = [e for e in mine if e.get("status") in ("working", "queued", "needs_approval", "needs_input",
+                                                             "needs_login", "needs_card")]
+            if alive:
+                note += (" [Estado real] Recado vivo en este chat: «" + str(alive[0].get("title")) + "», "
+                         + str(alive[0].get("status")) + ". Dilo tal cual; no empieces otro.")
+            elif mine:
+                note += (" [Estado real] Ningún recado de compra está en marcha en este chat (el último, «"
+                         + str(mine[0].get("title")) + "», está " + str(mine[0].get("status")) + "). Lo que se dijo "
+                         "antes en el chat no cuenta: busca y prepara la compra de nuevo ahora, con las herramientas.")
             search = _module('purchase_prozis.py', 'alice_purchase_prozis').search_request(
                 str(user_message or ''), _purchase_locale()[0])
             words = _module('purchase_prozis.py', 'alice_purchase_prozis').keywords(str(user_message or ''))
