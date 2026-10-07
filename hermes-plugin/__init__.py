@@ -2242,7 +2242,7 @@ def _register_task_tools(ctx) -> None:
         if not session or session.startswith(errands.SESSION_PREFIX):
             return _agent_json({"ok": False, "error": "Only in the chat, before the purchase starts."})
         details = _ask_person().load_details(Path(get_hermes_home()))
-        request = _PURCHASE_REQUESTS.get(session, "")
+        request = _PURCHASE_REQUESTS.get(session, "") or _purchase_flow().saved_request(_hermes_root(), session, None)
         out = _module("purchase_prices.py", "alice_purchase_prices").present(
             _hermes_root(), session, args or {}, currency=_purchase_locale()[1],
             picture=lambda page: errands.page_picture(page), request=request)
@@ -2288,7 +2288,7 @@ def _register_task_tools(ctx) -> None:
                     logging.getLogger(__name__).warning("purchases: could not show the cards from the evidence", exc_info=True)
                     shown = None
                 flow = _purchase_flow()
-                request = _PURCHASE_REQUESTS.get(session, "")
+                request = _PURCHASE_REQUESTS.get(session, "") or _purchase_flow().saved_request(_hermes_root(), session, None)
                 if (shown and shown.get('ok') and len(shown.get('options') or []) == 1
                         and flow.requested_identity(request)[0]):
                     # The one option asked for: started here, as the evidence lands, not shown as a
