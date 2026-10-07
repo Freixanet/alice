@@ -24,6 +24,7 @@ private struct ChatScreenContent: View, Equatable {
     nonisolated static func == (lhs: Self, rhs: Self) -> Bool { true }
 
     @Environment(AppStore.self) private var store
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var scheme
     let onOpenDrawer: () -> Void
     let onBack: () -> Void
@@ -206,6 +207,16 @@ private struct ChatScreenContent: View, Equatable {
             .modifier(ChatTopChrome(usesScrollEdges: hasTranscript) {
                 VStack(spacing: 8) {
                     topControls
+                        // Behind a reply being answered, like the rest of the chat; a tap lets go.
+                        .blur(radius: store.replyFocusID == nil ? 0 : 8)
+                        .opacity(store.replyFocusID == nil ? 1 : 0.5)
+                        .allowsHitTesting(store.replyFocusID == nil)
+                        .overlay {
+                            if store.replyFocusID != nil {
+                                Color.clear.contentShape(.rect).onTapGesture { store.replyingTo = nil }
+                            }
+                        }
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: store.replyFocusID)
                     // In the page, not floating over it: a popover tip is
                     // presented, and while it is, a tap anywhere else only
                     // dismisses it — the header's buttons stopped answering.
@@ -634,10 +645,16 @@ private struct TranscriptView: View {
         )
         .replySwipe(message, author: replyAuthor(message), enabled: message.role == .assistant
                     && !message.pending && !message.content.isEmpty)
-        // One reply swiped to be answered: everything else steps back behind it.
-        .blur(radius: store.replySwipingID.map { $0 == message.id ? 0 : 8 } ?? 0)
-        .opacity(store.replySwipingID.map { $0 == message.id ? 1 : 0.5 } ?? 1)
-        .animation(reduceMotionAware, value: store.replySwipingID)
+        // One reply swiped or being answered: everything else steps back behind it, and a tap
+        // there lets go of the reply.
+        .blur(radius: store.replyFocusID.map { $0 == message.id ? 0 : 8 } ?? 0)
+        .opacity(store.replyFocusID.map { $0 == message.id ? 1 : 0.5 } ?? 1)
+        .overlay {
+            if let focus = store.replyFocusID, focus != message.id {
+                Color.clear.contentShape(.rect).onTapGesture { store.replyingTo = nil }
+            }
+        }
+        .animation(reduceMotionAware, value: store.replyFocusID)
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -844,6 +861,8 @@ private struct TranscriptView: View {
             // up, so what they are reading does not move.
             .defaultScrollAnchor(following ? .bottom : nil, for: .sizeChanges)
             .scrollDismissesKeyboard(.interactively)
+            // Held still while a reply is in front (`AppStore.replyFocusID`).
+            .scrollDisabled(store.replyFocusID != nil)
             // A soft edge below the header as earlier replies leave the viewport.
             .modifier(ProgressiveScrollEdges())
             .background { ReplySelectionDismiss() }

@@ -9190,6 +9190,9 @@ final class AppStore {
     var replyingTo: ReplyQuote?
     /// The reply being swiped, while the finger is down: the rest of the chat blurs behind it.
     var replySwipingID: String?
+    /// The reply in front while it is swiped or being answered: everything else blurs, and the
+    /// chat holds still, until it is sent or let go.
+    var replyFocusID: String? { replySwipingID ?? replyingTo?.messageID }
 
     // MARK: - Editing a sent message
 

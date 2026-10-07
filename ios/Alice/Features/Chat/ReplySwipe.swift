@@ -15,7 +15,7 @@ struct ReplySwipe: ViewModifier {
     @State private var armed = false
 
     /// How far the reply travels before letting go answers it.
-    static let threshold: CGFloat = 64
+    static let threshold: CGFloat = 52
     /// The last moment a finger came down on a reply. A swipe right that starts there is this
     /// reply's, not the drawer's (`RootView`).
     @MainActor static var touchedAt = Date.distantPast
@@ -50,8 +50,8 @@ struct ReplySwipe: ViewModifier {
 
     private func follow(_ translation: CGFloat) {
         let x = max(0, translation)
-        // Past the threshold it drags, as a rubber band does.
-        offset = x < Self.threshold ? x : Self.threshold + (x - Self.threshold) * 0.25
+        // Past the threshold it barely gives, and stops well short of the screen's edge.
+        offset = x < Self.threshold ? x : min(Self.threshold + 8, Self.threshold + (x - Self.threshold) * 0.1)
         if x > 4, store.replySwipingID != message.id { store.replySwipingID = message.id }
         let nowArmed = x >= Self.threshold
         if nowArmed != armed { armed = nowArmed }
