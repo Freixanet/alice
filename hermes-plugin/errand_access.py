@@ -412,9 +412,9 @@ def _request(home, errand_id, kind='vault.save_login', *, inspect=target, replac
         except Exception:  # noqa: BLE001
             existing = []
         if existing:
-            handles = ', '.join(str(l.get('handle')) for l in existing)
-            raise ValueError(f"La tienda ya tiene un acceso guardado ({handles}): inicia sesión con login_fill y ese "
-                             "handle, y no crees una cuenta nueva. Solo si login_fill falla con ese acceso, vuelve a "
+            handles = ', '.join(str(l.get('handle')) for l in existing[1:]) or 'ninguno'
+            raise ValueError(f"La tienda ya tiene un acceso guardado: usa el más reciente, {existing[0]['handle']}, "
+                             f"con login_fill (los demás, más antiguos: {handles}). No crees una cuenta nueva. Solo si login_fill falla con ese acceso, vuelve a "
                              "llamar login_request con replace=true.")
     if kind == 'vault.save_login' and saved.get('origin') == page_origin and not replace:
         raise ValueError(f"La persona ya dio el acceso de esta tienda ({saved['handle']}); no se lo pidas otra vez. "

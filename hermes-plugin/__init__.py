@@ -2035,8 +2035,12 @@ def _vault_logins(origin: str) -> list:
     """The logins Hermes' vault holds for an origin (handle and origin only, never values)."""
     try:
         store = _cards_module()._store()
-        return [{"handle": m.id, "origin": m.origin} for m in store.list_items()
-                if m.kind == "login" and str(m.origin or "").rstrip("/").lower() == str(origin or "").rstrip("/").lower()]
+        found = [m for m in store.list_items()
+                 if m.kind == "login" and str(m.origin or "").rstrip("/").lower() == str(origin or "").rstrip("/").lower()]
+        # Newest first: the last one the person gave is the one that works. Listed oldest first,
+        # the agent took an old login with a stale password every time (06-10, 15 Prozis logins).
+        found.sort(key=lambda m: str(getattr(m, "created_at", "") or ""), reverse=True)
+        return [{"handle": m.id, "origin": m.origin} for m in found]
     except Exception:  # noqa: BLE001
         return []
 
