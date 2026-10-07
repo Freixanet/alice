@@ -79,14 +79,18 @@ def page_evaluate(context, expression):
 # The second step of a two-step sign-in: the form holding the filled email is sent on («Continuar»),
 # so its password field appears. No secret is read or returned; only the button is pressed.
 NEXT_STEP_JS = r"""(()=>{const seen=e=>e&&e.getClientRects().length&&getComputedStyle(e).visibility!=='hidden';
-const words=/^(continuar|siguiente|continue|next|seguir|acceder|iniciar sesi[oó]n|entrar|sign in|log in)$/i;
-const filled=Array.from(document.querySelectorAll('input[type=email],input[autocomplete=username],input[autocomplete=email],input[name*=mail i],input[type=text]')).filter(e=>seen(e)&&e.value);
-for(const field of filled){const form=field.closest('form');const scope=form||field.parentElement?.parentElement?.parentElement||document;
-if(scope.querySelector&&Array.from(scope.querySelectorAll('input[type=password]')).some(seen))continue;
-const buttons=Array.from(scope.querySelectorAll('button,input[type=submit],[role=button]')).filter(seen);
-const b=buttons.find(b=>b.type==='submit'&&!/google|apple|facebook/i.test(b.innerText||''))||buttons.find(b=>words.test(String(b.innerText||b.value||'').trim()));
-if(b){b.click();return 'pressed';}
-if(form&&form.requestSubmit){form.requestSubmit();return 'submitted';}}
+// Only a sign-in form of its own: the filled email is its one visible field, and the button says
+// continue. Never a generic submit: on a checkout the email's form also holds «Modificar» and
+// «Finalizar compra», and pressing its first submit changed the address (06-10).
+const go=/^(continuar|siguiente|continue|next|seguir)$/i;
+const pay=/pag|pay|pedido|order|compra|checkout|finaliz|confirm|modific|guardar|aplicar|apply/i;
+const filled=Array.from(document.querySelectorAll('input[type=email],input[autocomplete=username],input[autocomplete=email]')).filter(e=>seen(e)&&e.value);
+for(const field of filled){const form=field.closest('form');if(!form)continue;
+const fields=Array.from(form.querySelectorAll('input,select,textarea')).filter(e=>seen(e)&&!['hidden','checkbox','submit','button'].includes(e.type));
+if(fields.length!==1)continue;
+const buttons=Array.from(form.querySelectorAll('button,input[type=submit]')).filter(seen);
+const b=buttons.find(b=>{const t=String(b.innerText||b.value||'').trim();return go.test(t)&&!pay.test(t);});
+if(b){b.click();return 'pressed';}}
 return '';})()"""
 
 
@@ -128,6 +132,18 @@ def fill_login(home, errand_id, handle, *, inspect=target, evaluate=page_evaluat
         raise ValueError('No hay un campo de acceso visible. Abre el formulario de iniciar sesión de la tienda y vuelve a llamar login_fill.')
     # Two-step logins (Prozis, Google, Amazon) show the email first and the password after it.
     first_step = not fills
+    if first_step:
+        # An email alone on a basket or checkout page is the order's contact email, not a sign-in:
+        # filling it with the account and «continuing» walked Prozis' checkout instead (06-10).
+        try:
+            where = str(evaluate(context, 'location.pathname') or '')
+        except Exception:  # noqa: BLE001
+            where = ''
+        if re.search(r'checkout|cart|basket|bag|cesta|carrito|pago|payment|pedido|order', where, re.I):
+            password = ''
+            raise ValueError('Ese email es el de contacto del pedido, no un formulario de acceso. Para iniciar '
+                             'sesión abre el enlace «Iniciar sesión» o «Ya tengo cuenta» de la tienda y llama a '
+                             'login_fill en ese formulario.')
     if identifiers and meta.identifier:
         c = sorted(identifiers, key=lambda c:-c.score)[0]
         fills.append({'index':c.control.index, 'token':c.token, 'value':meta.identifier})

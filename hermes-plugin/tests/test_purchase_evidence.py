@@ -261,6 +261,8 @@ class AccessTests(unittest.TestCase):
         backend.resolve_password.return_value = 'FAKE-test-password'
         written = []
         def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/login'
             if 'flatMap' in script:  # the inspection: a two-step login shows only the email
                 return json.dumps([{'index':0,'name':'email','type':'email','autocomplete':'username','label':'Email'}])
             written.append(script)
@@ -284,6 +286,8 @@ class AccessTests(unittest.TestCase):
         backend.resolve_password.return_value = 'FAKE-test-password'
         state = {'step': 'email'}; written = []
         def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/login'
             if script == access.NEXT_STEP_JS:
                 state['step'] = 'password'; return 'pressed'
             if 'flatMap' in script:
@@ -392,4 +396,35 @@ class CodeRequestTests(unittest.TestCase):
         def broken(c, e):
             raise OSError("gone")
         self.assertTrue(access.code_asked({}, evaluate=broken))
+
+
+class SignInContinueTests(unittest.TestCase):
+    """06-10: «continue» pressed the first submit of a checkout form («Modificar»); «Finalizar compra»
+    was in the same form."""
+
+    def test_a_checkout_contact_email_is_not_a_sign_in(self):
+        entry = errands.create(Path(tempfile.mkdtemp()), 'Comprar', profile='test')
+        backend = mock.Mock()
+        backend.get_meta.return_value = types.SimpleNamespace(kind='login', origin='https://example.com', identifier='a@b.c')
+        backend.resolve_password.return_value = 'FAKE'
+        def evaluate(ctx, script):
+            if script == 'location.pathname':
+                return '/es/es/checkout/index'
+            return json.dumps([{'index':0,'name':'email','type':'email','autocomplete':'email','label':'Email'}])
+        try:
+            import agent.vault_login_classifier  # noqa: F401
+        except ImportError:
+            self.skipTest('Hermes is not importable here')
+        home = Path(tempfile.mkdtemp()); entry = errands.create(home, 'Comprar', profile='test')
+        with mock.patch('agent.redact.register_vault_redaction_value'), \
+                self.assertRaisesRegex(ValueError, 'contacto del pedido'):
+            access.fill_login(home, entry['id'], 'v', inspect=lambda e: ('https://example.com', {'context':'c','target':'t'}, None),
+                              evaluate=evaluate, backend=backend, sleep=lambda _: None)
+
+    def test_continue_never_presses_a_generic_or_paying_button(self):
+        script = access.NEXT_STEP_JS
+        self.assertNotIn('requestSubmit', script)
+        self.assertNotIn("type==='submit'", script)
+        for word in ('finaliz', 'pag', 'modific', 'aplicar'):
+            self.assertIn(word, script)
 
