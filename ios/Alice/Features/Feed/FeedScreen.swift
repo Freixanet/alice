@@ -53,6 +53,7 @@ struct FeedScreen: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.top, 36, for: .scrollContent)
         .background(Palette.background(scheme))
         .navigationTitle("Feed")
         .navigationBarTitleDisplayMode(.inline)

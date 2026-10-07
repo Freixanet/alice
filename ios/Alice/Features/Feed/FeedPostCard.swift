@@ -107,9 +107,9 @@ struct FeedPostCard: View {
                 } label: {
                     Text("Do it")
                         .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.primary)
+                .buttonStyle(.bordered)
                 .buttonBorderShape(.capsule)
                 .frame(minHeight: 44)
                 .accessibilityHint(post.offer ?? "")
