@@ -260,11 +260,10 @@ struct ErrandStack: View {
             }
             if let checkout = errand.checkout, let phase = checkoutPhase {
                 if phase == .pending || phase == .sending {
-                    // Alice's words, in a reply's bubble like every other reply.
-                    ReplyBubble {
-                        RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
-                                                                            language: errand.language), bubbled: true)
-                    }
+                    // Alice's words, in a reply's bubble like every other reply (`bubbled` draws it;
+                    // wrapped in another bubble they sat narrower and inset, unlike the rest).
+                    RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
+                                                                        language: errand.language), bubbled: true)
                 }
                 CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
                                      language: errand.language, phase: phase, compact: true, error: problem,
@@ -287,9 +286,7 @@ struct ErrandStack: View {
                     }
             }
             if let receipt = errand.receipt {
-                ReplyBubble {
-                    RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
-                }
+                RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
             } else if [.stuck, .denied, .stopped].contains(errand.status) {
                 ErrandStoppedCard(errand: errand, session: session, sending: sending,
                                   onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel, onOpenBrowser: onOpenBrowser)
