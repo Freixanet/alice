@@ -110,7 +110,9 @@ return (out.price||out.name)?out:null;})()"""
 
 SELECTED_VARIANT_JS = r"""(()=>{%s
 const parts=[];
-for(const s of document.querySelectorAll('select')){if(!seen(s)||/qty|quant|cantidad|units/i.test(s.name+' '+s.id+' '+s.className)||s.options.length<2)continue;const o=s.options[s.selectedIndex];if(o&&!/^(selecciona|elige|choose|select|--)/i.test(squash(o.textContent)))parts.push(squash(o.textContent));}
+for(const s of document.querySelectorAll('select')){if(!seen(s)||/qty|quant|cantidad|units/i.test(s.name+' '+s.id+' '+s.className)||s.options.length<2)continue;
+ // A select of documents (HSN's «Análisis disponibles»: lab reports) is not a variant.
+ if(Array.from(s.options).some(o=>/an[aá]lisis|certificad|\bpdf\b|ficha t[eé]cnica|manual|documento/i.test(o.textContent)))continue;const o=s.options[s.selectedIndex];if(o&&!/^(selecciona|elige|choose|select|--)/i.test(squash(o.textContent)))parts.push(squash(o.textContent));}
 for(const r of document.querySelectorAll('input[type=radio]:checked')){const l=r.closest('label')||document.querySelector('label[for="'+r.id+'"]');const t=squash(l?l.innerText:r.value);if(t&&t.length<60&&!/tarjeta|card|paypal|bizum|envío|shipping|delivery/i.test(t))parts.push(t);}
 if(!parts.length){for(const e of document.querySelectorAll('[aria-pressed=true],[aria-checked=true],[aria-selected=true],.active,.selected,.is-active,.is-selected,.option-active')){if(seen(e)&&e.children.length<=2){const t=squash(e.innerText);if(t&&t.length<60&&!/menu|nav|tab|slide/i.test(e.className)&&!e.closest('nav,header,footer'))parts.push(t);}}}
 return parts.filter((p,i)=>parts.indexOf(p)===i).join(' / ');})()"""
@@ -348,6 +350,14 @@ def selected_variant(page: Page) -> str:
         return str(page.run(SELECTED_VARIANT_JS) or "").strip()[:120]
     except Exception:  # noqa: BLE001
         return ""
+
+
+def _short_variant(label: str, title: str) -> str:
+    """«Creatina Excell (100% Creapure®) en polvo 500g» under that title is «500g»."""
+    label, title = (label or "").strip(), (title or "").strip()
+    if title and label.casefold().startswith(title.casefold()) and label[len(title):].strip():
+        return label[len(title):].strip(" -·/")
+    return label
 
 
 def select_variant(page: Page, label: str) -> Dict[str, Any]:
@@ -784,9 +794,9 @@ def _quote(page: Page, url: str, *, variant: str = "", qty: int = 1, currency: s
             out["how"]["product"] = (info_after.get("how") or "") + ":variant"
         elif info_after.get("price_cents") is not None:
             out["page_price_cents"], out["currency"] = info_after["price_cents"], info_after.get("currency") or out["currency"]
-        out["variant"] = str(picked.get("label") or variant)[:120]
+        out["variant"] = _short_variant(str(picked.get("label") or variant), title)[:120]
     else:
-        out["variant"] = selected_variant(page)
+        out["variant"] = _short_variant(selected_variant(page), title)
     out['_promotion_blocks'] = promotions.product_coupon_blocks(page)
     codes = promotions.public_codes(out['_promotion_blocks'], coupons or [])
     out['_promotion_blocks'] = promotions.product_coupon_blocks(page)
