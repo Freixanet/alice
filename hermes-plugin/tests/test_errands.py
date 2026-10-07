@@ -112,6 +112,17 @@ class CheckoutTests(Base):
         self.assertEqual(checkout["currency"], "EUR")
         self.assertEqual(checkout["items"][0]["qty"], 1)
 
+    def test_the_checkout_keeps_the_breakdown_and_the_conditions(self):
+        entry = self.errand()
+        args = {**CHECKOUT, "breakdown": [{"label": "Subtotal", "amount": "28,98 €"},
+                                          {"label": "Cupón MRKEHEL", "amount": "-1,00 €"},
+                                          {"label": "Envío", "amount": ""}, "bad"],
+                "conditions": ["Se renueva solo a 14,93 €/año", "", "Sin devoluciones"]}
+        errands.request_checkout(self.home, entry["id"], args, now=NOW)
+        checkout = errands.get(self.home, entry["id"])["checkout"]
+        self.assertEqual([line["label"] for line in checkout["breakdown"]], ["Subtotal", "Cupón MRKEHEL"])
+        self.assertEqual(checkout["conditions"], ["Se renueva solo a 14,93 €/año", "Sin devoluciones"])
+
     def test_only_https_images_are_kept(self):
         entry = self.errand()
         items = [{"name": "X", "image": "javascript:alert(1)"}, {"name": "Y", "image": "http://x/y.jpg"}]

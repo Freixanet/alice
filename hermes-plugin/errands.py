@@ -385,6 +385,21 @@ CHECKOUT_SCHEMA: Dict[str, Any] = {
                                               "keeps), paypal, bizum, apple_pay, transfer or cod"},
             "total": {"type": "string", "description": "The total to pay as the page shows it, e.g. '27,98 €'"},
             "currency": {"type": "string", "description": "ISO code, e.g. EUR"},
+            "breakdown": {
+                "type": "array", "maxItems": 8,
+                "description": ("How the page arrives at the total, line by line as it shows them: subtotal, "
+                                "shipping, each discount or coupon (negative, with its code), taxes, fees."),
+                "items": {"type": "object", "properties": {
+                    "label": {"type": "string", "description": "As the page names it, e.g. 'Envío', 'Cupón MRKEHEL'"},
+                    "amount": {"type": "string", "description": "As shown, e.g. '4,99 €', '-1,00 €', 'Gratis'"}},
+                    "required": ["label", "amount"]},
+            },
+            "conditions": {
+                "type": "array", "maxItems": 5, "items": {"type": "string"},
+                "description": ("What the person agrees to with this order beyond the price, in a few words each, "
+                                "only when the page says so: renews automatically (and at what price), no "
+                                "refunds, a subscription added, a pre-order date, a deposit or hold."),
+            },
         },
         "required": ["merchant", "site", "items", "total"],
     },
@@ -508,6 +523,17 @@ def paying_card(home: Path, site: str, labels: List[str], asked: str = "") -> st
     return ""
 
 
+def _breakdown(raw: Any) -> List[Dict[str, str]]:
+    """The lines from items to total, as the checkout page shows them (at most eight)."""
+    lines = []
+    for line in raw if isinstance(raw, list) else []:
+        if isinstance(line, dict):
+            label, amount = _clean(line.get("label"), 60), _clean(line.get("amount"), 30)
+            if label and amount:
+                lines.append({"label": label, "amount": amount})
+    return lines[:8]
+
+
 def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None,
                      fetch: Optional[Callable[..., Tuple[bytes, str]]] = None,
                      saved_cards: Optional[Callable[[], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
@@ -550,6 +576,9 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
                                    _clean(args.get("card_label"), 60)) if method == "card" else ""),
         "payment_method": method,
         "total": total, "total_cents": total_cents, "currency": currency, "requested_at": now,
+        "breakdown": _breakdown(args.get("breakdown")),
+        "conditions": [c for c in (_clean(c, 140) for c in (args.get("conditions") or [])[:5]
+                                   if isinstance(args.get("conditions"), list)) if c],
     }
     update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
     return {"ok": True, "status": "needs_approval",

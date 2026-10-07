@@ -469,6 +469,7 @@ struct CheckoutApprovalCard: View {
                 Text(language.pick("Cancelled", "Cancelado")).font(.subheadline).foregroundStyle(.secondary)
             } else {
                 paymentRow
+                conditionsList
                 if let onOpenPage {
                     Button(language.pick("Review in the browser", "Revisar en el navegador"), action: onOpenPage)
                         .font(.subheadline)
@@ -485,6 +486,21 @@ struct CheckoutApprovalCard: View {
         }
         .padding(14)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 20))
+    }
+
+    /// What the order commits to beyond the price, said plainly before it is approved.
+    @ViewBuilder private var conditionsList: some View {
+        if !checkout.conditions.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(checkout.conditions, id: \.self) { condition in
+                    Label(condition, systemImage: "exclamationmark.circle")
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     @ViewBuilder private var compactButtons: some View {
@@ -581,16 +597,32 @@ struct CheckoutApprovalCard: View {
 
             paymentRow
 
-            HStack(alignment: .firstTextBaseline) {
-                Text("Total").font(.title3.weight(.semibold))
-                Spacer()
-                Text(checkout.total.pricesKeptTogether).font(.title3.weight(.semibold).monospacedDigit())
+            VStack(spacing: 6) {
+                ForEach(Array(checkout.breakdown.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(line.label)
+                        Spacer()
+                        Text(line.amount.pricesKeptTogether).monospacedDigit()
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Total").font(.title3.weight(.semibold))
+                    Spacer()
+                    Text(checkout.total.pricesKeptTogether).font(.title3.weight(.semibold).monospacedDigit())
+                }
             }
             .padding(.horizontal, 6)
 
+            conditionsList.padding(.horizontal, 6)
+
             if phase == .pending || phase == .sending {
-                Text(language.pick("Check the order and the shop's terms before approving.",
-                                   "Revisa el pedido y las condiciones de la tienda antes de aprobar."))
+                Text(checkout.conditions.isEmpty
+                     ? language.pick("Is the order right? Check it and the shop's terms before approving.",
+                                     "¿Está bien el pedido? Revísalo, y las condiciones de la tienda, antes de aprobar.")
+                     : language.pick("Is the order right? Approve it only if these terms work for you.",
+                                     "¿Está bien el pedido? Apruébalo solo si te valen estas condiciones."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 6)

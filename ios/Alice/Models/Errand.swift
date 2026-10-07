@@ -36,6 +36,15 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         var cardLabel: String
         var total: String
         var currency: String
+        /// How the page arrives at the total: subtotal, shipping, each coupon, taxes — as shown.
+        var breakdown: [Line] = []
+        /// What the order commits to beyond the price: renews automatically, no refunds…
+        var conditions: [String] = []
+
+        struct Line: Hashable, Sendable, Codable {
+            var label: String
+            var amount: String
+        }
     }
 
     struct Receipt: Hashable, Sendable, Codable {
@@ -212,7 +221,12 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
                 id: id, status: Checkout.Status(rawValue: text(raw["status"])) ?? .pending,
                 merchant: text(raw["merchant"]), site: text(raw["site"]), items: items(raw["items"]),
                 delivery: text(raw["delivery"]), address: text(raw["address"]), email: text(raw["email"]),
-                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]))
+                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]),
+                breakdown: (raw["breakdown"] as? [[String: Any]] ?? []).compactMap { line in
+                    let label = text(line["label"]), amount = text(line["amount"])
+                    return label.isEmpty || amount.isEmpty ? nil : Checkout.Line(label: label, amount: amount)
+                },
+                conditions: (raw["conditions"] as? [Any] ?? []).map(text).filter { !$0.isEmpty })
         }
         let receipt = (row["receipt"] as? [String: Any]).map { raw in
             Receipt(outcome: text(raw["outcome"]), order: text(raw["order"]), total: text(raw["total"]),
