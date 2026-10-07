@@ -136,6 +136,17 @@ class CheckoutTests(Base):
         args["total"] = "30,98 €"
         self.assertTrue(errands.request_checkout(self.home, entry["id"], {**args}, now=NOW)["ok"])
 
+    def test_an_approval_stands_when_the_checkout_comes_back_unchanged(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        checkout = errands.get(self.home, entry["id"])["checkout"]
+        errands.decide_checkout(self.home, entry["id"], True, now=NOW, card_label="Visa ···4242")
+        again = errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW + 60)
+        self.assertEqual(again["status"], "approved")
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["id"], checkout["id"])
+        moved = errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "29,98 €"}, now=NOW + 120)
+        self.assertEqual(moved["status"], "needs_approval")
+
     def test_only_https_images_are_kept(self):
         entry = self.errand()
         items = [{"name": "X", "image": "javascript:alert(1)"}, {"name": "Y", "image": "http://x/y.jpg"}]

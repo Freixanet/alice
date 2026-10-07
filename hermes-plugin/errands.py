@@ -553,6 +553,15 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
         return {"ok": False, "error": "Read one valid total and its currency from the checkout page."}
     total_cents, currency = amount
     total = _money().text(total_cents, currency)
+    # Approved already for this very total and shop, and not yet spent: the approval stands. Asked
+    # again after each card step, the person approved one HSN order ten times (07-10).
+    earlier = entry.get("checkout") if isinstance(entry.get("checkout"), dict) else {}
+    if (earlier.get("status") == "approved" and earlier.get("site") == site
+            and earlier.get("approved_cents", earlier.get("total_cents")) == total_cents
+            and (earlier.get("approved_currency") or earlier.get("currency")) == currency):
+        return {"ok": True, "status": "approved",
+                "next": (f"La persona ya aprobó este pedido por {total}: no vuelvas a pedirlo. Sigue con el pago "
+                         "(tarjeta guardada o la que añada) y registra después purchase_outcome.")}
     # Step 8: a way to pay before the person sees the total. With no saved card the person is asked
     # for one first; the errand resumes with «[tarjeta lista]» and calls checkout_request again.
     labels: List[str] = []
