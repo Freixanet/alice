@@ -111,7 +111,7 @@ struct ReminderDetailsSheet: View {
                             Text("Arriving").tag(true)
                             Text("Leaving").tag(false)
                         }
-                        .pickerStyle(.segmented)
+                        .segments()
                         Button("Change Location") { choosingPlace = true }
                     }
                 }

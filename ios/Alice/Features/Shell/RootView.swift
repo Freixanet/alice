@@ -407,6 +407,8 @@ struct RootView: View {
                         // Sideways enough to be meant sideways.
                         guard abs(velocity.x) > abs(velocity.y) * 1.5 else { return false }
                         if drawerOpen { return velocity.x < 0 }
+                        // Rightward from one of Alice's replies answers that reply (`ReplySwipe`).
+                        if velocity.x > 0, Date.now.timeIntervalSince(ReplySwipe.touchedAt) < 0.6 { return false }
                         // In a bot's conversation only the way back means
                         // anything: leftward would be going deeper into the
                         // bots from inside one of them, which is where the

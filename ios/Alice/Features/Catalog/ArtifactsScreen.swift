@@ -139,7 +139,7 @@ struct ArtifactsScreen: View {
                                 Text(label(shelf)).tag(shelf)
                             }
                         }
-                        .pickerStyle(.segmented)
+                        .segments()
                         .listRowBackground(Color.clear)
                     } footer: {
                         Text(kind == .files

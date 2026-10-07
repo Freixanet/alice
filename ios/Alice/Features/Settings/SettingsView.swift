@@ -192,7 +192,7 @@ struct AppearanceSettingsView: View {
                         Text(choice.label).tag(choice)
                     }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .labelsHidden()
             }
             Section("Colour") {

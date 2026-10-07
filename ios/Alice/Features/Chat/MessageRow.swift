@@ -177,15 +177,19 @@ struct MessageRow: View {
                     // shown in the card that asked («Elegida»), not as words the person typed.
                     EmptyView()
                 } else if !message.content.isEmpty {
+                    // An answer to one reply carries it on top, quoted (`ReplyQuote`).
+                    if let quoted = ReplyQuote.split(message.content) {
+                        QuotedReply(text: quoted.quote)
+                    }
                     // Only a hold opens its actions, as in Messages; a tap does
                     // nothing. (A tap-opened SwiftUI `Menu` crashed on a double
                     // tap in build 60, and a row of buttons under every sent
                     // message on a tap was not wanted either.)
                     // Only the named agent is emphasized; the bubble keeps one text colour.
                     Text(store.mentionStyled(
-                        PurchaseChoice.display(AskPerson.display(message.content)),
+                        PurchaseChoice.display(AskPerson.display(ReplyQuote.split(message.content)?.text ?? message.content)),
                         bareSlugs: message.mentionProfile.map { [$0] } ?? [],
-                        selectedRanges: message.selectedMentionRanges
+                        selectedRanges: ReplyQuote.ranges(message.selectedMentionRanges, in: message.content)
                     ))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)

@@ -608,7 +608,7 @@ private struct CustomModelEndpointSheet: View {
                         Text("Custom").tag("custom")
                         Text("Local").tag("local")
                     }
-                    .pickerStyle(.segmented)
+                    .segments()
                     TextField("http://127.0.0.1:11434/v1", text: $baseURL)
                         .keyboardType(.URL)
                         .textInputAutocapitalization(.never)

@@ -77,6 +77,7 @@ struct Composer: View {
                 if !commands.isEmpty { commandList }
                 else if !matchingBots.isEmpty { botMentionList }
                 if store.editingMessageID != nil { editingBanner }
+                else if let quote = store.replyingTo { replyBanner(quote) }
                 if store.queuedSendNote != nil { queueBanner }
                 // Compact (the Experimental Home row) always wins: it is its
                 // own unified composer regardless of which bot backs the
@@ -213,6 +214,11 @@ struct Composer: View {
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
         }
+        // A reply swiped to be answered opens the keyboard, as editing does.
+        .onChange(of: store.replyingTo) { _, quote in
+            if quote != nil { focused.wrappedValue = true }
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.replyingTo)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.editingMessageID)
         .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
@@ -484,6 +490,42 @@ struct Composer: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
+    }
+
+    /// The reply the next message answers, quoted, and a way to let go of it.
+    private func replyBanner(_ quote: ReplyQuote) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrowshape.turn.up.left.fill")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Replying to \(quote.author)")
+                    .font(.footnote.weight(.semibold))
+                Text(quote.excerpt)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+            Button("Cancel Reply", systemImage: "xmark") {
+                store.replyingTo = nil
+            }
+            .labelStyle(.iconOnly)
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .frame(width: 28, height: 28)
+            .contentShape(Rectangle().inset(by: -8))
+            .accessibilityIdentifier("composer.cancelReply")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .accessibilityIdentifier("composer.replyingTo")
         .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 

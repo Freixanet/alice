@@ -138,6 +138,7 @@ final class AppStore {
         willSet {
             guard newValue != activeID else { return }
             if editingMessageID != nil { cancelEditing() }
+            replyingTo = nil
             stashDraft()
         }
         didSet {
@@ -8810,7 +8811,13 @@ final class AppStore {
         }
 
         let attachments = draftAttachments
-        let selectedMentionRanges = messageMentions.map(\.utf16Range)
+        // A swiped-to reply goes first, as a quote; the mentions move along with the words.
+        let quote = replyingTo?.prefix ?? ""
+        replyingTo = nil
+        let shift = quote.utf16.count
+        let selectedMentionRanges = messageMentions.map {
+            NSRange(location: $0.utf16Range.location + shift, length: $0.utf16Range.length)
+        }
         draft = ""
         draftMentions = []
         draftAttachments = []
@@ -8821,7 +8828,7 @@ final class AppStore {
         markLatency(conversationID, phase: "send")
 
         let user = Message(
-            id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
+            id: UUID().uuidString, role: .user, content: quote + text, createdAt: Date(),
             attachments: attachments,
             mentionProfile: mentionText == nil ? nil : invokedBot,
             selectedMentionRanges: selectedMentionRanges
@@ -8852,7 +8859,7 @@ final class AppStore {
                     profile: profile,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: mentionText ?? text,
+                    text: quote + (mentionText ?? text),
                     attachments: attachments,
                     mention: mention
                 )
@@ -8866,7 +8873,7 @@ final class AppStore {
                     profile: nil,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: text,
+                    text: quote + text,
                     attachments: attachments,
                     earlier: earlier
                 )
@@ -9176,6 +9183,13 @@ final class AppStore {
             self.finish(replyID, conversationID: conversationID)
         }
     }
+
+    // MARK: - Replying to one message
+
+    /// The reply of Alice's the next message answers, swiped right in the chat (`ReplySwipe`).
+    var replyingTo: ReplyQuote?
+    /// The reply being swiped, while the finger is down: the rest of the chat blurs behind it.
+    var replySwipingID: String?
 
     // MARK: - Editing a sent message
 

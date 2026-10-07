@@ -632,6 +632,12 @@ private struct TranscriptView: View {
             modelChange: modelChange,
             learned: learned
         )
+        .replySwipe(message, author: replyAuthor(message), enabled: message.role == .assistant
+                    && !message.pending && !message.content.isEmpty)
+        // One reply swiped to be answered: everything else steps back behind it.
+        .blur(radius: store.replySwipingID.map { $0 == message.id ? 0 : 8 } ?? 0)
+        .opacity(store.replySwipingID.map { $0 == message.id ? 1 : 0.5 } ?? 1)
+        .animation(reduceMotionAware, value: store.replySwipingID)
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
         // A cited message, opened from its receipt, glows once.
@@ -645,6 +651,16 @@ private struct TranscriptView: View {
         // Parts of one task sit closer than separate messages.
         .padding(.top, (position?.isFirst ?? true) ? 0 : -18)
         .id(message.id)
+    }
+
+    /// Who a reply is quoted from: the agent asked by name, or Alice.
+    private func replyAuthor(_ message: Message) -> String {
+        guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
+        return store.botCurrentName(for: bot)
+    }
+
+    private var reduceMotionAware: Animation? {
+        reduceMotion ? nil : .easeOut(duration: 0.2)
     }
 
     /// Scrolls to a message a receipt pointed at, loading earlier pages if it

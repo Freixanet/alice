@@ -41,7 +41,7 @@ private struct PurchaseWalkthrough: View {
                     Picker("Language", selection: $language) {
                         Text("Español").tag(ChatLanguage.spanish)
                         Text("English").tag(ChatLanguage.english)
-                    }.pickerStyle(.segmented)
+                    }.segments()
                     Toggle(said("Avanzar solo", "Play automatically"), isOn: $automatic)
                     Text(progress + " · " + caption).font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
                     userBubble(said("Compra creatina Creapure", "Buy Creapure creatine"))

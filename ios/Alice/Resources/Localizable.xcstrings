@@ -3001,6 +3001,16 @@
         }
       }
     },
+    "Cancel Reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar respuesta"
+          }
+        }
+      }
+    },
     "Cancelled “%@” in your calendar": {
       "localizations": {
         "es": {
@@ -12121,6 +12131,26 @@
         }
       }
     },
+    "Reply": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Responder"
+          }
+        }
+      }
+    },
+    "Replying to %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Respondiendo a %@"
+          }
+        }
+      }
+    },
     "Repository on Hermes host": {
       "localizations": {
         "es": {
@@ -16477,6 +16507,16 @@
           "stringUnit": {
             "state": "translated",
             "value": "Aún puedes explorar Hugging Face o cargar un GGUF manualmente, pero el catálogo curado de Hermes no recomienda actualmente un inicio rápido seguro en esta máquina."
+          }
+        }
+      }
+    },
+    "You replied": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Has respondido"
           }
         }
       }

@@ -1,8 +1,7 @@
 import SwiftUI
 
-/// What your agents made and what your notes carry, in three parts: Artifacts (files, documents and
-/// links from your chats), Images (the pictures among them) and Notes (photos, files and links in
-/// your notes). The part last open is the one that opens next time.
+/// What your agents made and what you wrote, in three parts: Artifacts (files, documents and links
+/// from your chats), Images (the pictures among them) and Notes (your notes, by folder). The part last open is the one that opens next time.
 struct LibraryView: View {
     enum Part: String, CaseIterable, Identifiable {
         case artifacts, images, notes
@@ -26,10 +25,8 @@ struct LibraryView: View {
             case .artifacts: ArtifactsScreen(title: "Library", mode: .artifacts)
             case .images: ArtifactsScreen(title: "Library", mode: .images)
             case .notes:
-                NoteAttachmentsScreen(scope: .all, title: "Library")
-                    .scrollContentBackground(.hidden)
-                    .background(Palette.background(scheme))
-                    .task { try? await store.refreshNotes() }
+                // The notes themselves, folders first, as they were in the drawer.
+                NotesFoldersScreen(title: "Library", closes: false)
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -38,9 +35,11 @@ struct LibraryView: View {
                     Text(part.title).tag(part)
                 }
             }
-            .pickerStyle(.segmented)
+            .segments()
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            // As far from the back button as Settings' first section is.
+            .padding(.top, 20)
+            .padding(.bottom, 8)
             .background(Palette.background(scheme))
             .accessibilityIdentifier("library.part")
         }

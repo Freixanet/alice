@@ -181,10 +181,9 @@ struct Sidebar: View, Equatable {
             // she wrote since.
             // Today is set aside for now (29-09): Alice's chat is the one place.
             // Who you work with, what you write, what they made: the agents first, as the most used;
-            // then Notes, written in the moment; then the Library of what the agents shared.
+            // then the Library: what they made, and your notes.
             // Routines moved to Settings › Alice, beside Activity, where their results arrive.
             agentsRow
-            row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
         }
         .padding(.horizontal, 12)

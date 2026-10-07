@@ -803,7 +803,7 @@ private struct WhatsAppChannelSetup: View {
                         Text("Bot").tag("bot")
                         Text("Self-chat").tag("self-chat")
                     }
-                    .pickerStyle(.segmented)
+                    .segments()
                     .listRowBackground(Palette.card(scheme))
                     TextField("Allowed numbers, comma-separated", text: $allowedUsers)
                         .keyboardType(.phonePad)

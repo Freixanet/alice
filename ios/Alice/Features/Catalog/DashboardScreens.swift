@@ -903,7 +903,7 @@ struct UsageScreen: View {
                             Text("30 days").tag(30)
                             Text("90 days").tag(90)
                         }
-                        .pickerStyle(.segmented)
+                        .segments()
                     }
 
                     if let billing, billing.available {
