@@ -38,6 +38,10 @@ struct FeedPost: Codable, Hashable, Sendable, Identifiable {
     var readAt: Date?
     var whyThis: String?
     var language: String?
+    /// For a post drawn from the person's own connected services rather than the web: "mail", "calendar"…
+    var basis: String?
+    /// A task Alice offers to do about this post, in her words; shown as "Do it".
+    var offer: String?
     var isSeeded = false
     var viewer = FeedViewerState()
     /// Hidden by the person; kept until the server has the delete, so an undo can bring it back.
@@ -110,6 +114,8 @@ struct FeedPayload: Decodable, Sendable {
         var createdAt: Double
         var whyThis: String?
         var language: String?
+        var basis: String?
+        var offer: String?
         var viewerState: Viewer?
     }
 
@@ -148,6 +154,7 @@ struct FeedPayload: Decodable, Sendable {
                 storyKey: post.storyKey,
                 createdAt: Date(timeIntervalSince1970: post.createdAt),
                 whyThis: post.whyThis, language: post.language,
+                basis: post.basis, offer: post.offer,
                 viewer: FeedViewerState(
                     loved: post.viewerState?.loved ?? false,
                     lovedAt: post.viewerState?.lovedAt.map { Date(timeIntervalSince1970: $0) },

@@ -11,6 +11,22 @@
         }
       }
     },
+    "Do it": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Do it"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hazlo"
+          }
+        }
+      }
+    },
     "Errands": {
       "localizations": {
         "es": {

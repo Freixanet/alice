@@ -28,6 +28,7 @@ struct FeedScreen: View {
                     post: post,
                     onLove: { Task { await feed.toggleLove(post) } },
                     onDiscuss: { discuss(post) },
+                    onOffer: { takeOffer(post) },
                     onWhy: { explaining = post },
                     onDelete: { delete(post) },
                     onExpand: { feed.markRead(post) }
@@ -162,6 +163,11 @@ struct FeedScreen: View {
             guard !Task.isCancelled else { return }
             withAnimation(.snappy) { undoable = nil }
         }
+    }
+
+    private func takeOffer(_ post: FeedPost) {
+        store.takeOffer(post)
+        onOpenedChat()
     }
 
     private func discuss(_ post: FeedPost) {

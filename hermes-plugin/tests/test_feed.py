@@ -119,6 +119,22 @@ class Publishing(Base):
         with self.assertRaisesRegex(feed.FeedError, "inline"):
             feed.publish(self.home, self.session, [post(["src_01"], body="No markers.")])
 
+    def test_personal_post_from_connected_services_needs_no_web_source(self):
+        personal = post([], body="Stripe ha vuelto a rechazar el cobro de 10,27 €.", basis="mail",
+                        offer="Reviso qué tarjeta usa la suscripción y te digo cómo arreglarlo")
+        feed.publish(self.home, self.session, [personal], now=NOW)
+        stored = feed.listing(self.home)["posts"][0]
+        self.assertEqual((stored["basis"], stored["sources"]), ("mail", []))
+        self.assertTrue(stored["offer"].startswith("Reviso"))
+
+    def test_post_without_sources_or_basis_is_rejected(self):
+        with self.assertRaisesRegex(feed.FeedError, "set basis"):
+            feed.publish(self.home, self.session, [post([], body="Sin fuente.")])
+        with self.assertRaisesRegex(feed.FeedError, "basis must be one of"):
+            feed.publish(self.home, self.session, [post([], body="Sin fuente.", basis="rumor")])
+        with self.assertRaisesRegex(feed.FeedError, "markers need sources"):
+            feed.publish(self.home, self.session, [post([], body="Un dato.[1]", basis="mail")])
+
     def test_empty_publication_is_valid_and_only_once(self):
         self.assertEqual(feed.publish(self.home, self.session, [])["published"], 0)
         with self.assertRaisesRegex(feed.FeedError, "already published"):

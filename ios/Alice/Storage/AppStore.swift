@@ -5944,6 +5944,15 @@ final class AppStore {
         Task { await feed.discussed(post) }
     }
 
+    /// "Do it" on a feed post: the same opening as Discuss, then Alice's own offer sent as the
+    /// person's request, so the task starts at once.
+    func takeOffer(_ post: FeedPost) {
+        guard let offer = post.offer?.trimmingCharacters(in: .whitespacesAndNewlines), !offer.isEmpty else { return }
+        discuss(post)
+        draft = offer
+        send()
+    }
+
     /// What the model reads for a discussed post: marked as context from the person's feed.
     nonisolated static func feedContextText(_ post: FeedPost) -> String {
         var lines = ["[From my feed — for context]", post.headline, "", post.body]

@@ -7,6 +7,7 @@ struct FeedPostCard: View {
     let post: FeedPost
     let onLove: () -> Void
     let onDiscuss: () -> Void
+    var onOffer: () -> Void = {}
     let onWhy: () -> Void
     let onDelete: () -> Void
     let onExpand: () -> Void
@@ -98,6 +99,20 @@ struct FeedPostCard: View {
                     .frame(minWidth: 44, minHeight: 44)
             }
             .accessibilityLabel("Discuss with Alice")
+
+            if post.offer != nil {
+                Button {
+                    Haptic.tap.play()
+                    onOffer()
+                } label: {
+                    Text("Do it")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .frame(minHeight: 44)
+                .accessibilityHint(post.offer ?? "")
+            }
 
             if post.whyThis != nil {
                 Button(action: onWhy) {
