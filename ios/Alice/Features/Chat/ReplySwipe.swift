@@ -115,6 +115,18 @@ struct ReplyHold: ViewModifier {
     }
 }
 
+/// Gone while a reply is in front: for controls with nothing to do then, like the jump to the end.
+struct ReplyHidden: ViewModifier {
+    @Environment(AppStore.self) private var store
+    func body(content: Content) -> some View {
+        let hidden = store.replyFocusID != nil
+        content
+            .opacity(hidden ? 0 : 1)
+            .allowsHitTesting(!hidden)
+            .accessibilityHidden(hidden)
+    }
+}
+
 /// The chat's header blurs with the rest behind a reply in front; a tap on it lets go.
 struct ReplyBackdrop: ViewModifier {
     @Environment(AppStore.self) private var store

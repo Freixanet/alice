@@ -941,6 +941,8 @@ private struct TranscriptView: View {
                         .accessibilityLabel("Jump to latest message")
                         .accessibilityIdentifier("chat.scrollToBottom")
                         .padding(.bottom, 2)
+                        // Not while a reply is being answered: the chat holds still then.
+                        .modifier(ReplyHidden())
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.9).combined(with: .opacity))
                     }
                 }
