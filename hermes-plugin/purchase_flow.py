@@ -344,6 +344,24 @@ def _digits(value: Any) -> str:
     return re.sub(r"\D", "", str(value or ""))
 
 
+def _sizes(text: str) -> set:
+    """Sizes named in a text, normalized: «500 g», «500g», «0,5 kg» → {"500g"}; «120 cápsulas» → {"120caps"}."""
+    found = set()
+    for number, unit in re.findall(r"(\d+(?:[.,]\d+)?)\s*(kg|g|gr|gramos|ml|l|litros?|c[aá]psulas|caps)\b", str(text or ""), re.I):
+        value = float(number.replace(",", "."))
+        unit = unit.lower()
+        if unit == "kg":
+            value, unit = value * 1000, "g"
+        elif unit in ("gr", "gramos"):
+            unit = "g"
+        elif unit.startswith("l"):
+            value, unit = value * 1000, "ml"
+        elif unit.startswith("c"):
+            unit = "caps"
+        found.add(f"{value:g}{unit}")
+    return found
+
+
 def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "", now: Optional[float] = None,
             picture: Optional[Callable[[str], str]] = None, exact_item: bool = False,
             known_prices: Optional[Dict[str, str]] = None, request: str = "") -> Dict[str, Any]:
@@ -369,6 +387,25 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
             else:
                 discarded.append({'title': option['title'], 'why': 'no es Creapure, que pidió la persona'})
         kept = matching
+    # A price of nothing is a misreading (HSN's flavour mix pack came out «0,00 €»), never an offer.
+    priced = []
+    for option in kept:
+        amount = _money().parse(option.get("price"), option.get("currency") or currency)
+        if amount and amount[0] <= 0:
+            discarded.append({"title": option["title"], "why": "precio 0 leído: no es comprobable"})
+        else:
+            priced.append(option)
+    kept = priced
+    # A size the person named («de 500 g») is the product they want: other sizes and formats
+    # (1000 mg capsules, a pack) are other products, not a choice to make.
+    sizes = _sizes(requested)
+    if sizes:
+        sized = [o for o in kept if sizes & _sizes(str(o.get("title") or "") + " " + str(o.get("variant") or ""))]
+        if sized:
+            for option in kept:
+                if option not in sized:
+                    discarded.append({"title": option["title"], "why": "no es el tamaño que pidió la persona"})
+            kept = sized
     if identity:
         accepted = []
         for option in kept:

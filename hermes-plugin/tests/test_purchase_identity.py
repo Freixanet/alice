@@ -25,3 +25,11 @@ class ShopIdentityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SizeTests(unittest.TestCase):
+    def test_sizes_are_read_and_normalized(self):
+        self.assertEqual(flow._sizes("creatina Creapure de 500 g en HSN"), {"500g"})
+        self.assertEqual(flow._sizes("Creatina Excell (100% Creapure®) en polvo 500g"), {"500g"})
+        self.assertEqual(flow._sizes("bote de 0,5 kg"), {"500g"})
+        self.assertEqual(flow._sizes("Creatina Excell 1000mg"), set())
