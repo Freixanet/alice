@@ -118,11 +118,16 @@ return parts.filter((p,i)=>parts.indexOf(p)===i).join(' / ');})()"""
 VARIANT_JS = r"""((label)=>{%s
 const want=norm(label);if(!want)return {ok:false,why:'sin variante'};
 const fits=t=>{const n=norm(t);return n===want||(n.includes(want)&&n.length<=want.length+12)||names(n,want);};
-for(const sel of document.querySelectorAll('select')){if(!seen(sel)||/qty|quant|cantidad|units/i.test(sel.name+' '+sel.id))continue;for(const o of sel.options){if(fits(o.textContent)||norm(o.value)===want){if(o.disabled||/agotad|sold out|out of stock|no disponible/i.test(o.textContent))return {ok:false,why:'agotada'};sel.value=o.value;fire(sel);return {ok:true,how:'select',label:squash(o.textContent)};}}}
-for(const r of document.querySelectorAll('input[type=radio]')){const l=r.closest('label')||document.querySelector('label[for="'+r.id+'"]');const t=squash(l?l.innerText:r.value);if(fits(t)){if(r.disabled)return {ok:false,why:'agotada'};(l||r).click();if(!r.checked){r.checked=true;fire(r);}return {ok:true,how:'radio',label:t};}}
+// The closest wording wins, and a select in the add-to-cart form over one elsewhere on the page
+// (HSN lists «Análisis … 500g» lab reports in a select of its own above the sizes).
+const score=t=>{const n=norm(t);return n===want?0:(n.includes(want)&&n.length<=want.length+12)?1:names(n,want)?2+n.length/1000:null;};
+let best=null;
+for(const sel of document.querySelectorAll('select')){if(!seen(sel)||/qty|quant|cantidad|units/i.test(sel.name+' '+sel.id))continue;const inForm=!!sel.closest('form[action*="cart" i],form[action*="cesta" i],form[id*="product" i],[class*="add-to-cart" i]');for(const o of sel.options){const s0=norm(o.value)===want?0:score(o.textContent);if(s0===null)continue;const s1=s0+(inForm?0:0.5);if(!best||s1<best.s)best={s:s1,sel,o};}}
+if(best){const {sel,o}=best;if(o.disabled||/agotad|sold out|out of stock|no disponible/i.test(o.textContent))return {ok:false,why:'agotada'};sel.value=o.value;fire(sel);sel.setAttribute('data-alice-chosen','1');return {ok:true,how:'select',label:squash(o.textContent)};}
+for(const r of document.querySelectorAll('input[type=radio]')){const l=r.closest('label')||document.querySelector('label[for="'+r.id+'"]');const t=squash(l?l.innerText:r.value);if(fits(t)){if(r.disabled)return {ok:false,why:'agotada'};r.setAttribute('data-alice-chosen','1');(l||r).click();if(!r.checked){r.checked=true;fire(r);}return {ok:true,how:'radio',label:t};}}
 const els=Array.from(document.querySelectorAll('button,a,li,span,div,label,option')).filter(e=>seen(e)&&e.children.length<=2&&!e.closest('nav,header,footer')&&squash(e.innerText).length<=60&&squash(e.innerText).length>0);
 let hit=els.find(e=>norm(e.innerText)===want)||els.find(e=>fits(e.innerText));
-if(hit){if(hit.disabled||/disabled|sold-?out|agotad|unavailable/i.test(hit.className+' '+(hit.getAttribute('aria-disabled')||'')))return {ok:false,why:'agotada'};hit.click();return {ok:true,how:'button',label:squash(hit.innerText)};}
+if(hit){if(hit.disabled||/disabled|sold-?out|agotad|unavailable/i.test(hit.className+' '+(hit.getAttribute('aria-disabled')||'')))return {ok:false,why:'agotada'};hit.setAttribute('data-alice-chosen','1');hit.click();return {ok:true,how:'button',label:squash(hit.innerText)};}
 return {ok:false,why:'no encontrada'};})(%s)"""
 
 UNITS_JS = r"""((qty)=>{%s
@@ -137,7 +142,18 @@ return qty===1?{ok:true,how:'default'}:{ok:false,why:'sin control de cantidad'};
 ADD_JS = r"""(()=>{%s
 const add=/añadir|anadir|agregar|adicionar|add to|cesta|carrito|basket|\bbag\b|\bcart\b|acheter|aggiungi|carrello|panier|warenkorb|in den|comprar/i;
 const picks=['button[name=add]','form[action*="/cart/add"] [type=submit]','form[action*="/cart/add"] button','.single_add_to_cart_button','#product-addtocart-button','button.add-to-cart','.add-to-cart button','[data-action*="add-to-cart" i]','[data-action*="addtocart" i]','#AddToCart','button[id*="AddToCart" i]','.product-form__submit','button[class*="add-to-cart" i]','button[class*="addtocart" i]','button[class*="add_to_cart" i]','button[data-button-action="add-to-cart"]','.cart-buy-button'];
-for(const q of picks){for(const e of document.querySelectorAll(q)){if(seen(e)&&!e.disabled&&!PAY.test(text(e))){e.click();return {ok:true,how:'selector:'+q,label:text(e).slice(0,40)};}}}
+// The product's own form: the one holding the variant just chosen. Product pages carry other
+// add buttons (HSN's Evowhey offer above the creatine); those are never pressed for this one.
+const chosen=document.querySelector('[data-alice-chosen]');const own=chosen&&chosen.closest('form');
+if(own){const b=Array.from(own.querySelectorAll('[type=submit],button')).find(e=>seen(e)&&!e.disabled&&!PAY.test(text(e)));if(b){b.click();return {ok:true,how:'variant-form',label:text(b).slice(0,40)};}}
+// Magento: the page's product form names this very page in its «uenc» (the others carry a
+// «%uenc%» placeholder) and holds the quantity; its button may live outside the form.
+const forms=Array.from(document.querySelectorAll('form[action*="/cart/add"]'));
+const mine=forms.find(f=>/\/uenc\//.test(f.action)&&!/%25uenc%25|%uenc%/.test(f.action))||forms.find(f=>f.querySelector('[name*="qty" i],[name*="quant" i]'));
+if(mine&&!own){const b=Array.from(document.querySelectorAll('[type=submit],button')).find(e=>(e.form===mine||mine.contains(e))&&seen(e)&&!e.disabled&&!PAY.test(text(e)));if(b){b.click();return {ok:true,how:'page-form',label:text(b).slice(0,40)};}
+ if(mine.requestSubmit){mine.requestSubmit();return {ok:true,how:'page-form-submit',label:''};}}
+const ELSEWHERE='[class*="promo" i],[class*="banner" i],[class*="offer" i],[class*="recommend" i],[class*="related" i],[class*="upsell" i],[class*="cross" i],[class*="carousel" i],[class*="slider" i],[class*="recent" i],[class*="widget" i],[role=dialog]';
+for(const q of picks){for(const e of document.querySelectorAll(q)){if(seen(e)&&!e.disabled&&!PAY.test(text(e))&&!e.closest(ELSEWHERE)){e.click();return {ok:true,how:'selector:'+q,label:text(e).slice(0,40)};}}}
 const all=Array.from(document.querySelectorAll('button,input[type=submit],input[type=button],a[role=button],[role=button],a.btn,a.button')).filter(e=>seen(e)&&!e.disabled&&!e.closest('nav,header,footer,[class*="cart" i][class*="mini" i]'));
 const strong=all.find(e=>/añadir|anadir|agregar|adicionar|add to (cart|bag|basket)|aggiungi|ajouter|in den warenkorb/i.test(text(e))&&!PAY.test(text(e)));
 if(strong){strong.click();return {ok:true,how:'text:'+text(strong).slice(0,30),label:text(strong).slice(0,40)};}
@@ -151,8 +167,14 @@ const links=Array.from(document.querySelectorAll('a[href]')).filter(a=>rx.test(n
 const vis=links.find(seen)||links[0];
 return vis?new URL(vis.href,location.href).href:null;})()"""
 
-CART_LINE_JS = r"""((title,variant)=>{%s
-const blocks=Array.from(document.querySelectorAll('li,tr,article,div,section,[class*="item" i],[class*="line" i],[class*="product" i]')).filter(e=>seen(e)&&!e.closest('nav,header>*:not([class*="cart" i]),footer'));
+CART_LINE_JS = r"""((title,variant,scoped)=>{%s
+// Still on the product page, only a cart drawer counts: the page's own description names the
+// product too, with other amounts in it (HSN: «8,75 €» read as the price of a 27,98 € tub).
+const CARTISH='[class*="cart" i],[id*="cart" i],[class*="cesta" i],[class*="carrito" i],[class*="basket" i],[class*="bag" i],[role=dialog]';
+// An empty basket has no line, whatever «recently viewed» or offer blocks show under it with the same name.
+if(/(carrito|cesta|cart|basket|bag)[^.]{0,40}(est[aá] vac[ií][oa]|is empty)|no tienes (ning[uú]n )?productos en tu (carrito|cesta)|your (cart|basket|bag) is empty/i.test(squash(document.body.innerText)))return null;
+const RECO='[class*="recent" i],[class*="viewed" i],[class*="recommend" i],[class*="related" i],[class*="upsell" i],[class*="crosssell" i],[class*="cross-sell" i],[class*="suggest" i],[class*="carousel" i],[class*="slider" i]';
+const blocks=Array.from(document.querySelectorAll('li,tr,article,div,section,[class*="item" i],[class*="line" i],[class*="product" i]')).filter(e=>seen(e)&&!e.closest('nav,header>*:not([class*="cart" i]),footer')&&!e.closest(RECO)&&(!scoped||e.closest(CARTISH)));
 const fits=blocks.filter(e=>{const t=squash(e.innerText);return t.length>0&&t.length<1200&&names(t,title,variant||'')&&amounts(t).length>0;});
 if(!fits.length)return null;
 fits.sort((a,b)=>squash(a.innerText).length-squash(b.innerText).length);
@@ -163,7 +185,7 @@ if(!qty){const t=squash(line.innerText);const m=t.match(/(?:cantidad|qty|quantit
 const priced=[];for(const e of line.querySelectorAll('*')){if(!seen(e)||struck(e)||e.children.length>2)continue;const t=squash(e.innerText);if(t.length>40)continue;for(const a of amounts(t))priced.push({text:a,tagged:/price|precio|amount|importe|total|subtotal/i.test(e.className+' '+e.id)});}
 const prices=priced.length?priced:amounts(line.innerText).map(a=>({text:a,tagged:false}));
 const uniq=[];for(const p of prices){if(!uniq.some(u=>u.text===p.text))uniq.push(p);}
-return {line:squash(line.innerText).slice(0,300),qty:qty||'1',qty_how:qi?'input':(qty?'text':'assumed'),prices:uniq.map(u=>u.text),tagged:uniq.filter(u=>u.tagged).map(u=>u.text),how:'dom'};})(%s,%s)"""
+return {line:squash(line.innerText).slice(0,300),qty:qty||'1',qty_how:qi?'input':(qty?'text':'assumed'),prices:uniq.map(u=>u.text),tagged:uniq.filter(u=>u.tagged).map(u=>u.text),how:'dom'};})(%s,%s,%s)"""
 
 ORDER_TOTAL_JS = r"""(()=>{%s
 const rows=[];
@@ -184,7 +206,9 @@ PRODUCT_LINKS_JS = r"""(()=>{%s
 const out=[];const taken=new Set();
 const picks=['a[href*="/products/"]','.product a.woocommerce-LoopProduct-link','li.product a[href]','.product-item-link','a.product-item-link','.product-title a[href]','.product-name a[href]','[class*="product-card" i] a[href]','[class*="productcard" i] a[href]','[class*="product-tile" i] a[href]','[class*="product-item" i] a[href]','[class*="product" i] a[href]','[class*="producto" i] a[href]','[class*="result" i] a[href]','[class*="card" i] a[href]','a[href*="/product"]','a[href*="/producto"]','a[href*="/p/"]','a[href*="/item/"]','a[href*="/dp/"]','a[href*="/prozis/"]'];
 const titleOf=(a,card)=>{let t=squash(a.getAttribute('title')||a.innerText||'');if(!t||/^[€$£\d.,\s%-]+$/.test(t)){const h=card.querySelector('h1,h2,h3,h4,[class*="title" i],[class*="name" i]');t=h?squash(h.innerText):'';}return t.split('\n').map(s=>s.trim()).filter(s=>s&&!/^[€$£\d.,\s%-]+$/.test(s)).join(' ');};
-for(const q of picks){for(const a of document.querySelectorAll(q)){let href;try{href=new URL(a.href,location.href);}catch(e){continue;}if(href.protocol!=='https:'||href.hostname!==location.hostname)continue;const key=href.href.split('#')[0];if(taken.has(key))continue;
+const here=location.href.split('#')[0];
+for(const q of picks){for(const a of document.querySelectorAll(q)){let href;try{href=new URL(a.href,location.href);}catch(e){continue;}if(href.protocol!=='https:'||href.hostname!==location.hostname)continue;const key=href.href.split('#')[0];if(taken.has(key)||key===here)continue;
+ if(a.closest('nav,header,footer,[role=navigation],[role=banner],[role=contentinfo],[class*="menu" i],[class*="minicart" i],[class*="breadcrumb" i]'))continue;
  const card=a.closest('li,article,[class*="product" i],[class*="item" i],[class*="card" i],[class*="result" i]')||a.parentElement||a;const t=squash(card.innerText);if(!amounts(t).length)continue;
  if(/\/(cart|cesta|carrito|checkout|account|login|wishlist|compare)\b/i.test(href.pathname))continue;
  const title=titleOf(a,card);if(!title||title.length<3)continue;taken.add(key);out.push({url:key,title:title.slice(0,160),how:q});if(out.length>=40)return out;}}
@@ -363,16 +387,17 @@ def cart_link(page: Page) -> str:
         return ""
 
 
-def cart_line(page: Page, title: str, variant: str = "") -> Optional[Dict[str, Any]]:
-    """The cart's line for this product on the page as it is (a drawer or the cart page)."""
+def cart_line(page: Page, title: str, variant: str = "", scoped: bool = False) -> Optional[Dict[str, Any]]:
+    """The cart's line for this product on the page as it is (a drawer or the cart page).
+    ``scoped``: still on the product page, so only a block inside a cart drawer counts."""
     try:
-        found = page.run(CART_LINE_JS, str(title or ""), str(variant or ""))
+        found = page.run(CART_LINE_JS, str(title or ""), str(variant or ""), bool(scoped))
     except Exception:  # noqa: BLE001
         return None
     if not found and variant:
         # Carts spell variants their own way («Neutro» vs «Sin sabor»): the title alone names the line.
         try:
-            found = page.run(CART_LINE_JS, str(title or ""), "")
+            found = page.run(CART_LINE_JS, str(title or ""), "", bool(scoped))
         except Exception:  # noqa: BLE001
             return None
     return found or None
@@ -603,7 +628,37 @@ def search(page: Page, shop: str, query: str, platform: Optional[Dict[str, Any]]
             return {"url": url, "links": rows, "how": "form" if url == candidates[0] and form else "pattern",
                     "platform": platform}
         tried.append(url)
+    # The shop's own search found nothing (HSN's answers every query «minimum length 128»): its
+    # product pages, as a web search restricted to the shop lists them.
+    rows = web_search_links(page, home, query)
+    if rows:
+        return {"url": home, "links": rows, "how": "web-search", "platform": platform}
+    tried.append("web-search")
     raise ValueError("No se encontró el buscador de la tienda ni resultados con productos para «" + query + "».")
+
+
+WEB_RESULTS_JS = r"""((host)=>{%s
+const out=[];const got=new Set();
+for(const a of document.querySelectorAll('a.result__a,a[data-testid="result-title-a"],h2 a[href]')){let url=a.href;try{const u=new URL(url);const real=u.searchParams.get('uddg');if(real)url=real;}catch(e){continue;}
+ let h;try{h=new URL(url);}catch(e){continue;}if(h.protocol!=='https:'||h.hostname.replace(/^www\./,'')!==host)continue;
+ const key=h.href.split('#')[0];if(got.has(key))continue;got.add(key);out.push({url:key,title:(a.innerText||'').trim().slice(0,160),how:'web-search'});if(out.length>=12)break;}
+return out;})(%s)"""
+
+
+def web_search_links(page: Page, home: str, query: str) -> List[Dict[str, str]]:
+    """Pages of the shop a web search finds for ``query``: product pages, not its listings."""
+    host = urlsplit(home).hostname or ""
+    host = host[4:] if host.startswith("www.") else host
+    if not host:
+        return []
+    try:
+        page.goto("https://html.duckduckgo.com/html/?q=" + url_quote(f"site:{host} {query}"))
+        rows = page.run(WEB_RESULTS_JS, host) or []
+    except Exception:  # noqa: BLE001
+        return []
+    listing = re.compile(r"/(catalogsearch|search|buscar|busqueda|categor|marcas/?$|blog|ingredientes)\b", re.I)
+    return [r for r in rows if isinstance(r, dict) and r.get("url") and r.get("title")
+            and not listing.search(urlsplit(r["url"]).path)]
 
 
 def product_links(page: Page) -> List[Dict[str, str]]:
@@ -744,15 +799,18 @@ def _quote(page: Page, url: str, *, variant: str = "", qty: int = 1, currency: s
         out["unverified"] = out["unverified"] or "sin botón de añadir a la cesta reconocible"
         return _page_basis(out)
     before = page.url
-    line = cart_line(page, title, out["variant"])
-    if line is None:
-        link = cart_link(page)
-        if link and module("purchase_prices").same_site(link, url):
-            try:
-                page.goto(link)
-                line = cart_line(page, title, out["variant"])
-            except Exception:  # noqa: BLE001
-                line = None
+    # The cart page first: after «añadir» shops open drawers full of other products (HSN's offers a
+    # whey and a protein pack, each «500g»), and the cart page lists only what is in the basket.
+    line = None
+    link = cart_link(page)
+    if link and module("purchase_prices").same_site(link, url):
+        try:
+            page.goto(link)
+            line = cart_line(page, title, out["variant"])
+        except Exception:  # noqa: BLE001
+            line = None
+    if line is None and page.url == before:
+        line = cart_line(page, title, out["variant"], scoped=True)
     if line is None:
         out["unverified"] = out["unverified"] or "la cesta no muestra una línea con ese producto"
         return _page_basis(out)

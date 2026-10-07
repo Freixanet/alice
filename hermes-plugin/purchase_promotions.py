@@ -69,8 +69,17 @@ def public_codes(blocks, supplied=()):
         if not isinstance(text,str): continue
         patterns = [r'(?:cup[oó]n|coupon|promo(?:tion)?\s*code|discount\s*code|c[oó]digo)\s*[:=]?\s*([A-Za-z0-9][A-Za-z0-9_-]{2,39})',
                     r'^\s*([A-Z0-9][A-Z0-9_-]{2,39})\s*(?:\n|\s)\s*\d{1,2}(?:[.,]\d+)?\s*%']
+        # «Código identificativo de autenticidad HSN: 18HR11» is a product's own code, not a coupon.
+        # A code is a coupon only where the shop speaks of a discount («Código 18HR11» on a quality
+        # seal is not one).
+        if not re.search(r'cup[oó]n|coupon|descuento|discount|promo|rebaja|ahorr|\boff\b|%', text, re.I):
+            continue
+        if re.search(r'identificativ|autenticidad|authenticity|referencia|\bref\b|\blote\b|\bsku\b|\bean\b|c[oó]digo (?:de )?barras|c[oó]digo postal|postal code', text, re.I):
+            continue
         for pattern in patterns:
-            codes.extend(c for c in re.findall(pattern,text, re.I if pattern==patterns[0] else 0) if c.lower() not in {'para','with','code','codigo','coupon','cupón','descuento','discount','welcome','bienvenida','requires','requiere'})
+            codes.extend(c for c in re.findall(pattern,text, re.I if pattern==patterns[0] else 0)
+                         if c.lower() not in {'para','with','code','codigo','coupon','cupón','descuento','discount','welcome','bienvenida','requires','requiere'}
+                         and not c.islower())
     return list(dict.fromkeys(codes))[:5]
 
 
