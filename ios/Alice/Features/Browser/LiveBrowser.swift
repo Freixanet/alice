@@ -18,6 +18,8 @@ final class LiveBrowser {
     private(set) var url = ""
     /// The tab being shown, as the plugin names it.
     private(set) var target: String?
+    @ObservationIgnored private var pinnedTarget: String?
+    @ObservationIgnored private var requiresPinnedTarget = false
     /// Page size in CSS pixels, for mapping a finger to the page.
     private(set) var pageSize: CGSize?
     private(set) var failure: String?
@@ -29,6 +31,17 @@ final class LiveBrowser {
     @ObservationIgnored private var previewing = false
 
     func attach(_ store: AppStore) { self.store = store }
+
+    func pin(_ target: String?) {
+        requiresPinnedTarget = true
+        guard pinnedTarget != target else { return }
+        pinnedTarget = target
+        self.target = target
+        sequence = 0
+        image = nil
+        title = ""
+        url = ""
+    }
 
     /// Developer › Components: one still page and no Hermes behind it. Nothing is fetched, and
     /// taking over or using the page does nothing.
@@ -45,6 +58,7 @@ final class LiveBrowser {
     /// Someone is looking: frames flow while at least one view watches.
     func watch() {
         guard !previewing else { return }
+        guard !requiresPinnedTarget || pinnedTarget != nil else { return }
         watchers += 1
         guard loop == nil else { return }
         loop = Task { [weak self] in await self?.run() }
@@ -69,7 +83,7 @@ final class LiveBrowser {
                 // Long-polls up to a second and a half for a newer frame.
                 // Follow the tab the agent is working in; hold still on this one
                 // while the person has control, so the page does not jump away.
-                let shot = try await store.sharedBrowserFrame(after: sequence, target: humanInControl ? target : nil)
+                let shot = try await store.sharedBrowserFrame(after: sequence, target: pinnedTarget ?? (humanInControl ? target : nil))
                 if !shot.target.isEmpty, shot.target != target {
                     // Another tab: its frames count from its own start.
                     sequence = 0
@@ -127,7 +141,7 @@ final class LiveBrowser {
 
     /// What the person does to the page. Nothing is logged.
     func send(_ action: SharedBrowserAction) {
-        guard let store else { return }
+        guard let store, !requiresPinnedTarget || pinnedTarget != nil else { return }
         Task {
             do { try await store.sharedBrowserInput(action, target: target) }
             catch { failure = PlainWords.describe(error, doing: "use the browser") }
@@ -202,6 +216,7 @@ struct LiveBrowserCard: View {
     let browsing: Bool
     /// The step under way, as the agent described it.
     var caption: String?
+    var browser: LiveBrowser? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -215,7 +230,7 @@ struct LiveBrowserCard: View {
         if on { live.watch() } else { live.unwatch() }
     }
 
-    private var live: LiveBrowser { store.liveBrowser }
+    private var live: LiveBrowser { browser ?? store.liveBrowser }
 
     var body: some View {
         // The same card as an errand's browser (`ErrandBrowserCard`): one browser, one look.
@@ -308,6 +323,7 @@ struct LivePulse: View {
 struct LiveBrowserScreen: View {
     var agentWorking = false
     var caption: String?
+    var browser: LiveBrowser? = nil
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
@@ -324,7 +340,7 @@ struct LiveBrowserScreen: View {
     private static let sentinel = "\u{200B}"
     @State private var dragStart: CGPoint?
 
-    private var live: LiveBrowser { store.liveBrowser }
+    private var live: LiveBrowser { browser ?? store.liveBrowser }
 
     private var agentOnIt: Bool { agentWorking && store.isSending && !live.humanInControl }
 

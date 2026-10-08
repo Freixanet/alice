@@ -1062,7 +1062,14 @@ async def get_cards(profile: str = "default") -> JSONResponse:
 
 
 @router.post("/vault/cards")
-async def post_card(body: _CardBody) -> JSONResponse:
+async def post_card(request: Request) -> JSONResponse:
+    raw = await request.body()
+    if len(raw)>16384:raise HTTPException(status_code=400,detail='Datos de tarjeta demasiado largos.')
+    try:
+        body = _CardBody.model_validate(json.loads(raw))
+    except Exception:
+        raise HTTPException(status_code=400,detail='Datos de tarjeta inválidos.') from None
+    del raw
     return JSONResponse(await asyncio.to_thread(_save_card, body), headers=_NO_STORE)
 
 
@@ -2642,6 +2649,7 @@ class _CheckoutDecision(BaseModel):
     decision: str
     checkout_id: str
     card_label: str = Field(default="", max_length=80)
+    card_handle: str = Field(default="", max_length=120)
 
 
 @router.post("/errands/{errand_id}/checkout")
@@ -2660,7 +2668,7 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
-        entry = module.decide_checkout(root, errand_id, body.decision == "allow", card_label=body.card_label)
+        entry = module.decide_checkout(root, errand_id, body.decision == "allow", card_label=body.card_label, checkout_id=body.checkout_id, card_handle=body.card_handle)
         if entry is None:
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
         if body.decision == "allow":

@@ -156,13 +156,13 @@ def save(origin: Optional[str], fields: Dict[str, Any]) -> Dict[str, Any]:
     store = _store()
     # A card already saved elsewhere keeps its alias unless a new one is given.
     alias = alias or next((alias_of(m.label) for m in store.list_items()
-                           if m.kind == "payment" and identity(m.label) == card and alias_of(m.label)), "")
+                           if m.kind == "payment" and same_number(store, m, payload) and alias_of(m.label)), "")
     label = _labelled(alias, card)
     saved = []
     for origin_ in twins(site):
         # The same card for the same site replaces the earlier one (a new expiry or code).
         for meta in store.list_items():
-            if meta.kind == "payment" and meta.origin == origin_ and identity(meta.label) == card:
+            if meta.kind == "payment" and meta.origin == origin_ and same_number(store, meta, payload):
                 store.remove_item(meta.id)
         saved.append(_public(store.add_item(kind="payment", label=label, secret=payload, origin=origin_)))
     return saved[0]
@@ -174,9 +174,9 @@ def _save_general(fields: Dict[str, Any]) -> Dict[str, Any]:
     card = f"{brand(payload['card_number'])} ···{payload['card_number'][-4:]}"
     store = _store()
     alias = alias or next((alias_of(m.label) for m in store.list_items()
-                           if m.kind == "payment" and identity(m.label) == card and alias_of(m.label)), "")
+                           if m.kind == "payment" and same_number(store, m, payload) and alias_of(m.label)), "")
     for meta in store.list_items():
-        if meta.kind == "payment" and not meta.origin and identity(meta.label) == card:
+        if meta.kind == "payment" and not meta.origin and same_number(store, meta, payload):
             store.remove_item(meta.id)
     return _public(store.add_item(kind="payment", label=_labelled(alias, card), secret=payload))
 
@@ -193,7 +193,7 @@ def bind(handle: str, origin: str) -> Dict[str, Any]:
     for origin_ in twins(site):
         existing = next((o for o in store.list_items()
                          if o.kind == "payment" and o.origin == origin_
-                         and identity(o.label) == identity(meta.label)), None)
+                         and same_number(store, o, secret)), None)
         bound.append(_public(existing) if existing else
                      _public(store.add_item(kind="payment", label=meta.label, secret=secret, origin=origin_)))
     return bound[0]
@@ -212,35 +212,16 @@ def _host(origin: str) -> str:
     return urlsplit(origin or "").hostname or ""
 
 
+def same_number(store, meta, payload):
+    try:
+        old = store.resolve_secret(meta.id)
+        return bool(old.get('card_number')) and old['card_number'] == payload.get('card_number')
+    except Exception:
+        return False
+
+
 def route_fill(handle: str, open_urls: List[str]) -> Optional[str]:
-    """The payment item a fill should use, given the pages open in the browser, or None to leave
-    the call as it is. A card saved for the shop is used on its www twin, and on the bank's payment
-    page the shop sent the person to — never on any other site."""
-    store = _store()
-    meta = store.get_meta(str(handle or ""))
-    if meta is None or meta.kind != "payment":
-        return None
-    open_origins = []
-    for url in open_urls:
-        parts = urlsplit(url or "")
-        if parts.scheme == "https" and parts.hostname:
-            open_origins.append(f"https://{parts.netloc}")
-    same_card = [m for m in store.list_items()
-                 if m.kind == "payment" and identity(m.label) == identity(meta.label)]
-    by_origin = {m.origin: m for m in same_card if m.origin}
-    # 1. The bank's payment page is open: that is where the card goes.
-    for origin in open_origins:
-        if _host(origin) in PAYMENT_GATEWAYS:
-            if origin in by_origin:
-                chosen = by_origin[origin]
-            else:
-                chosen_public = bind(meta.id, origin)
-                return chosen_public["handle"] if chosen_public["handle"] != meta.id else None
-            return chosen.id if chosen.id != meta.id else None
-    # 2. The shop's own checkout: the copy bound to the origin actually open (www or not).
-    for origin in open_origins:
-        if origin in by_origin and origin != meta.origin and origin in twins(meta.origin or origin):
-            return by_origin[origin].id
+    """Compatibility symbol: never select a bank or card from unrelated global tabs."""
     return None
 
 
@@ -254,7 +235,7 @@ def rename(handle: str, alias: str) -> Dict[str, Any]:
     label = _labelled(clean_alias(alias), identity(meta.label))
     renamed = None
     for item in [m for m in store.list_items()
-                 if m.kind == "payment" and identity(m.label) == identity(meta.label)]:
+                 if m.kind == "payment" and same_number(store,m,store.resolve_secret(meta.id))]:
         if item.label == label:
             fresh = item
         else:
@@ -274,38 +255,20 @@ def remove(handle: str) -> bool:
         return False
     sites = set(twins(meta.origin)) if meta.origin else set()
     for other in store.list_items():
-        if (other.kind == "payment" and identity(other.label) == identity(meta.label)
+        if (other.kind == "payment" and same_number(store,other,store.resolve_secret(meta.id))
                 and other.origin in sites and other.id != meta.id):
             store.remove_item(other.id)
     return bool(store.remove_item(meta.id))
 
 
 def prompt(profile: str) -> str:
-    """How an agent pays on a bank's page without a card number ever entering the chat."""
+    """The deterministic controller owns the payment authority, not the prompt."""
     return (
         "## Pagar con tarjeta\n"
-        "El sí de la compra es la aprobación del checkout en Alice (`checkout_request`, dentro de un "
-        "recado); sin ella el plugin rechaza rellenar la tarjeta y pulsar pagar. Con el checkout aprobado, "
-        "no pidas otro sí. Lleva la compra tú hasta la página donde se escribe la tarjeta "
-        "(en muchas tiendas es la del banco, como `sis.redsys.es`, después de «Realizar pedido»; acepta "
-        "las condiciones de la tienda como parte de la compra). Ahí escribe una sola línea con qué, "
-        "cuánto, dónde llega y cuándo, llama a `browser_vault_list` y, si hay una tarjeta "
-        "(`kind: payment`) con el `origin` de esa página, llama **una vez** a `browser_vault_fill`: "
-        "Hermes le muestra a la persona «Pagar / Cancelar». Si acepta, pulsa el botón de pagar; si el "
-        "banco pide aprobar en su app o un código, díselo en una línea y **espera mirando la página** "
-        "(hasta unos 5 minutos). **Siempre termina diciéndole cómo acabó**, leído de la página: pagado "
-        "(con el número de pedido o el texto de confirmación), rechazado o no aprobado por el banco "
-        "(«el banco no aprobó el pago, no se ha cobrado nada»), caducado, o que hubo un error y no sabes "
-        "si se cobró (dilo así y dile dónde comprobarlo). Nunca lo dejes sin resultado. Si cancela en "
-        "Hermes (`payment_declined`), no lo reintentes. Si una tienda cobra sin pasar por una página de tarjeta, "
-        "el sí es igualmente el checkout aprobado, antes del clic que paga.\n"
-        "Si no hay tarjeta para el `origin` exacto de la página donde están los campos de tarjeta, "
-        "**no llames a `browser_vault_fill`** y nunca pidas los datos en el chat: termina con esta "
-        "línea sola, con ese origen: "
-        f"`[Añadir tarjeta](alice://connect/card?origin=ORIGEN&profile={profile})`. Si ya hay una "
-        "tarjeta para otro sitio, la persona podrá usarla aquí con un toque. Si `browser_vault_fill` "
-        "falla por `origin_mismatch`, no lo repitas: pide la tarjeta para el origen de la página actual. "
-        "Si el relleno no encuentra los campos, dile que toque la vista en directo del navegador y la "
-        "escriba desde ahí. Nunca escribas, repitas ni guardes números de tarjeta, caducidad o CVV en "
-        "mensajes, notas, memoria o archivos."
+        "El pago necesita la aprobación del resumen completo en Alice. Usa purchase_action fill_card "
+        "con el handle exacto aprobado y purchase_action click en el control observado. No uses "
+        "browser_vault_fill ni el navegador global. La tienda y la pasarela comparten el mismo intento "
+        "persistido antes de enviar. Tras un envío, comprueba su resultado con purchase_outcome; "
+        "un fallo de red es unknown y nunca autoriza repetir el pago. Para un código, login_request "
+        "kind vault.code dentro del mismo recado. Nunca pidas ni copies números de tarjeta o códigos al chat."
     )

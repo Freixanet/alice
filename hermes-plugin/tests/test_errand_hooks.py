@@ -40,6 +40,7 @@ class ErrandHookTests(unittest.TestCase):
         self.plugin._PURCHASE_OPEN.clear()
         self.plugin._PURCHASE_REQUESTS.clear()
         self.plugin._LOOKED.clear()
+        self.plugin._PURCHASE_PRESENTED.clear()
         self.metas = {"card": Meta(kind="payment", origin="https://www.hsnstore.com", label="Visa ···4242"),
                       "login": Meta(kind="login", origin="https://www.hsnstore.com", label="HSN")}
         store = types.SimpleNamespace(get_meta=lambda handle: self.metas.get(handle))
@@ -78,7 +79,7 @@ class ErrandHookTests(unittest.TestCase):
 
     def test_execution_guard_preserves_non_purchase_sessions(self):
         entry = self.errand()
-        self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"]))
+        self.assertEqual(self.plugin._guard_errand(tool_name="terminal", args={}, session_id=entry["session_id"])["action"],"block")
         self.assertIsNone(self.plugin._guard_errand(tool_name="terminal", args={}, session_id="ordinary-chat"))
 
     def test_purchase_browser_code_cannot_use_raw_execution_or_transport(self):
@@ -142,7 +143,7 @@ class ErrandHookTests(unittest.TestCase):
         self.errands.request_checkout(self.home, entry["id"], {"merchant": "HSN", "site": "hsnstore.com",
                                                                "items": [{"name": "Creatina"}], "total": "27,98 €"})
         self.errands.decide_checkout(self.home, entry["id"], True)
-        self.assertIsNone(self.plugin._guard_errand("browser_vault_fill", fill, session_id=entry["session_id"]))
+        self.assertEqual(self.plugin._guard_errand("browser_vault_fill", fill, session_id=entry["session_id"])["action"],"block")
 
     def test_a_chat_is_told_to_start_an_errand(self):
         verdict = self.plugin._guard_errand("browser_vault_fill", {"handle": "card"}, session_id="20260922_155237_281345")
@@ -157,13 +158,11 @@ class ErrandHookTests(unittest.TestCase):
                                             session_id=entry["session_id"])
         self.assertEqual(verdict["action"], "block")
 
-    def test_a_saved_login_goes_in_silently_unless_asked(self):
-        quiet = self.errand()
-        self.assertIsNone(self.plugin._guard_errand("browser_vault_fill", {"handle": "login"},
-                                                    session_id=quiet["session_id"]))
-        careful = self.errand(ask_before_login=True)
-        verdict = self.plugin._guard_errand("browser_vault_fill", {"handle": "login"}, session_id=careful["session_id"])
-        self.assertEqual(verdict["action"], "approve")
+    def test_saved_logins_are_filled_only_by_the_pinned_service(self):
+        for ask in (False,True):
+            entry=self.errand(ask_before_login=ask)
+            self.assertEqual(self.plugin._guard_errand('browser_vault_fill',{'handle':'login'},session_id=entry['session_id'])['action'],'block')
+            self.assertIsNone(self.plugin._guard_errand('login_fill',{'handle':'login'},session_id=entry['session_id']))
 
     def test_if_the_check_fails_no_card_is_filled(self):
         entry = self.errand()
@@ -188,7 +187,7 @@ class ErrandHookTests(unittest.TestCase):
             verdict=self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])
         self.assertEqual(verdict['action'],'block')
         with mock.patch.object(access,'target',return_value=('https://www.hsnstore.com',{'url':'https://www.hsnstore.com/checkout/step/payment/'},None)), mock.patch.object(prices,'payment_ready',return_value=True):
-            self.assertIsNone(self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id']))
+            self.assertEqual(self.plugin._guard_errand('browser_click',{'text':'Pagar ahora'},session_id=entry['session_id'])["action"],"block")
 
     def test_coordinate_payment_uses_this_errands_page_not_another_tab(self):
         entry=self.errand()
@@ -210,7 +209,10 @@ class ErrandHookTests(unittest.TestCase):
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
         self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
-                                           "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
+                                           "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify", "purchase_action"})
+        parameters = registered["checkout_request"]["schema"]["parameters"]
+        self.assertEqual(set(parameters["required"]), {"total_selector", "delivery_selector", "address_selector", "email_selector"})
+        self.assertNotIn("total", parameters["properties"])
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
             self.assertFalse(json.loads(handler({"merchant": "HSN"}))["ok"])
@@ -218,8 +220,8 @@ class ErrandHookTests(unittest.TestCase):
         with mock.patch.object(self.plugin, "_session_id", return_value=entry["session_id"]):
             out = json.loads(handler({"merchant": "HSN", "site": "hsnstore.com", "items": [{"name": "Creatina"}],
                                       "total": "27,98 €"}))
-        self.assertTrue(out["ok"])
-        self.assertEqual(self.errands.get(self.home, entry["id"])["status"], "needs_approval")
+        self.assertFalse(out["ok"],"Model-supplied order facts do not establish a checkout")
+        self.assertEqual(self.errands.get(self.home, entry["id"])["status"], "working")
 
 
     def test_a_purchase_request_starts_nothing_and_brings_the_persons_context(self):
@@ -230,7 +232,10 @@ class ErrandHookTests(unittest.TestCase):
         # The chat searches, reads pages and asks...
         for tool, args in (("browser_navigate", {"url": "https://www.apple.com/es/shop"}),
                            ("browser_exec", {"code": "print(page_info())"}), ("ask_person", {"questions": []})):
-            self.assertIsNone(self.plugin._guard_chat_errand(tool, args, session_id="chat-9"))
+            if tool == "browser_exec":
+                self.assertEqual(self.plugin._guard_chat_errand(tool,args,session_id="chat-9")["action"],"block")
+            else:
+                self.assertIsNone(self.plugin._guard_chat_errand(tool,args,session_id="chat-9"))
         # ...but never fills a cart: that is the chosen option's errand.
         for tool, args in (("browser_click", {"text": "Añadir a la cesta"}),
                            ("browser_exec", {"code": "# Añadir al carrito\nclick('Add to bag')"})):

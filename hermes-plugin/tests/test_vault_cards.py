@@ -79,17 +79,13 @@ class VaultTests(unittest.TestCase):
         self.assertTrue(cards.remove(saved["handle"]))
         self.assertEqual(cards.cards(), [])
 
-    def test_a_fill_goes_to_the_card_for_the_page_actually_open(self):
-        shop = cards.save("https://piensosraposo.es", self.card)
-        www = [c for c in cards.cards() if c["origin"] == "https://www.piensosraposo.es"][0]
-        # The shop's checkout on www: the www copy, not the bare one.
-        self.assertEqual(cards.route_fill(shop["handle"], ["https://www.piensosraposo.es/pedido"]), www["handle"])
-        # Sent to Redsys: the card is bound there and that copy used.
-        routed = cards.route_fill(shop["handle"], ["https://www.piensosraposo.es/pedido",
-                                                   "https://sis.redsys.es/sis/realizarPago"])
-        self.assertEqual(self.store.get_meta(routed).origin, "https://sis.redsys.es")
-        # Any other site: left alone (Hermes refuses it).
-        self.assertIsNone(cards.route_fill(shop["handle"], ["https://evil.example/pay"]))
+    def test_global_tabs_never_route_a_card_or_bind_it_to_a_bank(self):
+        shop=cards.save("https://piensosraposo.es",self.card)
+        before=len(cards.cards())
+        self.assertIsNone(cards.route_fill(shop['handle'],['https://www.piensosraposo.es/pedido','https://sis.redsys.es/pago']))
+        self.assertEqual(len(cards.cards()),before)
+        bound=cards.bind(shop['handle'],'https://sis.redsys.es')
+        self.assertEqual(self.store.get_meta(bound['handle']).origin,'https://sis.redsys.es')
 
     def test_twins(self):
         self.assertEqual(cards.twins("https://www.shop.es"), ["https://www.shop.es", "https://shop.es"])
@@ -119,7 +115,7 @@ class VaultTests(unittest.TestCase):
         self.assertEqual(shop["label"], "Personal · Visa ···4242")
         self.assertEqual((shop["alias"], shop["card"]), ("Personal", "Visa ···4242"))
         # Used on the bank's page too, it keeps its alias and is still the same card.
-        routed = cards.route_fill(shop["handle"], ["https://sis.redsys.es/pago"])
+        routed = cards.bind(shop["handle"], "https://sis.redsys.es")["handle"]
         self.assertEqual(self.store.get_meta(routed).label, "Personal · Visa ···4242")
         # Renamed once, renamed on every site, secrets untouched.
         renamed = cards.rename(shop["handle"], "Empresa")
@@ -183,10 +179,10 @@ class VaultTests(unittest.TestCase):
 class PromptTests(unittest.TestCase):
     def test_the_link_names_the_profile_and_the_chat_never_carries_the_card(self):
         text = cards.prompt("default")
-        self.assertIn("alice://connect/card?origin=ORIGEN&profile=default", text)
-        self.assertIn("nunca pidas los datos en el chat", text)
+        self.assertIn("purchase_action fill_card",text)
+        self.assertIn("Nunca pidas ni copies números de tarjeta",text)
         # The one yes is the checkout the person approved in Alice, not Hermes' card confirmation.
-        self.assertIn("aprobación del checkout en Alice", text)
+        self.assertIn("aprobación del resumen completo en Alice",text)
         self.assertNotIn("es el sí de la compra", text)
 
 

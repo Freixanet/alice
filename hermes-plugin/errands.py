@@ -117,20 +117,23 @@ def _locked(home: Path):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def _read(path: Path) -> List[Dict[str, Any]]:
-    try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return []
-    return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
+def _storage():
+    import importlib.util
+    import sys
+    key = "alice_purchase_storage"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("purchase_storage.py"))
+        sys.modules[key] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[key])
+    return sys.modules[key]
 
 
-def _write(path: Path, entries: List[Dict[str, Any]]) -> None:
-    fd, tmp = tempfile.mkstemp(dir=str(Path(path).parent), prefix=".errands.")
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+def _read(path):
+    return _storage().read(path)
+
+
+def _write(path, data):
+    _storage().write(path, data)
 
 
 def shop(value: str) -> str:
@@ -181,7 +184,7 @@ def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: st
         raise ValueError("Say what the errand is.")
     errand_id = secrets.token_hex(5)
     return {
-        "id": errand_id, "title": _clean(title, 80) or task[:80], "request": task, "site": shop(site),
+        "id": errand_id, "title": _clean(title, 80) or task[:80], "request": task, "site": shop(site or (offer or {}).get("url", "")),
         "status": "working", "session_id": SESSION_PREFIX + errand_id, "run_id": "", "runs": 0,
         "origin_session": _clean(origin_session, 120), "profile": _clean(profile, 64),
         **(model_route or {}),
@@ -190,6 +193,7 @@ def _new_entry(task: str, *, title: str = "", site: str = "", origin_session: st
         "steps": [], "started_at": now, "updated_at": now,
         # The option the person chose in the chat (purchase_flow.offer): what exactly to buy.
         "offer": offer or None,
+        "purchase": {"phase":"preparing","version":0,"events":[]} if offer else None,
     }
 
 
@@ -318,8 +322,16 @@ OG_IMAGE = re.compile(
 
 
 def _fetch(url: str, limit: int, accept: str) -> Tuple[bytes, str]:
+    from tools.url_safety import is_safe_url
+    if not str(url).startswith('https://') or not is_safe_url(url):
+        raise ValueError('La imagen no tiene una dirección pública segura.')
+    class SafeRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            if not str(newurl).startswith('https://') or not is_safe_url(newurl):
+                raise ValueError('La imagen redirige a una dirección no permitida.')
+            return super().redirect_request(req,fp,code,msg,headers,newurl)
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": accept})
-    with urllib.request.urlopen(request, timeout=6) as response:  # noqa: S310 — https only, checked by callers
+    with urllib.request.build_opener(SafeRedirect()).open(request, timeout=6) as response:  # noqa: S310 — https only, checked by callers
         return response.read(limit), str(response.headers.get("Content-Type") or "")
 
 
@@ -401,6 +413,8 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     entry = get(home, errand_id)
     if entry is None:
         return {"ok": False, "error": "This is not an errand; purchases are errands: use errand_start."}
+    if entry["status"] not in ("working","needs_approval","needs_card") or (entry.get("purchase") or {}).get("attempt_id"):
+        return {"ok":False,"error":"El recado no permite reemplazar este pedido; comprueba su resultado."}
     site = shop(args.get("site") or entry.get("site") or "")
     total = _clean(args.get("total"), 40)
     items = _items(args.get("items"))
@@ -414,9 +428,11 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
     # Step 8: a way to pay before the person sees the total. With no saved card the person is asked
     # for one first; the errand resumes with «[tarjeta lista]» and calls checkout_request again.
     labels: List[str] = []
+    cards = []
     if saved_cards is not None:
         try:
-            labels = [str(c.get("label") or "") for c in saved_cards()]
+            cards = saved_cards()
+            labels = [str(c.get("label") or "") for c in cards]
         except Exception:  # noqa: BLE001 — the vault unreadable is not "no card": the person chooses
             labels = ["?"]
         if not [label for label in labels if label]:
@@ -432,6 +448,7 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
         "card_label": paying_card(home, site, [label for label in labels if label != "?"],
                                   _clean(args.get("card_label"), 60)),
         "total": total, "total_cents": total_cents, "currency": currency, "requested_at": now,
+        "available_cards":[{k:c.get(k) for k in ("handle","label","card")} for c in cards],
     }
     update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
     return {"ok": True, "status": "needs_approval",
@@ -460,28 +477,43 @@ def refresh_message(checkout: Dict[str, Any]) -> str:
 
 
 def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
-                    card_label: str = "") -> Optional[Dict[str, Any]]:
+                    card_label: str = "", checkout_id: str = "", card_handle: str = "") -> Optional[Dict[str, Any]]:
     now = now or time.time()
-    expire_checkouts(home, now)
-    entry = get(home, errand_id)
-    checkout = (entry or {}).get("checkout")
-    if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
-        return None
-    # Existing archives may predate cents. Validate them before granting payment approval.
-    amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
-    if allow and (not amount or not amount[1]):
-        return None
-    checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
-    if allow:
-        # The yes is to this total, kept in cents for the code that checks the payment page.
-        checkout["approved_total"] = checkout.get("total", "")
-        checkout["total_cents"], checkout["currency"] = amount
-        checkout["approved_cents"], checkout["approved_currency"] = amount
-    if allow and _clean(card_label, 60):
-        checkout["card_label"] = _clean(card_label, 60)
-    status = "working" if allow else "denied"
-    return update(home, errand_id, now=now, checkout=checkout, status=status,
-                  reason="" if allow else "Has denegado la compra.")
+    with _locked(home) as path:
+        entries = _read(path)
+        entry = next((e for e in entries if e.get('id') == errand_id), None)
+        checkout = (entry or {}).get('checkout')
+        if (not entry or entry['status'] != 'needs_approval' or not isinstance(checkout,dict)
+                or checkout.get('status') != 'pending' or (checkout.get('snapshot') and not checkout_id) or (checkout_id and checkout['id'] != checkout_id)
+                or now-float(checkout.get('requested_at') or 0) > CHECKOUT_TTL):
+            return None
+        amount = _money().parse(checkout.get('total'),checkout.get('currency','')) if allow else None
+        if allow and (not amount or not amount[1]):return None
+        checkout = {**checkout,'status':'approved' if allow else 'denied','decided_at':now}
+        if allow:
+            checkout.update(approved_total=checkout['total'],total_cents=amount[0],currency=amount[1],
+                            approved_cents=amount[0],approved_currency=amount[1])
+            if checkout.get('snapshot') and checkout.get('requires_card',True):
+                available = checkout.get('available_cards') or []
+                selected = next((c for c in available if c.get('handle') == card_handle),None) if card_handle else None
+                if not selected and not card_handle:
+                    matches = [c for c in available if (card_label or checkout.get('card_label')) in (c.get('label'),c.get('card'))]
+                    selected = matches[0] if len(matches)==1 else None
+                if not selected:return None
+                checkout.update(card_handle=selected['handle'],card_label=selected['label'])
+            elif card_label:
+                checkout['card_label'] = _clean(card_label,60)
+        entry.update(checkout=checkout,status='working' if allow else 'denied',updated_at=now,
+                     reason='' if allow else 'Has denegado la compra.')
+        if entry.get('offer'):
+            import importlib.util, sys
+            key='alice_purchase_controller'
+            if key not in sys.modules:
+                spec=importlib.util.spec_from_file_location(key,Path(__file__).with_name('purchase_controller.py'))
+                sys.modules[key]=importlib.util.module_from_spec(spec);spec.loader.exec_module(sys.modules[key])
+            sys.modules[key].phase(entry,'approved' if allow else 'cancelled')
+        _write(path,entries)
+        return entry
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -505,6 +537,8 @@ def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Opti
     """The errand's checkout the person approved, still fresh, for this shop (any shop when blank)."""
     now = now or time.time()
     checkout = (entry or {}).get("checkout")
+    if not entry or entry.get('status') in ('stopped','denied','done'):
+        return None
     if not isinstance(checkout, dict) or checkout.get("status") != "approved":
         return None
     if now - float(checkout.get("decided_at") or 0) > APPROVAL_TTL:
@@ -793,6 +827,17 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
     entry = get(home, errand_id)
     if entry is None or entry.get("status") != "stuck":
         return None
+    if (entry.get('purchase') or {}).get('attempt_id'):
+        if (entry.get('purchase') or {}).get('phase') == 'declined':
+            try:
+                _purchase_controller().retry_after_no_charge(home, errand_id)
+            except (ValueError, OSError) as exc:
+                update(home, errand_id, reason=str(exc))
+                return get(home, errand_id)
+            resume(home, errand_id, 'El intento anterior terminó sin cobrar, comprobado en su registro. Prepara un pedido nuevo y solicita una nueva aprobación exacta antes de pagar.')
+        else:
+            resume(home,errand_id,'Comprueba el resultado del mismo intento de pago. No recargues ni vuelvas a pagar.')
+        return get(home,errand_id)
     blocked = entry.get("blocked") if isinstance(entry.get("blocked"), dict) else {}
     offer = entry.get("offer") if isinstance(entry.get("offer"), dict) else None
     if accept_price:
@@ -801,12 +846,12 @@ def go_on(home: Path, errand_id: str, accept_price: bool = False) -> Optional[Di
         price = blocked["price"]
         if offer:
             offer = {**offer, "price": price}
-        update(home, errand_id, offer=offer, blocked=None, reason="")
+        update(home, errand_id, offer=offer, blocked=None, reason="", runs=0, checkout=None, cart_evidence=None, checkout_evidence=None)
         message = (f"[precio aceptado] La persona acepta la misma opción a {price}. Sigue con el carrito hasta "
                    "el paso de pago y llama a `checkout_request` con el total exacto; ese total es el que aprobará. "
                    "No pagues antes.")
     else:
-        update(home, errand_id, blocked=None, reason="")
+        update(home, errand_id, blocked=None, reason="", runs=0, checkout=None, cart_evidence=None, checkout_evidence=None)
         message = ("[reintentar] La persona quiere que lo intentes otra vez con la misma opción. Mira en qué "
                    "punto está la tienda y sigue; si vuelve a fallar, termina con «BLOQUEADO: …».")
     resume(home, errand_id, message)
@@ -854,15 +899,17 @@ def brief(entry: Dict[str, Any]) -> str:
         "Trabajas en segundo plano, fuera de cualquier chat: la persona no lee tus respuestas, ve la "
         "tarjeta del recado. Navegas en un contexto propio, sin sesiones iniciadas: si la web pide "
         "entrar, usa el login del vault. Hazlo de principio a fin tú: nunca llames a `errand_start` (ya estás en el "
-        "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
-        "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
+        "recado). Usa exclusivamente `purchase_action`: read devuelve la página y controles CSS; "
+        "navigate, click, input y select operan esa página. No uses browser_exec, código, coordenadas "
+        "ni el navegador global. El servicio abre el navegador y prepara la receta elegida antes del modelo. "
         f"{login} {what}"
         "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
         "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
         "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "
         "a `card_request`. Tras añadir el formato y después de iniciar sesión, llama a `purchase_check_cart` para comprobar el precio real y las unidades de esta cesta antes de `checkout_request`. Cuando el pedido esté listo en el paso de pago, NO rellenes la tarjeta ni pulses pagar: "
-        "llama a `checkout_request` con lo que muestra la página (tienda, artículos con variante, "
-        "cantidad, precio e imagen, entrega, dirección, email, tarjeta y total exacto) y termina tu turno; "
+        "llama a `checkout_request` con total_selector, delivery_selector, address_selector y email_selector "
+        "de los datos visibles del resumen final. El servicio lee juntos artículos, cantidad, importe, "
+        "entrega y destino; no acepta datos del pedido escritos por ti. Termina el turno; "
         "si no hay tarjeta con la que pagar, Alice se la pide a la persona antes de enseñarle el total. "
         f"El recado seguirá con «{APPROVED_PREFIX}» si lo aprueba. Después de pagar, registra "
         "`purchase_outcome` con el número de pedido, el total, los artículos, la tarjeta y la entrega "
@@ -985,23 +1032,22 @@ def release_context(errand_id: str, browser_ws: Optional[str] = None) -> bool:
         saved = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    try:
-        path.unlink()
-    except OSError:
-        pass
     context = saved.get("context")
     if not context:
         return False
     try:
         if browser_ws is None:
-            with urllib.request.urlopen("http://127.0.0.1:9222/json/version", timeout=2) as response:  # noqa: S310
+            with urllib.request.urlopen(saved.get("cdp", "http://127.0.0.1:9222").rstrip("/") + "/json/version", timeout=2) as response:  # noqa: S310
                 browser_ws = json.loads(response.read().decode("utf-8"))["webSocketDebuggerUrl"]
         from websockets.sync.client import connect
 
         with connect(browser_ws, open_timeout=3) as socket:
             socket.send(json.dumps({"id": 1, "method": "Target.disposeBrowserContext",
                                     "params": {"browserContextId": context}}))
-            socket.recv(timeout=3)
+            reply = json.loads(socket.recv(timeout=3))
+            if reply.get("error"):
+                return False
+        path.unlink(missing_ok=True)
         return True
     except Exception:  # noqa: BLE001 — a closed Chrome took the context with it
         return False
@@ -1020,6 +1066,18 @@ def _env_value(path: Path, name: str) -> str:
     return ""
 
 
+def replay_window_valid(submission, retention_seconds, now=None):
+    """A key with no proven live retention window must never create another run."""
+    try:
+        started = float(submission['submitted_at'])
+        window = min(float(submission['retention_seconds']), float(retention_seconds))
+        age = (time.time() if now is None else now) - started
+        # Leave room for transit to Hermes, including short retention contracts.
+        return 0 <= age < window - min(5, window * 0.1) and 0 < window < float('inf')
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 class Gateway:
     """The runs API of this Mac's Hermes gateway (loopback only; the key is never logged)."""
 
@@ -1036,19 +1094,44 @@ class Gateway:
             key = _env_value(Path(home) / "profiles" / profile / ".env", "API_SERVER_KEY")
         self._key = key or _env_value(env, "API_SERVER_KEY")
 
-    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = 15) -> Dict[str, Any]:
+    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = 15, *, idempotency_key: str = "") -> Dict[str, Any]:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Content-Type", "application/json")
+        if idempotency_key:
+            request.add_header("Idempotency-Key",idempotency_key)
         if self._key:
             request.add_header("Authorization", f"Bearer {self._key}")
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 — loopback only
             raw = response.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
-    def start(self, session_id: str, text: str, *, model: str, provider: str) -> str:
+    def supports_idempotency(self):
+        if not hasattr(self,'_durable_runs'):
+            try:
+                caps = self._call('GET','/v1/capabilities')
+            except urllib.error.HTTPError as exc:
+                if exc.code not in (404,405):raise
+                caps={}
+            found = (caps.get('features') or {}).get('runs_idempotency') or {}
+            try:
+                window = float(found.get('retention_seconds') or 0)
+            except (TypeError, ValueError):
+                window = 0
+            self.idempotency_retention_seconds = window if 0 < window < float('inf') else 0
+            self._durable_runs = (found.get('supported') is True and found.get('durable') is True
+                                  and self.idempotency_retention_seconds > 0)
+        return self._durable_runs
+
+    def can_replay(self, submission, now=None):
+        if not self.supports_idempotency():
+            return False
+        return replay_window_valid(submission, self.idempotency_retention_seconds, now)
+
+    def start(self, session_id: str, text: str, *, model: str, provider: str, idempotency_key: str = "") -> str:
         out = self._call("POST", "/v1/runs", {"input": text, "session_id": session_id,
-                                               "model": model, "provider": provider})
+                                               "model": model, "provider": provider},
+                          **({"idempotency_key":idempotency_key} if idempotency_key else {}))
         run_id = str(out.get("run_id") or out.get("id") or "")
         if not run_id:
             raise RuntimeError("the gateway did not return a run id")
@@ -1185,7 +1268,12 @@ class Engine:
         entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
         if is_payment_consent(approval):
-            ok = approved_checkout(entry) is not None
+            checkout = approved_checkout(entry)
+            consent = entry.get('fill_consent') or {}
+            words = str(approval.get('command') or approval.get('description') or '')
+            ok = bool(checkout and consent.get('checkout_id') == checkout['id'] and consent.get('handle') == checkout.get('card_handle')
+                      and consent.get('label') and consent['label'] in words and consent.get('origin') in words
+                      and time.time()-consent.get('at',0)<60)
             self.gateway.approve(run_id, "once" if ok else "deny", request_id)
             return
         # Any other approval (a login the person wanted to be asked about, a repeat payment):
@@ -1199,8 +1287,9 @@ class Engine:
 
     def _wait_run(self, run_id: str) -> Dict[str, Any]:
         seen, since = None, time.time()
+        network_errors = 0
         while True:
-            if self._entry().get("status") == "stopped":
+            if self._entry().get("status") in ("stopped","denied"):
                 self.gateway.stop(run_id)
                 return {"status": "cancelled"}
             try:
@@ -1208,9 +1297,18 @@ class Engine:
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
                     return {"status": "interrupted"}
-                raise
+                network_errors += 1
+                if network_errors >= 8:return {"status":"unreachable"}
+                self.sleep(min(15,network_errors*2))
+                continue
+            except (OSError,TimeoutError):
+                network_errors += 1
+                if network_errors >= 8:return {"status":"unreachable"}
+                self.sleep(min(15,network_errors*2))
+                continue
+            network_errors = 0
             status = str(state.get("status") or "")
-            page = circling(self._entry())
+            page = None if self._entry().get("offer") else circling(self._entry())
             if page and status == "running":
                 self.gateway.stop(run_id)
                 return {"status": "circling", "page": page}
@@ -1240,14 +1338,26 @@ class Engine:
         stalls = 0
         # Restarted while its last run still goes on in the gateway: that run finishes first,
         # never a second one beside it in the same session.
-        if entry.get("run_id") and message:
+        if entry.get("run_id"):
             try:
                 still = str(self.gateway.status(entry["run_id"]).get("status") or "")
-            except Exception:  # noqa: BLE001 — gone or unreachable: nothing to wait for
-                still = ""
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    update(self.home,self.errand_id,status='stuck',reason='No se puede recuperar el run anterior; no se inicia otro.')
+                    return 'stuck'
+                still = ''
+            except (OSError,TimeoutError):
+                update(self.home,self.errand_id,status='stuck',reason='Hermes no responde; el run anterior se conserva para recuperarlo.')
+                return 'stuck'
             if still in ("running", "waiting_for_approval", "queued"):
-                self._wait_run(entry["run_id"])
-                text = CONTINUATION
+                recovered = self._wait_run(entry['run_id'])
+                if recovered.get('status') == 'unreachable':
+                    update(self.home,self.errand_id,status='stuck',reason='El run anterior sigue sin responder; no se inicia otro.')
+                    return 'stuck'
+                update(self.home,self.errand_id,run_submission=None)
+                text = message or CONTINUATION
+            elif still in FINISHED:
+                update(self.home,self.errand_id,run_submission=None)
         while True:
             entry = self._entry()
             if entry.get("status") != "working":
@@ -1256,6 +1366,10 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"
             try:
+                if not prepare_purchase(self.home,entry):
+                    raise RuntimeError('Purchase browser not ready')
+                entry=self._entry()
+                if entry.get("status") != "working":return entry.get("status","missing")
                 if not prepare_browser(self.home):
                     raise RuntimeError("Browser not ready")
             except Exception:
@@ -1264,14 +1378,36 @@ class Engine:
                 return "stuck"
             try:
                 steps_before = entry.get("steps") or []
-                run_id = self.gateway.start(entry["session_id"], text,
-                                            model=entry["model"], provider=entry["provider"])
+                text = entry.get("resume_message") or text
+                pending_submit = entry.get('run_submission')
+                durable = self.gateway.supports_idempotency()
+                if pending_submit and (not durable or not self.gateway.can_replay(pending_submit)):
+                    update(self.home, self.errand_id, status='stuck', reason='El envío anterior sigue sin confirmar y su protección contra duplicados no está vigente. Conserva ese intento; no se ha enviado otro.')
+                    return 'stuck'
+                submission = pending_submit or {'key':secrets.token_hex(24),'text':text,'model':entry['model'],'provider':entry['provider'],
+                                               'submitted_at':time.time(),'retention_seconds':getattr(self.gateway,'idempotency_retention_seconds',0)}
+                update(self.home,self.errand_id,run_submission=submission)
+                run_id = self.gateway.start(entry["session_id"], submission['text'],
+                                            model=submission['model'], provider=submission['provider'],
+                                            **({'idempotency_key':submission['key']} if durable else {}))
             except Exception as exc:  # noqa: BLE001
                 update(self.home, self.errand_id, status="stuck",
                        reason=f"No se pudo hablar con Hermes: {type(exc).__name__}.")
                 return "stuck"
-            update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
+            # An answer can arrive during the HTTP acknowledgement. Clear only the one sent.
+            with _locked(self.home) as path:
+                entries = _read(path)
+                current = next(e for e in entries if e['id']==self.errand_id)
+                current.update(run_id=run_id,runs=int(current.get('runs') or 0)+1)
+                if current.get('resume_message') == submission['text']:
+                    current['resume_message']=None
+                _write(path,entries)
             state = self._wait_run(run_id)
+            if state.get("status") != "unreachable":
+                update(self.home,self.errand_id,run_submission=None)
+            if state.get("status") == "unreachable":
+                update(self.home,self.errand_id,status="stuck",reason="Hermes no responde. Conserva este intento; al continuar se recuperará el mismo run.")
+                return "stuck"
             reply = _clean(state.get("output") or "", 2000)
             entry = self._entry()
             if reply:
@@ -1280,7 +1416,6 @@ class Engine:
                 return entry.get("status", "missing")
             if entry.get("resume_message"):
                 text = entry["resume_message"]
-                update(self.home, self.errand_id, resume_message=None)
                 continue
             try:
                 from importlib.util import spec_from_file_location, module_from_spec
@@ -1314,7 +1449,7 @@ class Engine:
                 return "stuck"
             # The chosen option cannot be bought as chosen (gone, another price): it stops here
             # and says why, instead of buying something else.
-            if BLOCKED.match(reply):
+            if BLOCKED.match(reply) and not entry.get("offer"):
                 said = _clean(BLOCKED.sub("", reply, count=1), 300) or "La opción elegida ya no se puede comprar."
                 blocked = blocked_by(said, entry.get("offer"))
                 # Only what the person must decide stops the errand: another price, or the option gone.
@@ -1333,7 +1468,7 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck", reason=said, blocked=blocked)
                 return "stuck"
             receipt = entry.get("receipt") or {}
-            if receipt.get("outcome") == "paid":
+            if receipt.get("outcome") == "paid" and (not entry.get("offer") or (entry.get("purchase") or {}).get("phase")=="confirmed"):
                 update(self.home, self.errand_id, status="done")
                 return "done"
             # Similar summaries are not a loop when the browser has recorded
@@ -1355,10 +1490,13 @@ class Engine:
             if (entry.get("steps") or []) != steps_before or not repeats(previous, reply):
                 repeat_recoveries = 0
             previous = reply
-            try:
-                decision = self.judge(entry["session_id"], reply)
-            except Exception:  # noqa: BLE001 — a judge that cannot answer lets the agent go on once
-                decision = {"should_continue": True, "continuation_prompt": CONTINUATION}
+            if entry.get("offer"):
+                decision = {"should_continue":True,"continuation_prompt":_purchase_controller().next_step(entry)}
+            else:
+                try:
+                    decision = self.judge(entry["session_id"], reply)
+                except Exception:  # A failed judge gets one ordinary continuation.
+                    decision = {"should_continue": True, "continuation_prompt": CONTINUATION}
             if decision.get("status") == "done":
                 update(self.home, self.errand_id, status="done")
                 return "done"
@@ -1379,6 +1517,34 @@ class Engine:
 
 _threads: Dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
+
+
+def _purchase_controller():
+    import importlib.util, sys
+    key='alice_purchase_controller'
+    if key not in sys.modules:
+        spec=importlib.util.spec_from_file_location(key,Path(__file__).with_name('purchase_controller.py'))
+        sys.modules[key]=importlib.util.module_from_spec(spec);spec.loader.exec_module(sys.modules[key])
+    return sys.modules[key]
+
+
+def prepare_purchase(home,entry):
+    if not entry.get('site') and not entry.get('offer'):return True
+    controller=_purchase_controller()
+    controller.ensure_context(home,entry)
+    try:
+        controller.prepare(home,entry)
+    except ValueError as exc:
+        add_step(home,entry['id'],str(exc))
+    for _ in range(3):
+        current=get(home,entry['id'])
+        if not current or current['status'] != 'working':break
+        try:
+            if not controller.advance(home,entry['id']):break
+        except ValueError as exc:
+            add_step(home,entry['id'],str(exc))
+            break
+    return True
 
 
 def prepare_browser(home: Path) -> bool:
@@ -1415,16 +1581,23 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
         return False
 
     def body():
+        scope_token=None
         try:
+            from hermes_constants import set_hermes_home_override
+            selected=(get(home,errand_id) or {}).get('profile') or 'default'
+            if not re.fullmatch(r'[A-Za-z0-9_.-]+',selected):raise ValueError('Perfil inválido.')
+            scoped_home=Path(home) if selected=='default' else Path(home)/'profiles'/selected
+            scope_token=set_hermes_home_override(scoped_home)
             pending = (get(home, errand_id) or {}).get("resume_message")
-            if pending:
-                update(home, errand_id, resume_message=None)
             final = (engine_factory or Engine)(home, errand_id).run(pending or message)
-            if final in ("done", "stuck", "denied", "stopped", "missing"):
+            if final in ("done", "denied", "stopped", "missing") and ((get(home,errand_id) or {}).get('purchase') or {}).get('phase') not in ('submitting','reconciling'):
                 release_context(errand_id)
         except Exception as exc:  # noqa: BLE001 — never raised in a thread; the errand says what happened
             update(home, errand_id, status="stuck", reason=f"Error interno: {type(exc).__name__}.")
         finally:
+            if scope_token is not None:
+                from hermes_constants import reset_hermes_home_override
+                reset_hermes_home_override(scope_token)
             fcntl.flock(lock, fcntl.LOCK_UN)
             lock.close()
             with _threads_lock:
@@ -1501,13 +1674,16 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def resume(home: Path, errand_id: str, message: str) -> bool:
     """The person answered (approval, a question): the goal leaves its wait and the errand goes on."""
-    entry = update(home, errand_id, status="working", questions=None, approval=None)
+    current = get(home,errand_id)
+    if not current or current.get("status") in ("done","denied","stopped"):
+        return False
+    entry = update(home, errand_id, status="working", questions=None, approval=None, resume_message=message)
     if entry is None:
         return False
     try:
         manager = _goal_manager(entry["session_id"])
         if manager.state is not None and manager.state.status == "paused":
-            manager.resume(reset_budget=False)
+            manager.resume(reset_budget=current.get("status")=="stuck")
         else:
             manager.stop_waiting()
     except Exception:
@@ -1521,14 +1697,23 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
-    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
+    with _locked(home) as path:
+        entries = _read(path)
+        entry = next(e for e in entries if e['id'] == errand_id)
+        checkout = entry.get('checkout')
+        if checkout and not (entry.get('purchase') or {}).get('attempt_id') and checkout.get('status') in ('pending','approved'):
+            entry['checkout'] = {**checkout,'status':'denied'}
+        pending=bool((entry.get('purchase') or {}).get('attempt_id'))
+        entry.update(status='stuck' if pending else 'stopped',reason='El recado se detuvo tras enviar el pago. Comprueba el mismo pedido antes de pagar otra vez.' if pending else 'El recado se ha detenido.',secure_request=None,resume_message=None,updated_at=time.time())
+        _write(path,entries)
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:
         pass
     if entry.get("run_id"):
         Gateway(home, entry.get("profile") or "").stop(entry["run_id"])
-    release_context(errand_id)
+    if not (entry.get("purchase") or {}).get("attempt_id"):
+        release_context(errand_id)
     return entry
 
 
@@ -1537,7 +1722,12 @@ def public(entry: Dict[str, Any]) -> Dict[str, Any]:
     # The chat it came from stays: Alice finds an errand's cards by it when the chat's reply
     # never called errand_start (the plugin starts it anyway).
     hidden = {"run_id", "resume_message", "secure_answered", "cart_evidence", "checkout_evidence"}
+    hidden.update({'saved_login','submission_unknown','run_submission','fill_consent'})
     out = {k: v for k, v in entry.items() if k not in hidden}
+    if isinstance(out.get('checkout'),dict):
+        out['checkout'] = {k:v for k,v in out['checkout'].items() if k not in ('snapshot','available_cards','context','target','origin')}
+    if isinstance(out.get('purchase'),dict):
+        out['purchase'] = {k:v for k,v in out['purchase'].items() if k in ('phase','version','attempt_id')}
     if isinstance(out.get("approval"), dict):
         out["approval"] = {k: v for k, v in out["approval"].items() if k != "run_id"}
     if isinstance(out.get("secure_request"), dict):

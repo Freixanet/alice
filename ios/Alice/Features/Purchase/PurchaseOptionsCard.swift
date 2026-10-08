@@ -64,6 +64,14 @@ struct PurchaseOptionsCard: View {
                 }
             }
         }
+        .onChange(of: store.isSending) { was, sending in
+            if was && !sending && submitted != nil {
+                Task {
+                    await load()
+                    if loaded?.chosen == nil { submitted = nil }
+                }
+            }
+        }
         .task(id: (detail ?? key ?? "") + (session ?? "")) { if preview == nil { await load() } }
         .sheet(item: $open) { option in
             PurchaseProductSheet(image: option.image, seller: option.merchant, title: option.title,
@@ -75,7 +83,7 @@ struct PurchaseOptionsCard: View {
                     submitted = option.id
                     store.sendQuickReply(option.choice + " [cantidad:\(quantity)]", replyProfile: replyProfile, followsLatestAgent: false)
                 }
-            }, shipping: option.shipping, condition: option.condition)
+            }, shipping: option.shipping, condition: option.condition, initialQuantity: option.qty, productURL: option.url)
         }
     }
 

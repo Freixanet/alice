@@ -34,7 +34,7 @@ def load(name):
 
 def shop_page(url):
     path = urlsplit(url).path
-    if url == CATEGORY:
+    if url == CATEGORY or path.endswith('/search'):
         return ''.join(f'<a href="{BASE}/prozis/{slug}">€24.49<br>€34.99<br>30%<br>{title}</a>' for slug,title in FORMATS)
     if path.endswith('/checkout/index'):
         return '''<section id="chkLists"><div class="chk-prod-card"></div></section>

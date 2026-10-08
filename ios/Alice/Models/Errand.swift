@@ -36,6 +36,7 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
         var cardLabel: String
         var total: String
         var currency: String
+        var requiresCard: Bool? = nil
     }
 
     struct Receipt: Hashable, Sendable, Codable {
@@ -106,6 +107,17 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
     var access: Access? = nil
+    var profile: String? = nil
+    var browserTarget: String? = nil
+    var paymentAttemptID: String? = nil
+
+    var paymentWarning: String {
+        if let receipt, receipt.paid { return language.pick("The order was paid.", "El pedido se ha pagado.") }
+        if paymentAttemptID != nil || checkout?.status == .approved {
+            return language.pick("Check the order before paying again; its payment may be pending.", "Comprueba el pedido antes de pagar otra vez; el pago puede estar pendiente.")
+        }
+        return language.pick("Nothing was paid.", "No se ha pagado nada.")
+    }
 
     var accessRequest: SecureRequest? {
         guard var request = access?.request else { return nil }
@@ -180,7 +192,7 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
                 id: id, status: Checkout.Status(rawValue: text(raw["status"])) ?? .pending,
                 merchant: text(raw["merchant"]), site: text(raw["site"]), items: items(raw["items"]),
                 delivery: text(raw["delivery"]), address: text(raw["address"]), email: text(raw["email"]),
-                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]))
+                cardLabel: text(raw["card_label"]), total: text(raw["total"]), currency: text(raw["currency"]), requiresCard: raw["requires_card"] as? Bool)
         }
         let receipt = (row["receipt"] as? [String: Any]).map { raw in
             Receipt(outcome: text(raw["outcome"]), order: text(raw["order"]), total: text(raw["total"]),
@@ -214,7 +226,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             access: (row["secure_request"] as? [String: Any]).flatMap { raw in
                 guard let requestID = raw["request_id"] as? String else { return nil }
                 return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]))
-            })
+            }, profile: row["profile"] as? String,
+            browserTarget: row["browser_target"] as? String,
+            paymentAttemptID: (row["purchase"] as? [String: Any])?["attempt_id"] as? String)
     }
 }
 
@@ -259,7 +273,7 @@ extension DashboardClient {
     /// «Permitir» or «Denegar» on the checkout the person saw; `checkoutID` pins that exact one.
     func decideCheckout(_ errandID: String, checkoutID: String, allow: Bool, card: String = "") async throws -> Errand? {
         let object = try await send("POST", "api/plugins/alice/errands/\(errandID)/checkout",
-                                    ["decision": allow ? "allow" : "deny", "checkout_id": checkoutID, "card_label": card])
+                                    ["decision": allow ? "allow" : "deny", "checkout_id": checkoutID, "card_handle": card])
         return (object["errand"] as? [String: Any]).flatMap(Errand.parse)
     }
 

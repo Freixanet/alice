@@ -200,15 +200,16 @@ struct ErrandStack: View {
             // The browser only while it is being used: not before it starts, and gone once the
             // errand waits for the person or ends (a still page left there read as broken). Under
             // the errand's card, which is on screen first: above it, it pushed that card down.
-            if errand.status == .working && !errand.steps.isEmpty {
+            if errand.browserTarget != nil && errand.status.isOpen {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             if errand.status == .needsLogin, let request = errand.accessRequest {
                 VStack(alignment: .leading, spacing: 12) {
                     Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
                         .font(.headline)
-                    Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
-                                              "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
+                    Text(errand.language.pick("Continue securely to complete this step.",
+                                              "Continúa de forma segura para completar este paso."))
+                    Text(errand.paymentWarning).foregroundStyle(.secondary)
                     Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request
                     }
@@ -224,7 +225,7 @@ struct ErrandStack: View {
                 .background(Palette.card(scheme), in: .rect(cornerRadius: 24))
             }
             if errand.status == .needsCard, !errand.cardOrigin.isEmpty {
-                PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: "default"),
+                PaymentCardOfferCard(offer: PaymentCardOffer(origin: errand.cardOrigin, profile: errand.profile?.nonEmpty(or: "default") ?? "default"),
                                      language: errand.language,
                                      onReady: { card in onCardReady(card.label) })
             }
@@ -252,11 +253,11 @@ struct ErrandStack: View {
                                      paying: errand.status.isOpen,
                                      busy: sending,
                                      onRefresh: onRefreshCheckout,
-                                     onAllow: { onDecide(true, chosen?.label ?? checkout.cardLabel) },
+                                     onAllow: { onDecide(true, chosen?.handle ?? "") },
                                      onDeny: { phase == .expired ? onStop() : onDecide(false, "") })
                     .task(id: checkout.id) { await loadCards(for: checkout) }
                     .sheet(isPresented: $addingCard) {
-                        PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: "default"),
+                        PaymentCardSheet(offer: PaymentCardOffer(origin: "https://" + checkout.site, profile: errand.profile?.nonEmpty(or: "default") ?? "default"),
                                          language: errand.language, demo: demoCards != nil) { card in
                             cards.append(card)
                             chosen = card
@@ -281,14 +282,14 @@ struct ErrandStack: View {
 extension ErrandStack {
     /// The saved cards; the one the agent named, or the only one, is chosen to start with.
     fileprivate func loadCards(for checkout: Errand.Checkout) async {
+        guard checkout.requiresCard != false else { cards = []; chosen = nil; return }
         let found: [SavedCard]
         if let demoCards {
             found = demoCards
         } else {
-            let all = (try? await store.savedCards(profile: "default")) ?? []
+            let all = (try? await store.savedCards(profile: errand.profile?.nonEmpty(or: "default") ?? "default")) ?? []
             // The same card saved for several sites is one choice.
-            var seen = Set<String>()
-            found = all.filter { seen.insert($0.card).inserted }
+            found = all
         }
         cards = found
         if chosen == nil {
@@ -334,7 +335,7 @@ struct ErrandChatBlock: View {
                     board.fresh && !old && new
                 }
                 .fullScreenCover(isPresented: $browsing) {
-                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
+                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text, browser: store.errandBrowser(errand))
                 }
             } else if !board.loaded {
                 HStack(spacing: 10) {

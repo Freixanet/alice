@@ -123,3 +123,10 @@ Reddit. `hermes-agents/internet` adds the channels those do not cover
 one read-only command, `reach`. Agent-Reach installs and checks those tools;
 it does not sit in front of each request. Setup, rollback and health are in
 [internet.md](internet.md).
+
+## Purchase authority
+
+The purchase controller owns checkout snapshots, exact approval, pinned browser
+operations and durable payment attempts. The model supplies observations and
+navigation proposals rather than payment authority or completion claims. See
+[purchase controller](purchase-controller.md) for the draft's boundaries.

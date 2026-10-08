@@ -78,20 +78,23 @@ def _locked(home: Path):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def _read(path: Path) -> List[Dict[str, Any]]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        return data if isinstance(data, list) else []
-    except (OSError, ValueError):
-        return []
+def _storage():
+    import importlib.util
+    import sys
+    key = "alice_purchase_storage"
+    if key not in sys.modules:
+        spec = importlib.util.spec_from_file_location(key, Path(__file__).with_name("purchase_storage.py"))
+        sys.modules[key] = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(sys.modules[key])
+    return sys.modules[key]
 
 
-def _write(path: Path, sets: List[Dict[str, Any]]) -> None:
-    tmp = path.with_suffix(".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(sets, handle, ensure_ascii=False)
-    os.replace(tmp, path)
+def _read(path):
+    return _storage().read(path)
+
+
+def _write(path, data):
+    _storage().write(path, data)
 
 
 def _clean(value: Any, limit: int) -> str:
@@ -105,7 +108,7 @@ def remember_request(home: Path, session: str, request: str, now: Optional[float
         at = now or time.time()
         requests = [r for r in _read(requests_path)
                     if r.get("session") != session and at - float(r.get("at") or 0) < KEEP]
-        requests.append({"session": session, "request": _clean(request, 1500), "at": at})
+        requests.append({"session": session, "request": str(request)[:6000], "at": at})
         _write(requests_path, requests)
 
 
@@ -131,6 +134,7 @@ def requested_identity(request: str) -> Tuple[str, bool]:
     request = re.sub(r"[,;]?\s+(?:no|sin|not|without)\s+(?:quiero\s+)?(?:otras?\s+marcas?|alternativas?|other brands?|alternatives?)\b.*$", "", request, flags=re.I)
     if re.search(r"otras? marcas?|alternativas?|other brands?|alternatives?", request, re.I):
         return "", False
+    request = re.split(r"\s+(?:con|sin|por|para|with|without|under|menos de|hasta)\s+", request, maxsplit=1, flags=re.I)[0]
     found = re.search(r'\b(marca|brand|de|en|from|by)\s+[«"\']?([\w&+.-]+(?:\s+[\w&+.-]+){0,2})[»"\']?[.!?]*\s*$', request, re.I)
     if not found:
         return "", False
@@ -184,9 +188,11 @@ ZONE_COUNTRY = {
     "Europe/Madrid": "ES", "Atlantic/Canary": "ES", "Africa/Ceuta": "ES", "Europe/Lisbon": "PT",
     "Europe/Paris": "FR", "Europe/Rome": "IT", "Europe/Berlin": "DE", "Europe/Andorra": "AD",
     "Europe/London": "GB", "America/Mexico_City": "MX",
+    "America/New_York":"US", "America/Chicago":"US", "America/Denver":"US", "America/Los_Angeles":"US",
+    "America/Toronto":"CA", "Australia/Sydney":"AU", "Asia/Tokyo":"JP",
 }
 EURO = {"ES", "PT", "FR", "IT", "DE", "AD", "IE", "NL", "BE", "AT", "FI", "GR", "LU"}
-COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF"}
+COUNTRY_CURRENCY = {"GB": "GBP", "US": "USD", "MX": "MXN", "CH": "CHF", "CA":"CAD", "AU":"AUD", "JP":"JPY"}
 
 
 def iso_country(value: Any) -> str:
@@ -271,7 +277,7 @@ def verify(raw: Any, currency: str = "", picture: Optional[Callable[[str], str]]
         checkout_url = str(option.get("checkout_url") or "").strip()
         kept.append({
             "id": f"{key}-{index + 1}", "title": title, "merchant": _clean(option.get("merchant"), 80),
-            "variant": _clean(option.get("variant"), 120), "qty": max(1, min(qty, 20)),
+            "variant": _clean(option.get("variant"), 120), "qty": max(1, min(qty, 999)),
             "price": price, "price_cents": price_cents, "currency": money, "url": url, "image": image if image.startswith("https://") else "",
             "channel": channel, "catalog_id": _clean(option.get("catalog_id"), 120),
             "checkout_url": checkout_url if checkout_url.startswith("https://") else "",
@@ -351,7 +357,13 @@ def present(home: Path, session: str, args: Dict[str, Any], *, currency: str = "
             + "Ninguna opción se pudo verificar como comprable. No enseñes nada: di en una línea qué ha "
             "fallado (sin stock, sin precio en su moneda…) y propón cómo seguir (otra tienda, otra "
             "variante, otro presupuesto).")}
-    key = kept[0]["id"].split("-")[0]
+    # One identity and one recommendation for the final visible set, after filtering.
+    marked = next((o for o in kept if o.get("recommended")), kept[0])
+    for item in kept:
+        item["recommended"] = item is marked
+    key = str(args.get("set_key") or kept[0]["id"].split("-")[0])
+    for item in kept:
+        item["id"] = key + '-' + item["id"].rsplit('-', 1)[1]
     with _locked(home) as path:
         sets = [s for s in _read(path) if now - float(s.get("at") or 0) < KEEP and not (s.get("key") == key and s.get("session") == _clean(session, 160))]
         sets.append({"key": key, "session": _clean(session, 160), "options": kept, "chosen": None, "at": now})
@@ -392,7 +404,7 @@ def open_options(home: Path, session: str, now: Optional[float] = None) -> bool:
                for s in _read(_path(home)))
 
 
-def choose(home: Path, session: str, option_id: str, now: Optional[float] = None, qty: int = 1, commit: bool = True) -> Optional[Dict[str, Any]]:
+def choose(home: Path, session: str, option_id: str, now: Optional[float] = None, qty: Optional[int] = None, commit: bool = True) -> Optional[Dict[str, Any]]:
     """Step 6: the option, when it was shown in this chat; marked as the one chosen."""
     now = now or time.time()
     key = str(option_id or "").split("-")[0]
@@ -403,8 +415,17 @@ def choose(home: Path, session: str, option_id: str, now: Optional[float] = None
         picked = next((o for o in (found or {}).get("options") or [] if o.get("id") == option_id), None)
         if picked is None:
             return None
-        if not isinstance(qty, int) or isinstance(qty, bool) or not 1 <= qty <= 20:
-            raise ValueError("La cantidad debe estar entre 1 y 20.")
+        import importlib.util, sys
+        key_intent='alice_purchase_intent'
+        if key_intent not in sys.modules:
+            spec=importlib.util.spec_from_file_location(key_intent,Path(__file__).with_name('purchase_intent.py'))
+            sys.modules[key_intent]=importlib.util.module_from_spec(spec);spec.loader.exec_module(sys.modules[key_intent])
+        intent=sys.modules[key_intent].current(home,session)
+        if intent and found.get('request_revision') is not None and found['request_revision']!=intent['revision']:
+            raise ValueError('La petición cambió; verifica opciones que cumplan la última corrección.')
+        qty = picked.get("qty", 1) if qty is None else qty
+        if not isinstance(qty, int) or isinstance(qty, bool) or not 1 <= qty <= 999:
+            raise ValueError("La cantidad debe estar entre 1 y 999.")
         picked = {**picked, "qty": qty}
         if commit:
             found["chosen"] = option_id
@@ -421,6 +442,12 @@ def chosen_id(text: Any) -> Optional[str]:
 
 def is_purchase_request(text: Any) -> bool:
     text = " ".join(str(text or "").split())
+    if re.search(r"\b(no|not|don't|do not|sin)\s+(?:quiero\s+)?(?:compr|buy|order|pedir)", text, re.I):
+        return False
+    if re.search(r"(?:d[oó]nde|estado|status|where).*\b(?:pedido|order)\b", text, re.I):
+        return False
+    if re.match(r"^(?:quiero|necesito|cons[ií]gue(?:me)?|encarga(?:me)?|get me|i want|i need)\s+", text, re.I):
+        return True
     return bool(text) and not text.startswith(("[respuesta:", "[elecci", "[Continuing")) \
         and bool(PURCHASE_REQUEST.search(text))
 
@@ -438,7 +465,7 @@ def is_cart_action(tool_name: str, args: Any) -> bool:
 
 def offer(chosen: Dict[str, Any]) -> Dict[str, Any]:
     """The chosen option as the errand keeps it: exactly what to buy, where and for how much."""
-    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition")
+    keys = ("title", "merchant", "variant", "qty", "price", "currency", "url", "checkout_url", "channel", "catalog_id", "quote_ref", "verified_at", "shipping", "condition", "line_cents", "recipe", "coupon_code", "product_identity")
     return {"option_id": chosen["id"], **{k: chosen.get(k) for k in keys}}
 
 
@@ -542,7 +569,8 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
         "starts with `errand_start` and that `option_id`."
     ),
     "parameters": {"type": "object", "properties": {
-        "search_id": {"type": "string", "description": "Inventory returned by purchase_discover; all formats must be quoted or discarded"},
+        "search_ids": {"type":"array","items":{"type":"string"},"maxItems":10},
+            "search_id": {"type": "string", "description": "Inventory returned by purchase_discover; all formats must be quoted or discarded"},
         "options": {"type": "array", "maxItems": MAX_OPTIONS, "items": {"type": "object", "properties": {
             "quote_ref": {"type": "string", "description": "Trusted purchase_verify quote id. Required; a model-written amount is not evidence."},
             "title": {"type": "string", "description": "The product's name as the shop gives it"},
@@ -564,3 +592,32 @@ OPTIONS_SCHEMA: Dict[str, Any] = {
         }, "required": ["quote_ref", "title", "url", "price", "currency", "in_stock", "channel"]}},
     }, "required": ["search_id", "options"]},
 }
+
+
+def requested_quantity(request):
+    """Preserve an explicit unit count; package weights never become quantities."""
+    text = _normalized(request)
+    numbers = {'un':1,'una':1,'uno':1,'one':1,'dos':2,'two':2,'tres':3,'three':3,'cuatro':4,'four':4,'cinco':5,'five':5}
+    found = re.search(r'\b(\d+|un|una|uno|one|dos|two|tres|three|cuatro|four|cinco|five)\s+(?:botes?|unidades?|packs?|paquetes?|cajas?|botellas?|units?|bottles?)\b',text)
+    if not found:return 1
+    value = found.group(1)
+    return max(1,min(999,int(value) if value.isdigit() else numbers[value]))
+
+
+def verbal_choice(home, session, message):
+    """Human references resolved against the last displayed set, never by the model."""
+    text = _normalized(message)
+    if not re.match(r'^(?:elijo|elige|quiero|compra|comprame|me quedo con|la |el |the |i choose|choose)',text):return None
+    sets = [s for s in _read(_path(home)) if s.get('session')==session and time.time()-s.get('at',0)<KEEP and s.get('options')]
+    if not sets:return None
+    options = max(sets,key=lambda s:s.get('at',0))['options']
+    if re.search(r'\b(recomendada|recomendado|recommended)\b',text):
+        matches=[o for o in options if o.get('recommended')]
+    else:
+        ordinals={'primera':1,'primero':1,'first':1,'segunda':2,'segundo':2,'second':2,'tercera':3,'tercero':3,'third':3,'cuarta':4,'cuarto':4,'fourth':4,'quinta':5,'quinto':5,'fifth':5,'sexta':6,'sexto':6,'sixth':6}
+        found=next((n for word,n in ordinals.items() if re.search(r'\b'+word+r'\b',text)),None)
+        numeric=re.search(r'\b(?:opcion|option)\s+(\d+)\b',text)
+        if numeric:found=int(numeric.group(1))
+        if found:return options[found-1]['id'] if 1<=found<=len(options) else None
+        matches=[o for o in options if _normalized(o['title']+' '+o.get('variant','')) in text or _normalized(o['title']) in text]
+    return matches[0]['id'] if len(matches)==1 else None

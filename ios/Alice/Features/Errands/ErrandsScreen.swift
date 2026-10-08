@@ -183,7 +183,7 @@ struct ErrandDetailScreen: View {
                 }
                 .padding(16)
                 .fullScreenCover(isPresented: $browsing) {
-                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
+                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text, browser: store.errandBrowser(errand))
                 }
             } else {
                 ProgressView().padding(40)

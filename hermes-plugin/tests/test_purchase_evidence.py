@@ -86,8 +86,8 @@ class EvidenceTests(unittest.TestCase):
     def test_discover_keeps_only_rows_naming_the_asked_words(self):
         search = prices.discover(self.home,'chat',{'url':'https://example.com/search','selector':'a','keywords':['80']},factory=Shop,now=self.now)
         self.assertEqual([c['title'] for c in search['candidates']],['Prozis Creapure 80 cápsulas'])
-        other_language = prices.discover(self.home,'chat',{'url':'https://example.com/search','selector':'a','keywords':['mantequilla']},factory=Shop,now=self.now)
-        self.assertEqual(len(other_language['candidates']),3)
+        with self.assertRaisesRegex(ValueError,'no contiene coincidencias'):
+            prices.discover(self.home,'chat',{'url':'https://example.com/search','selector':'a','keywords':['mantequilla']},factory=Shop,now=self.now)
     def test_unattempted_formats_cannot_be_discarded_as_unverifiable(self):
         with self.assertRaises(ValueError):
             prices.verify(self.home,'chat',{'search_id':self.search['id'],
@@ -292,6 +292,9 @@ class CartRevalidationTests(unittest.TestCase):
         self.amount = '34,99 €'; self.qty = '2'
         self.recipe = {'line':'#line','price':'#price','cart_quantity':'#qty'}
         def evaluate(ctx,script):
+            if '.filter(e=>e.getClientRects().length>0).length' in script:return 1
+            if 'const all=Array.from' in script:return {'count':1,'qty':self.qty,'price':self.amount,'line':'Creatina 300 g'}
+            if 'setter.call' in script:return {'filled':1}
             if 'line.contains' in script:return True
             if '"#line"' in script:return 'Creatina 300 g'
             if '"#price"' in script:return self.amount
@@ -304,7 +307,7 @@ class CartRevalidationTests(unittest.TestCase):
         self.assertTrue(self.check()['ok'])
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
         self.cookies.append({'domain':'example.com','name':'session','value':'fictional-new-session'})
-        self.assertFalse(prices.fresh_cart(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect))
+        self.assertFalse(prices.fresh_cart(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect,evaluate=self.evaluate))
         self.assertTrue(self.check()['ok'])
     def test_real_price_change_exposes_both_amounts(self):
         self.amount='39,99 €'
@@ -327,13 +330,8 @@ class CartRevalidationTests(unittest.TestCase):
         total=prices.checkout_amount(errands.get(self.home,self.entry['id']),'#total',inspect=self.inspect,evaluate=self.evaluate)
         self.assertEqual(total,'73,97 €')
 
-    def test_payment_requires_the_exact_approved_visible_total(self):
+    def test_a_legacy_checkout_without_a_snapshot_cannot_pay(self):
         self.check()
-        now=time.time()
-        checkout={'id':'ck-test','status':'approved','total':'73,97 €','currency':'EUR','decided_at':now,'site':'example.com'}
+        checkout={'id':'ck-test','status':'approved','total':'73,97 €','currency':'EUR','decided_at':time.time(),'site':'example.com'}
         errands.update(self.home,self.entry['id'],checkout=checkout,checkout_evidence={'checkout_id':'ck-test','selector':'#total'})
-        entry=errands.get(self.home,self.entry['id'])
-        self.assertTrue(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=self.evaluate))
-        changed=lambda ctx,script:'79,97 €'
-        self.assertFalse(prices.payment_ready(self.home,entry,inspect=self.inspect,evaluate=changed))
-        self.assertFalse(prices.payment_ready(self.home,{**entry,'checkout_evidence':None},inspect=self.inspect,evaluate=self.evaluate))
+        self.assertFalse(prices.payment_ready(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect,evaluate=self.evaluate))
