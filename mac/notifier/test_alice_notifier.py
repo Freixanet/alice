@@ -276,6 +276,17 @@ class ErrandNotifierTests(unittest.TestCase):
         self.poll()
         self.assertEqual(self.sent, [])
 
+    def test_installed_login_and_uncertain_payment_alerts_are_preserved(self):
+        self.errands({'id': 'a', 'status': 'working'}, {'id': 'b', 'status': 'working'})
+        self.poll()
+        self.errands({'id': 'a', 'status': 'needs_login', 'updated_at': time.time()},
+                     {'id': 'b', 'status': 'stuck', 'updated_at': time.time(), 'receipt': {'outcome': 'unknown'}})
+        self.poll()
+        self.assertEqual([m[1] for m, _ in self.sent], [
+            'Un recado necesita que inicies sesión en la tienda',
+            'Un recado se ha parado y no está confirmado si el pago se hizo'])
+        self.assertTrue(all(kw['level'] == 'timeSensitive' for _, kw in self.sent))
+
     def test_an_errands_own_replies_are_not_a_chat_reply(self):
         with closing(sqlite3.connect(self.home / 'state.db')) as conn, conn:
             conn.execute("INSERT INTO sessions VALUES ('errand-abc', 'api_server', NULL)")
