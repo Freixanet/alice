@@ -151,6 +151,15 @@ model or buy access for you; those account-specific values cannot be invented.
 
 ## 4. Create one paused Gmail watcher, dry run, then activate
 
+Everyday users create watchers by asking Alice in chat. The `watchers` tool must
+receive an explicit `config.query` for Gmail and a non-empty script implementing
+the requested alert rule. The tool schema exposes source settings to the model;
+missing/blank queries and scripts are rejected at creation and activation.
+There is no implicit `is:unread` fallback. If a company sender or the alert rule
+is unclear, Alice should inspect connected Gmail sender metadata or ask the user
+before creating, then inspect a dry run before activating. The Settings screen
+manages existing watchers; it does not have a creation form.
+
 This host command creates exactly one watcher, without invoking the main model.
 Its query is restricted to a unique test subject. Keep the printed ID for retry
 or pause. Run this creation once; repeating it creates another watcher.

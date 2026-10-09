@@ -111,6 +111,8 @@ class Store:
 
     def create(self, owner, name, source, config, code, created_by_request):
         sibling("watcher_sources.py").validate(source, config)
+        if not isinstance(code, str) or not code.strip():
+            raise WatcherError("Provide a non-empty watcher script that implements the user's notification rule.")
         sibling("watcher_runner.py").validate_code(code)
         if not isinstance(created_by_request, str) or not created_by_request.strip() or len(created_by_request) > 2000:
             raise WatcherError("Record the user's request that authorized this watcher.")
@@ -148,10 +150,13 @@ class Store:
         runner = runner or sibling("watcher_runner.py").Runner()
         with self.transaction():
             record = self.get(ident, owner)
+            sibling("watcher_sources.py").validate(record["source"], record["config"])
             sibling("watcher_classify.py").validate_route(self.settings(owner)["route"])
             if not runner.available():
                 raise WatcherError("Set up the macOS watcher sandbox before activating. Unconfined execution is disabled.")
-            sibling("watcher_runner.py").load_code(record)
+            code = sibling("watcher_runner.py").load_code(record)
+            if not code.strip():
+                raise WatcherError("Provide a non-empty watcher script before activation.")
             runner.run("pass", {}, {}, lambda *_: None)
             if record["status"] != "active":
                 active = sum(row["status"] == "active" for row in self.listing(owner))

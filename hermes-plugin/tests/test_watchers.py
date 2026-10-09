@@ -93,6 +93,48 @@ class WatcherTests(unittest.TestCase):
         self.assertTrue(self.main.messages[0]["proactive"])
         self.assertEqual(self.store.pending(self.ident), [])
 
+    def test_email_creation_requires_explicit_filter_and_nonempty_script(self):
+        before = len(self.store.listing())
+        for config, code in (({}, CODE), ({"query": " "}, CODE),
+                             ({"query": "from:barkibu"}, ""), ({"query": "from:barkibu"}, " \n")):
+            with self.subTest(config=config, code=code):
+                with self.assertRaises(ValueError):
+                    self.store.create("local", "Barkibu", "email", config, code, "Watch Barkibu emails")
+        self.assertEqual(len(self.store.listing()), before)
+        tools = w.sibling("watcher_tools.py")
+        row = tools.run(self.store.home, {"action": "create", "name": "Barkibu", "source": "email",
+            "config": {"query": "from:barkibu", "every_minutes": 5}, "code": CODE,
+            "created_by_request": "Watch Barkibu emails"})["watcher"]
+        self.assertEqual(row["config"]["query"], "from:barkibu")
+        self.assertEqual(row["status"], "paused")
+        self.assertIn("query", tools.SCHEMA["parameters"]["properties"]["config"]["properties"])
+
+    def test_legacy_email_without_filter_cannot_activate_or_read_gmail(self):
+        row = self.store.create("local", "Barkibu", "email", {"query": "from:barkibu"}, CODE, "Watch Barkibu emails")
+        row["config"] = {}
+        self.store.save(row)
+        with self.assertRaisesRegex(ValueError, "explicit Gmail search query"):
+            self.store.activate(row["id"], runner=self.runner)
+        self.assertEqual(self.store.get(row["id"])["status"], "paused")
+        source = w.sibling("watcher_sources.py").Sources(self.store.home)
+        source.gmail = mock.Mock(side_effect=AssertionError("unfiltered Gmail read"))
+        with self.assertRaises(ValueError):
+            source.items(row, self.now)
+        source.gmail.assert_not_called()
+
+    def test_legacy_empty_script_cannot_activate(self):
+        import hashlib
+        ident = self.create(active=False)
+        row = self.store.get(ident)
+        path = Path(row["code_path"])
+        path.chmod(0o600)
+        path.write_text("")
+        row["code_sha256"] = hashlib.sha256(b"").hexdigest()
+        self.store.save(row)
+        with self.assertRaisesRegex(w.WatcherError, "non-empty watcher script"):
+            self.store.activate(ident, runner=self.runner)
+        self.assertEqual(self.store.get(ident)["status"], "paused")
+
     def test_quiet_opposite_body_same_subject(self):
         self.tick([self.event(body="invoice paid")])
         self.assertEqual(self.main.calls, 0)

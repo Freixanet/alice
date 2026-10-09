@@ -42,11 +42,23 @@ def run(home, args):
 
 SCHEMA = {
     "name": "watchers",
-    "description": "Create a sandboxed Python watcher only when the person asks to be notified. Write code using event/config, classify(state, questions), state.get/put, notify(message,dedup_key), ack(event_id), log, source.read and source-only http_get. No imports, filesystem, ambient network or other tools. Filter deterministically first; classify action notify/quiet/defer, include quiet and put thresholds in code. Ack quiet or a successful notify only. Create paused, dry_run the last 20 captured items, then activate. If cheap model setup is missing, tell the person to configure Settings → Watchers; never use the main model. Built-ins: leave_now (verified travel_minutes), birthday (explicit dates), follow_up (explicit due_at timers). Feedback mutes sender/topic or reduces category. Errors retain events; retry or discard explicitly.",
+    "description": "Create a sandboxed Python watcher only when the person asks to be notified. For create supply name, source, config, non-empty code and created_by_request. Email MUST set config.query to an explicit Gmail search matching the requested sender/topic (for example from:sender@example.com); never use an empty config or guess a company's sender domain. Discover the sender using the connected Gmail search tool or ask the person. If alert criteria are unclear, ask before creating. Write code using event/config, classify(state, questions), state.get/put, notify(message,dedup_key), ack(event_id), log, source.read and source-only http_get. No imports, filesystem, ambient network or other tools. Filter deterministically first; classify action notify/quiet/defer, include quiet and put thresholds in code. Ack quiet or a successful notify only. Create paused, dry_run the last 20 captured items, inspect results for errors, then activate only a fully configured watcher. Never claim success after an error. If cheap model setup is missing, tell the person to configure Settings → Watchers; never use the main model. Built-ins: leave_now (verified travel_minutes), birthday (explicit dates), follow_up (explicit due_at timers). Feedback mutes sender/topic or reduces category. Errors retain events; retry or discard explicitly.",
     "parameters": {"type": "object", "properties": {
         "action": {"type": "string", "enum": ["create", "list", "dry_run", "activate", "pause", "retry", "discard", "feedback"]},
         "id": {"type": "string"}, "name": {"type": "string"},
         "source": {"type": "string", "enum": ["email", "feed", "github", "builtin"]},
-        "config": {"type": "object"}, "code": {"type": "string"}, "created_by_request": {"type": "string"},
+        "config": {"type": "object", "description": "Source settings. Email requires query; feed requires url; github requires repo; builtin requires kind and its explicit dates/travel settings.", "properties": {
+            "query": {"type": "string", "description": "Explicit Gmail search filter matching the requested sender/topic."},
+            "every_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
+            "url": {"type": "string"}, "repo": {"type": "string"},
+            "kind": {"type": "string", "enum": ["leave_now", "birthday", "follow_up"]},
+            "time_zone": {"type": "string"}, "travel_minutes": {"type": "number"},
+            "birthdays": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string"}, "date": {"type": "string"}}, "required": ["name", "date"]}},
+            "follow_ups": {"type": "array", "items": {"type": "object", "properties": {
+                "id": {"type": "string"}, "subject": {"type": "string"}, "body": {"type": "string"},
+                "due_at": {"type": "string"}, "sender": {"type": "string"}, "resolved": {"type": "boolean"}},
+                "required": ["id", "subject", "body", "due_at"]}}}},
+        "code": {"type": "string", "description": "Required for non-builtin creation: non-empty sandboxed Python implementing the requested notification rule."}, "created_by_request": {"type": "string"},
         "kind": {"type": "string", "enum": ["muted_senders", "muted_topics", "less_categories"]},
         "value": {"type": "string"}, "remove": {"type": "boolean"}}, "required": ["action"]}}

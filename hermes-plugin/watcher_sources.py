@@ -35,8 +35,10 @@ def validate(source, config):
         raise SourceError("Use a GitHub owner/repo.")
     if source == "builtin" and config.get("kind") not in ("leave_now", "birthday", "follow_up"):
         raise SourceError("Unknown built-in watcher.")
-    if source == "email" and (not isinstance(config.get("query", "is:unread"), str) or len(config.get("query", "")) > 1000):
-        raise SourceError("Invalid Gmail search query.")
+    if source == "email":
+        query = config.get("query")
+        if not isinstance(query, str) or not query.strip() or len(query) > 1000:
+            raise SourceError("Provide an explicit Gmail search query in config.query matching the user's request; no default inbox filter is used.")
     return config
 
 
@@ -140,8 +142,9 @@ class Sources:
                      "body": row.get("body") or "", "sender": row.get("user", {}).get("login", ""), "url": row.get("html_url", "")}
                     for row in rows if isinstance(row, dict)]
         if source == "email":
+            validate(source, config)
             items = []
-            for row in self.gmail(["search", config.get("query", "is:unread"), "--max", "20"]):
+            for row in self.gmail(["search", config["query"], "--max", "20"]):
                 try:
                     full = self.gmail(["get", str(row["id"])])
                     items.append({**full, "sender": full.get("from", "")})
