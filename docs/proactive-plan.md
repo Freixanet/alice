@@ -1,5 +1,57 @@
 # Watchers, Review Tasks y mensajes proactivos — estado de implementación
 
+## Estado vigente — 9 octubre 2026
+
+Rama `codex/proactive-watchers`. Plugin instalado: `d042d5f`; app iPhone:
+build 97, `99f3b7f`. El cambio posterior del plugin no requiere otra app.
+Las compras están desactivadas y sus herramientas no se registran.
+
+- **Fase 1:** Watchers, fuentes, sandbox, ruta clasificadora explícita,
+  feedback, eliminación, recuperación y validación antes de activar están
+  implementados. El watcher Barkibu conserva el ID
+  `5f9b8bde37f746fbb3d24dab0eeb6d70`, con consulta de Barkibu y baseline nuevo.
+  Un correo posterior fue procesado y su aviso visible en el iPhone confirmado
+  por el usuario. El acceso del teléfono al host requiere Tailscale conectado.
+  Feed/GitHub, webhooks y detectores integrados tienen pruebas aisladas;
+  su uso real no se ha validado como Gmail.
+- **Fase 2:** tablero Tasks, estados del host, revisiones versionadas,
+  comprobaciones, continuidad en la sesión original y autonomía están
+  implementados. Pendiente una revisión real en el iPhone con pedir cambios,
+  nueva tarjeta, aceptación y finalización; no equivale a las pruebas con fixtures.
+- **Fase 3, alcance autorizado:** un aviso marcado por lote con qué ocurrió,
+  por qué importa y una respuesta de un toque; una sola rutina matinal, por
+  defecto 08:00 Europe/Madrid, silenciosa si no hay novedades; agrupación y
+  contador diario/semanal de llamadas de avisos y briefings. El clasificador
+  económico y las respuestas normales del chat están fuera de ese contador.
+  El redactor recibe sólo el lote actual, sin historial ni memorias anteriores;
+  los avisos ya entregados conservan su texto. Pendientes comprobaciones reales
+  del próximo aviso, briefing, agrupación, respuesta de un toque y contador.
+- **Push:** mecanismo existente Mac → Bark, con aviso genérico y apertura de
+  Alice; el contenido se recupera del Hermes de cada usuario.
+- **Fuera del alcance acotado implementado:** responder desde la propia
+  notificación con peticiones firmadas/reintento, y tarjetas con varias opciones
+  que creen Tasks conservando el contexto. No añadir más tipos de rutinas.
+
+Comprobación real de Tasks en curso: Alice creó
+`7c2c4723a4e742498e900f046161cdf9` («Validación de Tasks — nota de prueba»)
+en la sesión principal existente; llegó a `needs_review`, versión 3, con un
+bloque de texto y comprobaciones. No se envió la nota ni se autorizó una acción
+externa. Pendientes los botones físicos de pedir cambios y aceptar, la nueva
+versión y la finalización después de la decisión del usuario.
+
+Verificación más reciente del plugin: 710 pruebas; 708 pasan, una omitida,
+un timeout en `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes`.
+El mismo timeout se reprodujo aisladamente y en el commit anterior `99f3b7f`,
+sin cambiar su límite de 60 segundos ni aserciones. Las 17 pruebas específicas
+proactivas pasan, incluida la prevalidación real del adaptador Codex sin llamadas
+al modelo. No se han ejecutado pruebas de UI sobre los datos reales del teléfono
+ni pruebas de simulador en este Mac. Las APIs y ambos puertos del host responden.
+
+Guías vigentes: [Watchers y Gmail](watchers-first-email.md),
+[Tasks y revisiones](tasks-review.md), [fase 3 y comprobaciones](watchers-phase3.md).
+Las secciones siguientes conservan la auditoría y evidencias históricas;
+sus builds y estados intermedios no describen la instalación actual.
+
 ## Resultado de la auditoría
 
 Repositorio: `Freixanet/alice`, rama base `main`, commit
@@ -10,7 +62,7 @@ El código se obtuvo de GitHub después de comprobar que la carpeta local estaba
 vacía. Este documento sustituye la primera auditoría, que solo describía esa
 carpeta y no había comprobado el repositorio remoto.
 
-**Estado actual (9 octubre 2026):** fase 1 validada desde `0e0490e`, build 92;
+**Estado histórico al cierre inicial de fase 1:** fase 1 validada desde `0e0490e`, build 92;
 correo real, notificación y apertura de Alice confirmados por el usuario. La ruta
 clasificadora sigue siendo explícita y nunca utiliza el modelo principal como fallback.
 
@@ -36,7 +88,7 @@ Referencia Dash MIT revisada: commit `7ef7292`, `AGENT_HARNESS.md`,
 `lib/harness/result-blocks.ts` y `app/result-blocks.tsx`. Se adaptaron sus patrones
 de resultados como datos y comprobación de autorizaciones en el host; licencia y
 copyright conservados en `THIRD_PARTY_NOTICES`. No se usó código Comma/AFK.
-Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
+En ese punto aún no se había iniciado la fase 3; el estado vigente está arriba. Uso: [Tasks y revisiones](tasks-review.md).
 
 ## Corrección de la comparación de fallos
 
