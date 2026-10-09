@@ -20419,6 +20419,146 @@
           }
         }
       }
+    },
+    "Daily model calls": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Llamadas diarias al modelo"
+          }
+        }
+      }
+    },
+    "Watch updates": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Avisos de vigilancias"
+          }
+        }
+      }
+    },
+    "Morning briefing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resumen de la mañana"
+          }
+        }
+      }
+    },
+    "Total today": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Total de hoy"
+          }
+        }
+      }
+    },
+    "Last seven days": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Últimos siete días"
+          }
+        }
+      }
+    },
+    "Send a morning briefing": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar un resumen por la mañana"
+          }
+        }
+      }
+    },
+    "Save briefing time": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar hora del resumen"
+          }
+        }
+      }
+    },
+    "Briefing time saved.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hora del resumen guardada."
+          }
+        }
+      }
+    },
+    "Model call counting is unavailable on this Hermes version.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El contador de llamadas no está disponible en esta versión de Hermes."
+          }
+        }
+      }
+    },
+    "Calls for watch messages and briefings share your model quota. Failed attempts and retries count too. This is not your remaining Plus quota. Classifier calls are separate.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los avisos y resúmenes comparten tu cuota del modelo. También cuentan los intentos fallidos y reintentos. No indica la cuota restante de Plus. Las llamadas del clasificador van aparte."
+          }
+        }
+      }
+    },
+    "Once a day: tasks waiting for your review and updates caught by your watches. Nothing to report means no message and no model call.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una vez al día: tareas pendientes de tu revisión y novedades de tus vigilancias. Si no hay nada, no se envía ningún mensaje ni se llama al modelo."
+          }
+        }
+      }
+    },
+    "Alice found an update to review.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice ha encontrado una novedad que revisar."
+          }
+        }
+      }
+    },
+    "It may need your attention.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Puede necesitar tu atención."
+          }
+        }
+      }
+    },
+    "Help me review this update.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ayúdame a revisar esta novedad."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

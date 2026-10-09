@@ -1,5 +1,7 @@
 # What Alice can start on her own
 
+The scoped Watchers Phase 3 briefing is configured in **Settings → Watches** (default 08:00 Europe/Madrid). It summarizes open review/blocked Tasks and watcher updates, stays silent when empty and exposes daily invocation counts. Installation pauses the known older morning template described below; other legacy routines are not added or changed by Phase 3. See [the current guide and three iPhone checks](watchers-phase3.md).
+
 Alice does not stay awake. A suggestion on the empty home is computed from
 state the phone already has: a request Hermes is still holding, a routine
 that failed in the last week, a note that still has an open question, and

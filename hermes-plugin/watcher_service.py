@@ -47,6 +47,7 @@ def tick(home, *, store=None, sources=None, engine=None, delivery=None, force=Fa
                     current = store.get(ident)
                     current["next_poll"] = store.clock() + watcher["config"].get("every_minutes", 5) * 60
                     store.save(current)
+        sibling("proactive.py").Service(store).morning()
         sibling("watcher_delivery.py").flush(store, delivery, force=force)
         return True
     finally:
@@ -72,6 +73,18 @@ def ensure_schedule(home, jobs=None):
             jobs.remove_job(duplicate["id"])
         return matches[0]["id"]
     return jobs.create_job(None, "* * * * *", name=JOB_NAME, deliver="local", script=JOB_SCRIPT, no_agent=True)["id"]
+
+
+def ensure_morning_schedule(home, jobs=None):
+    if jobs is None:
+        import cron.jobs as jobs
+    ident = ensure_schedule(home, jobs)
+    # Replace only Alice's known older template, retaining it for rollback.
+    for job in jobs.load_jobs():
+        if (job.get('name') == 'Buenos días' and job.get('script') == 'alice_buenos_dias.py'
+                and job.get('enabled', True)):
+            jobs.pause_job(job['id'], reason='Replaced by Settings → Watches morning briefing')
+    return ident
 
 
 if __name__ == "__main__":

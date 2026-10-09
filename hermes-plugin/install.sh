@@ -74,6 +74,26 @@ elif ! print -r -- "$current" | grep -qF "plugins/alice/skills"; then
   print -u2 "Add $skills_dir to skills.external_dirs in Hermes' config to see Alice's skills in the list."
 fi
 
+# Initialize the one morning routine and reuse the existing no-agent watcher poller.
+# This does not poll mail, dispatch notices or call any model.
+PYTHONPATH="$hermes_home/hermes-agent${PYTHONPATH:+:$PYTHONPATH}" "$python" - "$dest" "$hermes_home" <<'PY'
+import importlib.util, sys
+from pathlib import Path
+root, home = Path(sys.argv[1]), Path(sys.argv[2])
+def load(name):
+    spec = importlib.util.spec_from_file_location('alice_' + name, root / (name + '.py'))
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+store = load('watchers').Store(home)
+try:
+    load('proactive').Service(store)
+    load('watcher_service').ensure_morning_schedule(home)
+finally:
+    store.close()
+PY
+
 # The gateway runs the agents and keeps the plugin's modules loaded: without a restart it goes on
 # with the old code.
 for name in ai.hermes.gateway ai.hermes.dashboard; do

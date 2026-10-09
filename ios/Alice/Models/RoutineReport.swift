@@ -34,6 +34,14 @@ extension RoutineReport {
             && envelope.delivery_id.range(of: "^[a-f0-9]{32,64}$", options: .regularExpression) != nil
     }
 
+    var proactiveKind: String {
+        guard let separator = body.range(of: "\n\n"),
+              let data = String(body[separator.upperBound...]).data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return "proactive" }
+        return object["kind"] as? String == "briefing" ? "briefing" : "proactive"
+    }
+
     init?(_ text: String) {
         guard text.hasPrefix(Self.opening),
               let nameEnd = text.range(of: Self.afterName),
@@ -219,6 +227,8 @@ enum RoutineDelivery {
         // The bot answering a turn that was not the person's — a routine's
         // report, or Hermes' notice that a delivery to another agent finished.
         // Left out until the person writes again.
+        var proactiveKind: String?
+        var proactiveShown = false
         var answeringHandover = false
         // Another agent's answer is on screen since the person last wrote.
         var heardFromAgent = false
@@ -232,11 +242,14 @@ enum RoutineDelivery {
         for (index, message) in messages.enumerated() {
             switch message.role {
             case .user:
+                proactiveKind = nil
+                proactiveShown = false
                 if let report = RoutineReport(message.content) {
                     if report.isWatcherHandover {
                         // Unlike routine reports, the payload is an internal request,
                         // not the finished result. Preserve the following agent answer.
                         answeringHandover = false
+                        proactiveKind = report.proactiveKind
                         continue
                     }
                     let failure = RoutineReport.failure(in: report.body)
@@ -336,6 +349,17 @@ enum RoutineDelivery {
                     answeredBy = []
                 }
             case .assistant:
+                if let kind = proactiveKind {
+                    if proactiveShown { continue }
+                    var delivered = message
+                    let parsed = ProactiveMessage.parse(message.content)
+                    delivered.proactive = parsed ?? ProactiveMessage.fallback(message.content)
+                    delivered.proactiveKind = kind
+                    if let parsed { delivered.content = parsed.happened + "\n\n" + parsed.matters }
+                    shown.append(delivered)
+                    proactiveShown = true
+                    continue
+                }
                 // A decision the bot is waiting on still needs the person.
                 if answeringHandover, message.approval == nil { continue }
                 shown.append(message)

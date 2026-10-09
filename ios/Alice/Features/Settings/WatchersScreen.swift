@@ -33,6 +33,25 @@ struct WatchersScreen: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                if let morning = snapshot.morning {
+                    WatcherMorningSettings(settings: morning) { await refresh() }
+                }
+                if let usage = snapshot.usage {
+                    Section("Daily model calls") {
+                        LabeledContent("Watch updates", value: "\(usage.today.proactive)")
+                        LabeledContent("Morning briefing", value: "\(usage.today.briefing)")
+                        LabeledContent("Total today", value: "\(usage.today.total)")
+                        Text(usage.timezone).font(.footnote).foregroundStyle(.secondary)
+                        DisclosureGroup("Last seven days") {
+                            ForEach(usage.days) { day in
+                                LabeledContent(day.date, value: "\(day.total)")
+                            }
+                        }
+                    } footer: {
+                        if !usage.available { Text("Model call counting is unavailable on this Hermes version.") }
+                        Text("Calls for watch messages and briefings share your model quota. Failed attempts and retries count too. This is not your remaining Plus quota. Classifier calls are separate.")
+                    }
+                }
                 Section("Your watches") {
                     if snapshot.watchers.isEmpty {
                         Text("No watches yet. Create your first one in chat.").foregroundStyle(.secondary)
@@ -85,6 +104,64 @@ struct WatchersScreen: View {
         defer { loading = false }
         do { snapshot = try await store.watcherClient.load(); failure = nil }
         catch { failure = WatcherWords.failure(error) }
+    }
+}
+
+private struct WatcherMorningSettings: View {
+    @Environment(AppStore.self) private var store
+    let settings: WatcherSnapshot.Morning
+    let saved: () async -> Void
+    @State private var enabled = true
+    @State private var time = Date()
+    @State private var confirmation = false
+    @State private var busy = false
+    @State private var failure: String?
+
+    private var zone: TimeZone { TimeZone(identifier: settings.timezone) ?? TimeZone(identifier: "Europe/Madrid")! }
+    private var calendar: Calendar {
+        var value = Calendar(identifier: .gregorian)
+        value.timeZone = zone
+        return value
+    }
+
+    var body: some View {
+        Section("Morning briefing") {
+            Toggle("Send a morning briefing", isOn: $enabled)
+            DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
+                .environment(\.timeZone, zone)
+                .disabled(!enabled)
+            Text(settings.timezone).font(.footnote).foregroundStyle(.secondary)
+            Button("Save briefing time") {
+                Task { await save() }
+            }
+            if confirmation { Text("Briefing time saved.").foregroundStyle(.secondary) }
+            if let failure { Text(failure).foregroundStyle(.red) }
+        } footer: {
+            Text("Once a day: tasks waiting for your review and updates caught by your watches. Nothing to report means no message and no model call.")
+        }
+        .disabled(busy)
+        .onChange(of: time) { confirmation = false }
+        .onChange(of: enabled) { confirmation = false }
+        .onAppear {
+            enabled = settings.enabled
+            let parts = settings.time.split(separator: ":").compactMap { Int($0) }
+            if parts.count == 2 {
+                time = calendar.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: Date()) ?? Date()
+            }
+        }
+    }
+
+    @MainActor private func save() async {
+        busy = true
+        defer { busy = false }
+        let parts = calendar.dateComponents([.hour, .minute], from: time)
+        let value = String(format: "%02d:%02d", parts.hour ?? 8, parts.minute ?? 0)
+        do {
+            try await store.watcherClient.morning(.init(enabled: enabled, time: value, timezone: settings.timezone))
+            failure = nil
+            await saved()
+            confirmation = true
+        } catch { failure = WatcherWords.failure(error) }
     }
 }
 

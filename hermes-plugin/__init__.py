@@ -2480,8 +2480,38 @@ def _guard_purchase_disabled(tool_name=None, args=None, session_id="", **_):
     return None
 
 
+def _proactive_turn(user_message=None, session_id="", **_):
+    proactive = _module("proactive.py", "alice_proactive")
+    session = _session_id(session_id)
+    if not proactive.envelope(user_message):
+        proactive.clear(session)
+        return None
+    watchers = _module("watchers.py", "alice_watchers").Store(_hermes_root())
+    try:
+        proactive.Service(watchers).track(session, user_message)
+    finally:
+        watchers.close()
+    return {"context": "This is one proactive notice. Return only happened/matters/reply JSON. No tools or external actions."}
+
+
+def _guard_proactive_tools(tool_name=None, session_id="", **_):
+    if _module("proactive.py", "alice_proactive").context(_session_id(session_id)):
+        return {"action": "block", "message": "A proactive notice only explains the supplied data. Return one message without tools or external actions."}
+    return None
+
+
+def _proactive_finished(session_id="", **_):
+    _module("proactive.py", "alice_proactive").clear(_session_id(session_id))
+
+
 def register(ctx) -> None:
+    proactive = _module("proactive.py", "alice_proactive")
+    if not proactive.install_metrics():
+        logging.getLogger(__name__).error("Proactive model-call accounting unavailable on this Hermes version.")
     ctx.register_hook("pre_tool_call", _guard_purchase_disabled)
+    ctx.register_hook("pre_llm_call", _proactive_turn)
+    ctx.register_hook("pre_tool_call", _guard_proactive_tools)
+    ctx.register_hook("post_llm_call", _proactive_finished)
     _module("fallback_notices.py", "alice_fallback_notices").install(_errands())
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     ctx.register_hook("pre_tool_call", _guard_review_task)

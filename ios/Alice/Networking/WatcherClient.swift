@@ -28,6 +28,26 @@ struct WatcherSnapshot: Decodable, Sendable {
         let id: String
         let message: String
     }
+    struct Morning: Codable, Sendable {
+        var enabled: Bool
+        var time: String
+        var timezone: String
+    }
+    struct Usage: Decodable, Sendable {
+        struct Day: Decodable, Identifiable, Sendable {
+            let date: String
+            let proactive: Int
+            let briefing: Int
+            let total: Int
+            var id: String { date }
+        }
+        let today: Day
+        let days: [Day]
+        let timezone: String
+        let available: Bool
+    }
+    let morning: Morning?
+    let usage: Usage?
     let watchers: [Watcher]
     let route: Route?
     let setup_required: Bool
@@ -37,6 +57,11 @@ struct WatcherSnapshot: Decodable, Sendable {
 
 struct WatcherClient: Sendable {
     let dashboard: DashboardClient
+    func morning(_ settings: WatcherSnapshot.Morning) async throws {
+        try await dashboard.send("PUT", "api/plugins/alice/watchers/morning", [
+            "enabled": settings.enabled, "time": settings.time, "timezone": settings.timezone
+        ])
+    }
     func load() async throws -> WatcherSnapshot { try await dashboard.watcherSnapshot() }
     func configure(_ route: WatcherSnapshot.Route) async throws { try await dashboard.configureWatcherRoute(route) }
     func action(_ action: String, id: String) async throws -> String { try await dashboard.watcherAction(action, id: id) }

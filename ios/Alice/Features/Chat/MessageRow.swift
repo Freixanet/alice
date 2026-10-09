@@ -327,7 +327,23 @@ struct MessageRow: View {
                         }
                     }
 
-                    if let routine = message.routineName {
+                    if let notice = message.proactive {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(message.proactiveKind == "briefing"
+                                  ? replyLanguage.pick("Morning briefing", "Resumen de la mañana")
+                                  : replyLanguage.pick("Watch update", "Aviso de vigilancia"),
+                                  systemImage: message.proactiveKind == "briefing" ? "sun.max" : "bell.badge")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                            Text(notice.happened)
+                            Text(notice.matters).foregroundStyle(.secondary)
+                            Button(notice.reply) { store.sendQuickReply(notice.reply) }
+                                .buttonStyle(.bordered)
+                                .disabled(message.pending || store.isSending)
+                                .accessibilityIdentifier("proactive.reply")
+                        }
+                        .padding(16)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
+                    } else if let routine = message.routineName {
                         // One bubble with what Alice said around it, like every other reply's words.
                         inBubble {
                             VStack(alignment: .leading, spacing: 10) {

@@ -67,3 +67,17 @@ class WatcherAPITests(unittest.TestCase):
         self.assertEqual(principal.scopes, ("alice-watcher-inbound",))
         store.rotate_webhook(ident, revoke=True)
         self.assertIsNone(provider.verify_token(token=secret))
+
+    def test_morning_settings_are_validated_and_usage_has_daily_categories(self):
+        root = "/api/plugins/alice/watchers"
+        snapshot = self.client.get(root).json()
+        self.assertEqual(snapshot['morning']['time'], '08:00')
+        self.assertEqual(snapshot['morning']['timezone'], 'Europe/Madrid')
+        self.assertEqual(snapshot['usage']['today']['total'], 0)
+        with mock.patch.object(self.api, '_schedule_watchers') as schedule:
+            changed = self.client.put(root + '/morning', json={'time':'09:15','timezone':'Europe/Madrid','enabled':True})
+            self.assertEqual(changed.status_code, 200)
+            schedule.assert_called_once()
+        self.assertEqual(self.client.get(root).json()['morning']['time'], '09:15')
+        self.assertEqual(self.client.put(root + '/morning', json={'time':'25:00'}).status_code, 400)
+        self.assertEqual(self.client.put(root + '/morning', json={'time':'08:00','routine_type':'evening'}).status_code, 422)

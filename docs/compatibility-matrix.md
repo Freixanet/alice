@@ -85,7 +85,7 @@ instead of treating a fixture version as a universal compatibility certificate.
 | Delivery | Durable local inbox then main-profile Hermes Bot Chat defer; inspected Hermes commit `6b2fe92`, live delivery pending |
 | Push | Existing optional Mac/Bark notifier, generic notices; notifier tests pass, physical delivery pending |
 | Review Tasks / phase 2 | Host-owned versioned Tasks, single-use approvals, native four-column board; fixture tests and generic device compilation; live model and visual interaction still require validation |
-| Proactive actions / phase 3 | Not started |
+| Proactive messages / phase 3 | Marked notice cards with one reply, one configurable Madrid morning briefing, owner-wide batching and daily invocation counters; fixture verification and device compilation; see [phase 3](watchers-phase3.md) |
 
 The full plugin regression run is not green in the installed Hermes environment;
 see the exact outcomes in [proactive-plan](proactive-plan.md). No universal Hermes

@@ -226,6 +226,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// note when there was no news. Set when a transcript is presented.
     var routinePart: RoutinePart? = nil
     /// The delivery the part belongs to, so its parts read as one message.
+    var proactive: ProactiveMessage? = nil
+    var proactiveKind: String? = nil
     var routineGroup: String? = nil
     /// On a routine's report card: the agent's words before and after it, so a bubbled chat
     /// draws the three as one bubble. Set when a transcript is presented.
@@ -292,6 +294,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         offersModelChoice = try box.decodeIfPresent(Bool.self, forKey: .offersModelChoice) ?? false
         plan = try box.decodeIfPresent(TaskPlan.self, forKey: .plan)
         routinePart = try box.decodeIfPresent(RoutinePart.self, forKey: .routinePart)
+        proactive = try box.decodeIfPresent(ProactiveMessage.self, forKey: .proactive)
+        proactiveKind = try box.decodeIfPresent(String.self, forKey: .proactiveKind)
         routineGroup = try box.decodeIfPresent(String.self, forKey: .routineGroup)
         reasoning = try box.decodeIfPresent(String.self, forKey: .reasoning)
         feedContext = try? box.decodeIfPresent(FeedPost.self, forKey: .feedContext)

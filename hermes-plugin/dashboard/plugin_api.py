@@ -2971,8 +2971,37 @@ async def watcher_listing() -> JSONResponse:
         settings = store.settings()
         notices = [dict(r) for r in store.db.execute("SELECT id,message FROM notices WHERE owner='local' ORDER BY created DESC LIMIT 50")]
         return {"watchers": store.listing(), "route": settings["route"], "setup_required": settings["route"] is None,
-                "feedback": settings["feedback"], "notices": notices}
+                "feedback": settings["feedback"], "notices": notices,
+                "morning": _sibling("proactive.py", "alice_proactive").Service(store).settings(),
+                "usage": _sibling("proactive.py", "alice_proactive").Service(store).usage()}
     return await asyncio.to_thread(lambda: _watcher_call(read))
+
+
+def _schedule_watchers(home):
+    return _sibling("watcher_service.py", "alice_watcher_service").ensure_morning_schedule(home)
+
+
+class _MorningSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    time: str
+    timezone: str = "Europe/Madrid"
+    enabled: bool = True
+
+
+@router.put("/watchers/morning")
+async def watcher_morning(body: _MorningSettings) -> JSONResponse:
+    def configure(store):
+        service = _sibling("proactive.py", "alice_proactive").Service(store)
+        # Validate before touching cron; save only after a schedule is available.
+        import re
+        from zoneinfo import ZoneInfo
+        if not re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", body.time):
+            raise ValueError("Choose a time from 00:00 to 23:59.")
+        try: ZoneInfo(body.timezone)
+        except (ValueError, KeyError): raise ValueError("Choose a valid IANA timezone.") from None
+        if body.enabled: _schedule_watchers(store.home)
+        return {"morning": service.configure(**body.model_dump())}
+    return await asyncio.to_thread(lambda: _watcher_call(configure))
 
 
 class _WatcherRoute(BaseModel):

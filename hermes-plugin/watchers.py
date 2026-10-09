@@ -198,7 +198,14 @@ class Store:
             self.save(record)
             for table in ("events", "history", "notices", "dedup"):
                 self.db.execute(f"DELETE FROM {table} WHERE watcher=?", (ident,))
-            self.db.execute("UPDATE inbox SET status='cancelled',content='[]',error=NULL WHERE watcher=? AND status IN ('open','ready')", (ident,))
+            for batch in self.db.execute("SELECT * FROM inbox WHERE owner=? AND status IN ('open','ready')", (owner,)).fetchall():
+                kept = [item for item in json.loads(batch['content']) if item.get('watcher_id', batch['watcher']) != ident]
+                if len(kept) == len(json.loads(batch['content'])):
+                    continue
+                status = batch['status'] if kept else 'cancelled'
+                primary = kept[0].get('watcher_id', batch['watcher']) if kept else batch['watcher']
+                self.db.execute('UPDATE inbox SET watcher=?,status=?,content=?,error=NULL WHERE id=?',
+                                (primary, status, json.dumps(kept), batch['id']))
         path = Path(record["code_path"])
         # Only remove the script Alice created, never a stored arbitrary path.
         if path == self.folder / "code" / (ident + ".py"):
@@ -250,7 +257,7 @@ class Store:
             if any(self.clock() - row["created"] >= 900 for row in self.pending(ident)):
                 self.terminal(record, "failed", "error", "An event has waited 15 minutes without acknowledgement.")
             elif record.get("limited_since") is not None and self.clock() - record["limited_since"] >= 3600:
-                recent = self.db.execute("SELECT count(*) FROM inbox WHERE watcher=? AND created>?", (ident, self.clock() - 600)).fetchone()[0]
+                recent = self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND watcher!='briefing' AND created>?", (record["owner"], self.clock() - 600)).fetchone()[0]
                 if recent >= 6:
                     self.terminal(record, "paused", "budget", "Notification limit sustained for an hour.")
                 else:
@@ -272,14 +279,14 @@ class Store:
             duplicate = self.db.execute("SELECT inbox FROM dedup WHERE watcher=? AND key=?", (record["id"], key)).fetchone()
             if duplicate:
                 return duplicate[0]
-            row = self.db.execute("SELECT * FROM inbox WHERE watcher=? AND status='open' AND due>? ORDER BY created DESC LIMIT 1", (record["id"], self.clock())).fetchone()
+            row = self.db.execute("SELECT * FROM inbox WHERE owner=? AND watcher!='briefing' AND status='open' AND due>? ORDER BY created DESC LIMIT 1", (record["owner"], self.clock())).fetchone()
             if row:
                 content = json.loads(row["content"])
                 ident = row["id"]
                 if len(content) >= 200 or len(json.dumps(content).encode()) > 524288:
                     raise RateLimit("Batch capacity reached; event retained.")
             else:
-                recent = self.db.execute("SELECT count(*) FROM inbox WHERE watcher=? AND created>?", (record["id"], self.clock() - 600)).fetchone()[0]
+                recent = self.db.execute("SELECT count(*) FROM inbox WHERE owner=? AND watcher!='briefing' AND created>?", (record["owner"], self.clock() - 600)).fetchone()[0]
                 if recent >= 6:
                     if fresh.get("limited_since") is None:
                         fresh["limited_since"] = self.clock()
@@ -296,7 +303,7 @@ class Store:
                     self.save(fresh)
                     self.db.execute("INSERT INTO inbox VALUES(?,?,?,?,?,'open','[]',NULL)", (ident, record["id"], record["owner"], self.clock(), self.clock() + 60))
             if ident is not None:
-                content.append({"message": message, "event": event, "classification": classification})
+                content.append({"watcher_id": record["id"], "watcher_name": record["name"], "caught_at": self.clock(), "message": message, "event": event, "classification": classification})
                 self.db.execute("UPDATE inbox SET content=? WHERE id=?", (json.dumps(content), ident))
                 self.db.execute("INSERT INTO dedup VALUES(?,?,?)", (record["id"], key, ident))
         if ident is None:
