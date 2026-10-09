@@ -272,6 +272,16 @@ refresh; they do not guarantee prompt delivery when suspended or force-quit.
 A dedicated Alice APNs/content-free relay remains a possible future step, not
 something implemented or required for this existing-mechanism option.
 
+## Proactive message context
+
+The notice writer receives only the current delivery's watcher events, or the
+morning briefing's supplied Tasks and updates. Earlier chat turns, injected
+memories, tools and provider conversation continuations are excluded from that
+request. The model route, immutable delivery ID, batching and call counter stay
+unchanged. A test email should confirm detection and suggest reviewing its
+watcher, without introducing unrelated senders from earlier conversations.
+Already delivered messages remain in the chat; this applies to subsequent notices.
+
 ## Activation validation and starting point
 
 A watch starts paused. Activation now runs its actual script in the sandbox on
