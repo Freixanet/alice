@@ -15,7 +15,7 @@ import Foundation
 /// searching "webhook" or "gateway" is served by the same list.
 struct AliceDestination: Identifiable, Hashable, Sendable {
     enum Target: String, Sendable {
-        case bots, notes, agenda, goals, activity, feed, routines, projects, files, library
+        case bots, notes, agenda, goals, tasks, activity, feed, routines, projects, files, library
         case channels, mcp, skills, tools, webhooks, git, system
         case settings, connect, memory, models, usage, sessions, insights
         case configuration, pairing, plugins
@@ -49,6 +49,8 @@ struct AliceDestination: Identifiable, Hashable, Sendable {
     }
 
     static let all: [AliceDestination] = [
+        .init(target: .tasks, title: "Tasks", technical: "Versioned review tasks", systemImage: "rectangle.split.3x1",
+              synonyms: ["tasks", "tareas", "review", "revisión", "approve", "aprobar", "backlog"]),
         .init(target: .bots, title: "Agents", technical: "Hermes profiles",
               systemImage: "person.2",
               synonyms: ["assistant", "assistants", "agent", "agents", "profile", "profiles", "radar"]),

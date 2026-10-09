@@ -2,6 +2,9 @@ Dash-opensource — https://github.com/mg272011/Dash-opensource
 
 The Python watcher feedback filters and built-in departure/birthday/follow-up
 detectors adapt patterns from lib/proactive/engine/rules.ts and detectors/.
+Phase 2 also adapts the data-only result-block patterns from
+lib/harness/result-blocks.ts and app/result-blocks.tsx, and the host-enforced
+approval invariant from AGENT_HARNESS.md (reference commit 7ef7292).
 No Dash backend is included.
 
 MIT License

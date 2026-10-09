@@ -43,6 +43,9 @@ provides_tools:
   - catalog_search
   - catalog_product
   - ask_person
+  - watchers
+  - review_tasks
+  - review_read
 provides_hooks:
   - pre_tool_call
   - post_tool_call

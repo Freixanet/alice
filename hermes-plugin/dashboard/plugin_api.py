@@ -3064,3 +3064,64 @@ async def watcher_inbound(request: Request) -> JSONResponse:
         accepted = store.ingest(ident, payload)
         return {"accepted": accepted, "event_id": payload["id"]}
     return await asyncio.to_thread(lambda: _watcher_call(ingest))
+
+# ── Versioned review Tasks (owner is the authenticated local host user) ──────
+def _review_task_call(work):
+    module = _sibling('review_tasks.py', 'alice_review_tasks')
+    store = module.Store(_hermes_root())
+    try:
+        return JSONResponse(work(store), headers=_NO_STORE)
+    except module.Conflict as exc:
+        return JSONResponse({'error': str(exc), 'tasks': store.listing()}, status_code=409, headers=_NO_STORE)
+    except (ValueError, KeyError) as exc:
+        return JSONResponse({'error': str(exc)}, status_code=400, headers=_NO_STORE)
+    finally:
+        store.close()
+
+
+@router.get('/review-tasks')
+async def review_tasks_listing():
+    return await asyncio.to_thread(lambda: _review_task_call(lambda s: {'tasks': s.listing(), 'autonomy': s.autonomy()}))
+
+
+class _TaskAutonomy(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    autonomy: str
+
+
+@router.put('/review-tasks/autonomy')
+async def review_tasks_autonomy(body: _TaskAutonomy):
+    return await asyncio.to_thread(lambda: _review_task_call(lambda s: {'autonomy': s.configure(body.autonomy)}))
+
+
+class _TaskDecision(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    version: int = Field(ge=1, strict=True)
+    action: str
+    message: str = Field(default='', max_length=2000)
+
+
+@router.post('/review-tasks/{task_id}/decision')
+async def review_tasks_decision(task_id: str, body: _TaskDecision):
+    return await asyncio.to_thread(lambda: _review_task_call(lambda s: {'task': s.respond(task_id, body.version, body.action, body.message)}))
+
+class _TaskContinuation(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    version: int = Field(ge=1, strict=True)
+    aliases: List[str] = Field(min_length=1, max_length=2)
+
+
+@router.post('/review-tasks/{task_id}/continue')
+async def review_tasks_continue(task_id: str, body: _TaskContinuation):
+    return await asyncio.to_thread(lambda: _review_task_call(lambda s: {'task': s.claim_resume(task_id, body.version, body.aliases)}))
+
+
+class _TaskContinuationResult(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    version: int = Field(ge=1, strict=True)
+    state: str
+
+
+@router.post('/review-tasks/{task_id}/continuation-result')
+async def review_tasks_continuation_result(task_id: str, body: _TaskContinuationResult):
+    return await asyncio.to_thread(lambda: _review_task_call(lambda s: {'task': s.finish_resume(task_id, body.version, body.state)}))

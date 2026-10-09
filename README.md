@@ -74,9 +74,11 @@ side of that work:
   one's outcome is known, and then needs your explicit approval. Real
   purchases have exposed bugs that have since been fixed. It is not yet reliable enough to
   leave unattended.
-- **Tasks that keep going until they are done.** For a task with several steps, the agent
-  opens a Hermes session goal. A separate judge model then sends it back to work when it
-  stops at a solvable obstacle, and accepts "done" only with proof such as an order number.
+- **Tasks with review.** Multi-step work appears in the iPhone's Tasks board. Open a
+  task to see the original request, prepared result and checks, then accept its
+  current version or request changes. The host grants one exact action once;
+  “Only prepare” requires review before external changes. Existing Hermes Goals
+  and errands retain their controls. See [Tasks and reviews](docs/tasks-review.md).
 - **Place triggers.** "When I get to the supermarket, remind me of the oil." The iPhone
   watches the place with iOS region monitoring and tells Hermes only that you arrived or
   left, never where you are.

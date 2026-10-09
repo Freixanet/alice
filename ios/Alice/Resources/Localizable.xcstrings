@@ -20079,6 +20079,346 @@
           }
         }
       }
+    },
+    "Tasks": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tareas"
+          }
+        }
+      }
+    },
+    "Backlog": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por hacer"
+          }
+        }
+      }
+    },
+    "In progress": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "En curso"
+          }
+        }
+      }
+    },
+    "Needs review": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para revisar"
+          }
+        }
+      }
+    },
+    "Waiting for you": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Espera tu respuesta"
+          }
+        }
+      }
+    },
+    "Couldn’t finish": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se pudo terminar"
+          }
+        }
+      }
+    },
+    "Multi-step work lives here. Quick questions stay in chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aquí encontrarás los trabajos de varios pasos. Las preguntas rápidas se quedan en el chat."
+          }
+        }
+      }
+    },
+    "Ask Alice in chat to prepare something, investigate a problem or carry out a task. She’ll track the work here.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pídele a Alice en el chat que prepare algo, investigue un problema o realice una tarea. Aquí podrás seguir su trabajo."
+          }
+        }
+      }
+    },
+    "No tasks": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sin tareas"
+          }
+        }
+      }
+    },
+    "Loading tasks…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando tareas…"
+          }
+        }
+      }
+    },
+    "Task autonomy": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autonomía de tareas"
+          }
+        }
+      }
+    },
+    "How Alice works": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cómo trabaja Alice"
+          }
+        }
+      }
+    },
+    "Act within the agreed task": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actuar dentro de lo acordado"
+          }
+        }
+      }
+    },
+    "Alice can prepare and carry out work. Decisions such as sending, publishing or paying still need your review.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice puede preparar y realizar el trabajo. Las decisiones de enviar, publicar o pagar siguen necesitando tu revisión."
+          }
+        }
+      }
+    },
+    "Only prepare": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Solo preparar"
+          }
+        }
+      }
+    },
+    "Alice prepares the result and waits for your review before changing any external service. Unknown operations are held for review too.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice prepara el resultado y espera tu revisión antes de cambiar cualquier servicio externo. Las operaciones que no reconoce también requieren revisión."
+          }
+        }
+      }
+    },
+    "Original request": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Petición original"
+          }
+        }
+      }
+    },
+    "Prepared result": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resultado preparado"
+          }
+        }
+      }
+    },
+    "What Alice checked": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Qué ha comprobado Alice"
+          }
+        }
+      }
+    },
+    "Your answer is needed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesita tu respuesta"
+          }
+        }
+      }
+    },
+    "Your decision is needed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Necesita tu decisión"
+          }
+        }
+      }
+    },
+    "Accepting approves this version only. Alice must ask again if the action changes.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Al aceptar, apruebas solo esta versión. Si la acción cambia, Alice deberá pedirte una nueva revisión."
+          }
+        }
+      }
+    },
+    "Request change": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pedir cambios"
+          }
+        }
+      }
+    },
+    "What should Alice change or know?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Qué debe cambiar o saber Alice?"
+          }
+        }
+      }
+    },
+    "Send to Alice": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enviar a Alice"
+          }
+        }
+      }
+    },
+    "Accept and continue": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aceptar y continuar"
+          }
+        }
+      }
+    },
+    "Accept this version of “%@”?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Aceptar esta versión de «%@»?"
+          }
+        }
+      }
+    },
+    "Your decision is saved. Continue in the original conversation when Hermes is available.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu decisión está guardada. Puedes continuar en la conversación original cuando Hermes esté disponible."
+          }
+        }
+      }
+    },
+    "Continue task": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continuar tarea"
+          }
+        }
+      }
+    },
+    "Alice couldn’t confirm whether the continuation arrived. Check the original chat before sending anything again. Your approval still covers one exact action only.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no ha podido confirmar si llegó la continuación. Comprueba el chat original antes de enviar otra vez. Tu aprobación sigue cubriendo una sola acción concreta."
+          }
+        }
+      }
+    },
+    "This task changed. The current version is shown. Review it before accepting again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tarea ha cambiado. Ahora ves la versión actual. Revísala antes de volver a aceptar."
+          }
+        }
+      }
+    },
+    "Continue task “%@” using the decision saved in Tasks. Check the result before marking it complete.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continúa la tarea «%@» con la decisión guardada en Tareas. Comprueba el resultado antes de darla por terminada."
+          }
+        }
+      }
+    },
+    "This result needs a newer version of Alice.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este resultado necesita una versión más reciente de Alice."
+          }
+        }
+      }
+    },
+    "Exact action": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Acción exacta"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

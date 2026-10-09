@@ -2433,9 +2433,20 @@ def _register_goal_tools(ctx) -> None:
     )
 
 
+def _guard_review_task(tool_name=None, args=None, session_id="", **_):
+    try:
+        from hermes_constants import get_hermes_home
+        _, profile = _root_and_sender(Path(get_hermes_home()))
+        return _module("review_task_guard.py", "alice_review_task_guard").check(
+            _hermes_root(), str(tool_name or ""), args, _session_id(session_id), profile)
+    except Exception:
+        return {"action": "block", "message": "Task approval could not be checked. No action was executed; check the Hermes host before retrying."}
+
+
 def register(ctx) -> None:
     _module("fallback_notices.py", "alice_fallback_notices").install(_errands())
     ctx.register_hook("pre_tool_call", _pre_tool_call)
+    ctx.register_hook("pre_tool_call", _guard_review_task)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
     # And each errand browses in its own context of it, never another errand's basket.
@@ -2476,6 +2487,27 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.debug", debug_prompt)
     ctx.register_system_prompt_section("alice.resolver", resolve_prompt)
     ctx.register_system_prompt_section("alice.canal", channel_prompt)
+    review_tools = _module("review_task_tools.py", "alice_review_task_tools")
+    ctx.register_system_prompt_section("alice.tasks", lambda _=None: review_tools.PROMPT)
+    def review_task_handler(args=None, session_id="", **_):
+        from hermes_constants import get_hermes_home
+        _, profile = _root_and_sender(Path(get_hermes_home()))
+        return _tool(lambda a: review_tools.run(_hermes_root(), a, _session_id(session_id), profile))(args)
+    ctx.register_tool(name="review_tasks", toolset="alice_tasks", schema=review_tools.SCHEMA,
+                      handler=review_task_handler, check_fn=_always, description=review_tools.DETAILS, emoji="📋")
+    def review_read(args=None, **_):
+        from hermes_constants import get_hermes_home
+        a = args or {}
+        source = _module("watcher_sources.py", "alice_watcher_sources").Sources(Path(get_hermes_home()))
+        if a.get("action") == "gmail_search":
+            return {"items": source.gmail(["search", str(a.get("query") or ""), "--max", "20"])}
+        if a.get("action") == "gmail_get":
+            return {"item": source.gmail(["get", str(a.get("id") or "")])}
+        raise ValueError("Choose a read-only Gmail search or get.")
+    read_schema = {"name": "review_read", "description": "Read Gmail without terminal commands or approval. Uses this profile's connected Gmail; no writes. Use before preparing email Tasks.",
+        "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["gmail_search", "gmail_get"]}, "query": {"type": "string"}, "id": {"type": "string"}}, "required": ["action"]}}
+    ctx.register_tool(name="review_read", toolset="alice_tasks", schema=read_schema,
+                      handler=_tool(review_read), check_fn=_always, description=read_schema["description"], emoji="📨")
     ctx.register_system_prompt_section("alice.claves", secret_prompt)
     ctx.register_system_prompt_section("alice.recados", errands_prompt)
     ctx.register_system_prompt_section("alice.dudas", doubts_prompt)

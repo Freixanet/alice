@@ -17,7 +17,7 @@ struct Sidebar: View, Equatable {
     /// destinations are listed visibly; configuration is progressively disclosed
     /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
-        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect, models, memory
+        case tasks, activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect, models, memory
         var id: String { rawValue }
     }
 
@@ -73,6 +73,7 @@ struct Sidebar: View, Equatable {
                     })
                 }
                 case .routines: closable { RoutinesScreen() }
+                case .tasks: closable { TaskBoard() }
                 case .projects: closable { ProjectsScreen() }
                 case .git: closable { GitDevelopmentScreen() }
                 case .skills: closable { CatalogScreen(source: .skills) }
@@ -184,6 +185,9 @@ struct Sidebar: View, Equatable {
             // then the Library: what they made, and your notes.
             // Routines moved to Settings › Alice, beside Activity, where their results arrive.
             agentsRow
+            if store.dashboardReady {
+                row("Tasks", systemImage: "rectangle.split.3x1", weight: .medium, destination: .tasks) { going = .tasks }
+            }
             row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
         }
         .padding(.horizontal, 12)
@@ -342,6 +346,7 @@ struct Sidebar: View, Equatable {
         case .notes: openNotes()
         case .agenda: openAgenda()
         case .goals: openGoals()
+        case .tasks: going = .tasks
         case .activity: going = .activity
         case .feed: going = .feed
         case .routines:

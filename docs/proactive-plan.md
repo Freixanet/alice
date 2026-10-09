@@ -10,10 +10,54 @@ El código se obtuvo de GitHub después de comprobar que la carpeta local estaba
 vacía. Este documento sustituye la primera auditoría, que solo describía esa
 carpeta y no había comprobado el repositorio remoto.
 
-**Estado: fase 1 implementada y verificada con pruebas aisladas; sin desplegar.**
-El usuario aprobó una ruta económica explícita por usuario, sin fallback al
-principal. Sin ruta configurada no se activan watchers; errores y timeouts
-conservan el evento sin ack, notify ni llamada al principal. Fases 2–3 pendientes.
+**Estado actual (9 octubre 2026):** fase 1 instalada desde `0e0490e`, build 92;
+correo real, notificación y apertura de Alice confirmados por el usuario. La ruta
+clasificadora sigue siendo explícita y nunca utiliza el modelo principal como fallback.
+
+Fase 2 implementada: Tasks con autoridad SQLite en el host, versiones estrictas,
+una tarjeta vigente por tarea, resultados nativos de solo datos y decisiones desde
+iOS. `review_tasks` prepara y actualiza; solo la API autenticada permite aceptar o
+cambiar autonomía. El hook previo a herramientas consume una autorización exacta
+una sola vez, vinculada a perfil, conversación y versión. `draft_only` bloquea
+operaciones externas también fuera de Tasks; en `act` las conversaciones anteriores
+siguen sujetas a sus controles existentes. Los perfiles y Goals/recados se conservan.
+
+«Aceptar», «Pedir cambios» y responder a un bloqueo guardan primero la decisión.
+iOS reanuda la conversación de origen, reclama una continuación única en el host y
+la envía por el RPC existente. Una respuesta ambigua no se reenvía automáticamente.
+Las identidades devueltas por Hermes se vinculan sin cambiar el perfil original.
+Los argumentos son exactos; para recursos externos mutables el agente debe volver
+a comprobar el contenido y pedir otra revisión si cambió. No existe una transacción
+atómica entre Hermes y proveedores externos.
+
+Referencia Dash MIT revisada: commit `7ef7292`, `AGENT_HARNESS.md`,
+`lib/harness/result-blocks.ts` y `app/result-blocks.tsx`. Se adaptaron sus patrones
+de resultados como datos y comprobación de autorizaciones en el host; licencia y
+copyright conservados en `THIRD_PARTY_NOTICES`. No se usó código Comma/AFK.
+Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
+
+## Verificación de fase 2
+
+- Suite completa del commit instalado `0e0490e`: 643 pruebas, 13 fallos y 5 errores,
+  19 omitidas. Suite con fase 2: 661 pruebas, los mismos 18 casos fallidos y
+  19 omitidas; ningún fallo nuevo. Logs en `/private/tmp/alice-phase2-baseline-tests.log`
+  y `/private/tmp/alice-phase2-plugin-final-tests.log`. Los 6 problemas de la antigua
+  comparación previa a Watchers siguen incluidos; los otros pertenecen al código
+  de recados/compras incorporado posteriormente, y ya fallan en `0e0490e`.
+- Pruebas específicas de Tasks/API/hook: 19, todas pasan (incluye validación de
+  campos añadida después de la suite completa). Aprueba versiones estrictas,
+  mantiene perfil/sesión, consume una sola vez, falla cerrada, retira tarjetas,
+  bloquea efectos desconocidos y no repite continuaciones ambiguas.
+- Límite de instrucciones: 2 pruebas pasan. La descripción detallada permanece
+  en la herramienta; la sección del prompt es breve y cabe en el presupuesto.
+- Modelo Swift real: 3 comprobaciones con harness macOS pasan, incluida precisión
+  de enteros grandes, preservación de versión/sesión y contenido tratado como datos.
+  XCTest iOS y UI no ejecutados: requieren simulador, no autorizado en este Mac.
+- `npm run slash:check`: 52 comandos coinciden entre web/iOS.
+- Compilación genérica para iPhone: pasa. Firma e instalación se registran en el
+  recibo del plugin y la revisión/build de la app; revisión visual y una Task real
+  con el modelo permanecen pendientes. No se hicieron llamadas al modelo ni
+  modificaciones de Gmail/pagos como pruebas.
 
 ## Cómo se conecta iOS con Hermes
 
