@@ -19,7 +19,7 @@ READ_TOOLS = frozenset({
 CONTROL_TOOLS = frozenset({'review_tasks'})
 # Only exact, known read operations. Unknown extension names do not inherit permissions.
 READ_ACTIONS = {
-    'watchers': {'list', 'dry_run', 'create', 'activate', 'pause', 'retry', 'discard', 'delete'}, 'goals': {'list', 'get'},
+    'watchers': {'list'}, 'goals': {'list', 'get'},
 }
 
 

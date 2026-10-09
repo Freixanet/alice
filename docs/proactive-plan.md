@@ -44,10 +44,10 @@ Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
   y `/private/tmp/alice-phase2-plugin-final-tests.log`. Los 6 problemas de la antigua
   comparación previa a Watchers siguen incluidos; los otros pertenecen al código
   de recados/compras incorporado posteriormente, y ya fallan en `0e0490e`.
-- Pruebas específicas de Tasks/API/hook: 19, todas pasan (incluye validación de
+- Pruebas específicas de Tasks/API/hook: 20, todas pasan (incluye validación de
   campos añadida después de la suite completa). Aprueba versiones estrictas,
   mantiene perfil/sesión, consume una sola vez, falla cerrada, retira tarjetas,
-  bloquea efectos desconocidos y no repite continuaciones ambiguas.
+  bloquea efectos desconocidos (incluidos scripts de Watchers) y no repite continuaciones ambiguas.
 - Límite de instrucciones: 2 pruebas pasan. La descripción detallada permanece
   en la herramienta; la sección del prompt es breve y cabe en el presupuesto.
 - Modelo Swift real: 3 comprobaciones con harness macOS pasan, incluida precisión

@@ -103,3 +103,9 @@ class ReviewTasksTests(unittest.TestCase):
         for changes in ({'checks':[42]}, {'summary': {'invalid':'text'}}):
             with self.assertRaises(ValueError):
                 self.store.update(self.task['id'], 1, 'in_progress', session='session', profile='default', **changes)
+
+    def test_watcher_scripts_cannot_bypass_draft_only(self):
+        self.store.configure('draft_only')
+        for action in ('create', 'activate', 'retry', 'dry_run'):
+            self.assertEqual(g.check(self.temp.name, 'watchers', {'action':action, 'code':'send_email()'}, 'untracked', 'default')['action'], 'block')
+        self.assertIsNone(g.check(self.temp.name, 'watchers', {'action':'list'}, 'untracked', 'default'))
