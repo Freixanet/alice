@@ -104,7 +104,7 @@ for name in ai.hermes.gateway ai.hermes.dashboard; do
     [[ $name == ai.hermes.gateway ]] && port=8644
     "$python" - "$port" <<'PY'
 import socket, sys, time
-deadline = time.monotonic() + 30
+deadline = time.monotonic() + 120
 while time.monotonic() < deadline:
     try:
         with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=1):
