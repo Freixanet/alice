@@ -44,6 +44,17 @@ class WatcherAPITests(unittest.TestCase):
         response = self.client.put(root + "/route", json={"provider": "cheap", "model": "cheap", "base_url": "https://example.com/v1", "api_key": "must-not-store"})
         self.assertEqual(response.status_code, 422)
 
+    def test_delete_from_dashboard_removes_watch_and_blocks_activation(self):
+        root = "/api/plugins/alice/watchers"
+        response = self.client.post(root, json={"name": "Remove me", "source": "builtin", "config": {"kind": "follow_up"}, "created_by_request": "Remind me"})
+        ident = response.json()["watcher"]["id"]
+        response = self.client.post(root + f"/{ident}/actions", json={"action": "delete"})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.json()["deleted"])
+        self.assertEqual(self.client.get(root).json()["watchers"], [])
+        self.assertEqual(self.client.post(root + f"/{ident}/actions", json={"action": "activate"}).status_code, 400)
+        self.assertEqual(self.client.post(root + f"/{ident}/actions", json={"action": "delete"}).status_code, 200)
+
     def test_per_watcher_provider_rotation_and_scope(self):
         module = self.api._watcher_module()
         store = module.Store(Path(self.temp.name))

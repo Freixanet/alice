@@ -95,7 +95,7 @@ class Store:
         if not row:
             raise WatcherError("Watcher not found.")
         record = json.loads(row[0])
-        if owner is not None and owner != record["owner"]:
+        if owner is not None and (owner != record["owner"] or record["status"] == "deleted"):
             raise WatcherError("Watcher not found.")
         return record
 
@@ -107,7 +107,7 @@ class Store:
         for row in rows:
             row["pending"] = self.db.execute("SELECT count(*) FROM events WHERE watcher=? AND status='pending'", (row["id"],)).fetchone()[0]
             row.pop("webhook_hash", None)
-        return rows
+        return [row for row in rows if row["status"] != "deleted"]
 
     def create(self, owner, name, source, config, code, created_by_request):
         sibling("watcher_sources.py").validate(source, config)
@@ -138,6 +138,8 @@ class Store:
         return self.get(ident, owner)
 
     def terminal(self, record, status, reason, detail):
+        if record["status"] == "deleted":
+            return
         if (record["status"], record["reason"]) == (status, reason):
             return
         record.update(status=status, reason=reason, status_version=record["status_version"] + 1)
@@ -184,6 +186,23 @@ class Store:
         with self.transaction():
             self.get(ident, owner)
             self.db.execute("UPDATE events SET status='discarded' WHERE watcher=? AND status='pending'", (ident,))
+
+    def delete(self, ident, owner="local"):
+        # Keep a tombstone so an in-flight poll cannot recreate or reactivate it.
+        with self.transaction():
+            record = self.get(ident)
+            if record["owner"] != owner:
+                raise WatcherError("Watcher not found.")
+            record.update(status="deleted", reason="user", webhook_hash=None, state={}, config={},
+                          created_by_request="", status_version=record["status_version"] + 1)
+            self.save(record)
+            for table in ("events", "history", "notices", "dedup"):
+                self.db.execute(f"DELETE FROM {table} WHERE watcher=?", (ident,))
+            self.db.execute("UPDATE inbox SET status='cancelled',content='[]',error=NULL WHERE watcher=? AND status IN ('open','ready')", (ident,))
+        path = Path(record["code_path"])
+        # Only remove the script Alice created, never a stored arbitrary path.
+        if path == self.folder / "code" / (ident + ".py"):
+            path.unlink(missing_ok=True)
 
     def rotate_webhook(self, ident, owner="local", revoke=False):
         secret = None if revoke else secrets.token_urlsafe(32)
@@ -386,6 +405,8 @@ class Engine:
                     store.accepted_notify(record, event, message, key, result)
                 with store.transaction():
                     fresh = store.get(ident)
+                    if fresh["status"] == "deleted":
+                        return {"notified": False, "acked": False, "checkpoint": {}}
                     fresh["state"] = bounded(state, 4096)
                     store.save(fresh)
                     if acked:
@@ -396,6 +417,8 @@ class Engine:
                 # Staged intents have no effect if any later capability fails.
                 with store.transaction():
                     fresh = store.get(ident)
+                    if fresh["status"] == "deleted":
+                        return {"notified": False, "acked": False, "checkpoint": {}}
                     fresh["state"] = bounded(state, 4096)
                     fresh["state"]["error"] = state.get("error", {"kind": "source_error" if "missing_body" in str(exc) else "error", "event_id": event_id})
                     if isinstance(exc, sibling("watcher_runner.py").RunnerError):

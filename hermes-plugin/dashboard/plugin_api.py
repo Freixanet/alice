@@ -3004,6 +3004,9 @@ class _WatcherAction(BaseModel):
 @router.post("/watchers/{watcher_id}/actions")
 async def watcher_action(watcher_id: str, body: _WatcherAction) -> JSONResponse:
     def act(store):
+        if body.action == "delete":
+            store.delete(watcher_id, "local")
+            return {"deleted": True, "id": watcher_id}
         store.get(watcher_id, "local")
         if body.action == "dry_run":
             return {"results": _watcher_module().Engine(store).dry_run(watcher_id)}

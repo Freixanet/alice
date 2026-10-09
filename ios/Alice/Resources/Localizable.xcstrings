@@ -20059,6 +20059,26 @@
           }
         }
       }
+    },
+    "Delete watch": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eliminar vigilancia"
+          }
+        }
+      }
+    },
+    "Stops checks and ignores waiting items. Your emails and existing chat messages will not be deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dejará de comprobar novedades e ignorará los elementos pendientes. No se borrarán tus correos ni los mensajes del chat."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

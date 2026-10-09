@@ -93,6 +93,42 @@ class WatcherTests(unittest.TestCase):
         self.assertTrue(self.main.messages[0]["proactive"])
         self.assertEqual(self.store.pending(self.ident), [])
 
+    def test_delete_stops_watch_and_cancels_waiting_delivery(self):
+        self.store.ingest(self.ident, self.event())
+        self.engine.run_event(self.ident, "e")
+        secret = self.store.rotate_webhook(self.ident)
+        script = Path(self.store.get(self.ident)["code_path"])
+        self.store.delete(self.ident)
+        self.assertEqual(self.store.listing(), [])
+        self.assertFalse(script.exists())
+        self.assertEqual(self.store.pending(self.ident), [])
+        self.assertIsNone(self.store.webhook_owner(secret))
+        self.assertEqual(self.store.db.execute("SELECT status,content FROM inbox").fetchone()[:], ("cancelled", "[]"))
+        self.tick([self.event("another")])
+        self.assertEqual(self.main.calls, 0)
+        with self.assertRaises(w.WatcherError):
+            self.store.activate(self.ident, runner=self.runner)
+        self.store.delete(self.ident)  # A retried delete is safe.
+
+    def test_delete_is_owner_scoped(self):
+        with self.assertRaises(w.WatcherError):
+            self.store.delete(self.ident, "another-user")
+        self.assertEqual(self.store.get(self.ident)["status"], "active")
+
+    def test_delete_during_classification_cannot_notify_or_restore_watch(self):
+        self.store.ingest(self.ident, self.event())
+        original = self.cheap.classify
+        def classify(state, questions):
+            self.store.delete(self.ident)
+            return original(state, questions)
+        self.cheap.classify = classify
+        result = self.engine.run_event(self.ident, "e")
+        self.assertFalse(result["notified"])
+        self.assertEqual(self.store.get(self.ident)["status"], "deleted")
+        self.assertEqual(self.store.get(self.ident)["state"], {})
+        self.assertEqual(self.store.listing(), [])
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM inbox").fetchone()[0], 0)
+
     def test_email_creation_requires_explicit_filter_and_nonempty_script(self):
         before = len(self.store.listing())
         for config, code in (({}, CODE), ({"query": " "}, CODE),

@@ -169,6 +169,13 @@ collapsed advanced sections. Source validation errors and test results use plain
 language instead of HTTP errors, JSON or event IDs. Ignoring pending items still
 requires confirmation and does not delete emails.
 
+To remove a watch yourself, open **Watches → the watch → Delete watch** and
+confirm its name. This stops polling, removes it from the list, revokes its
+webhook and clears pending events and unsent alert batches. It does not delete
+source emails or existing chat messages. A delivery already handed to Hermes
+or in progress can still finish. An internal deletion marker prevents an
+in-flight classifier or later retry from restoring the watch.
+
 This host command creates exactly one watcher, without invoking the main model.
 Its query is restricted to a unique test subject. Keep the printed ID for retry
 or pause. Run this creation once; repeating it creates another watcher.

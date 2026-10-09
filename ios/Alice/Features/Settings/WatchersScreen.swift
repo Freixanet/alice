@@ -98,6 +98,7 @@ private struct WatcherDetailScreen: View {
     @State private var failure: String?
     @State private var preview: String?
     @State private var confirmingDiscard = false
+    @State private var confirmingDelete = false
 
     var body: some View {
         List {
@@ -151,6 +152,10 @@ private struct WatcherDetailScreen: View {
                     Text(watcher.id).font(.caption).textSelection(.enabled)
                 }
             }
+            Section {
+                Button("Delete watch", role: .destructive) { confirmingDelete = true }
+                    .disabled(busy)
+            }
         }
         .navigationTitle(watcher.name)
         .navigationBarTitleDisplayMode(.inline)
@@ -160,6 +165,11 @@ private struct WatcherDetailScreen: View {
             Button("Ignore these items", role: .destructive) { perform("discard") }
         } message: {
             Text("They will not be checked again. Your emails will not be deleted.")
+        }
+        .confirmationDialog("Delete “\(watcher.name)”?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete watch", role: .destructive) { perform("delete") }
+        } message: {
+            Text("Stops checks and ignores waiting items. Your emails and existing chat messages will not be deleted.")
         }
     }
 
@@ -171,6 +181,7 @@ private struct WatcherDetailScreen: View {
             defer { busy = false }
             do {
                 let result = try await store.watcherClient.action(action, id: watcher.id)
+                if action == "delete" { dismiss(); return }
                 if action == "dry_run" { preview = result }
                 let loaded = try await store.watcherClient.load()
                 if let updated = loaded.watchers.first(where: { $0.id == watcher.id }) { watcher = updated }

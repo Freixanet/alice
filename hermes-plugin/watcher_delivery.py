@@ -37,6 +37,9 @@ def flush(store, delivery=None, *, force=False):
         store.db.execute("UPDATE inbox SET status='ready' WHERE status='open' AND (due<=? OR ?)", (store.clock(), force))
         rows = [dict(row) for row in store.db.execute("SELECT * FROM inbox WHERE status='ready' ORDER BY created")]
     for row in rows:
+        current = store.db.execute("SELECT status FROM inbox WHERE id=?", (row["id"],)).fetchone()
+        if not current or current["status"] != "ready":
+            continue
         try:
             receipt = delivery.accept(row["id"], json.loads(row["content"]))
             if not isinstance(receipt, dict) or receipt.get("id") != row["id"]:
