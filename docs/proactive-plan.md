@@ -16,8 +16,9 @@ Las compras están desactivadas y sus herramientas no se registran.
   su uso real no se ha validado como Gmail.
 - **Fase 2:** tablero Tasks, estados del host, revisiones versionadas,
   comprobaciones, continuidad en la sesión original y autonomía están
-  implementados. Pendiente una revisión real en el iPhone con pedir cambios,
-  nueva tarjeta, aceptación y finalización; no equivale a las pruebas con fixtures.
+  implementados. Petición de cambios, aceptación y finalización probadas en el
+  iPhone; el fallo descubierto y la recuperación manual están documentados abajo.
+  Pendiente repetir el recorrido corregido sin intervención manual.
 - **Fase 3, alcance autorizado:** un aviso marcado por lote con qué ocurrió,
   por qué importa y una respuesta de un toque; una sola rutina matinal, por
   defecto 08:00 Europe/Madrid, silenciosa si no hay novedades; agrupación y
@@ -44,7 +45,11 @@ omitir bloques conserva el resultado. Tres regresiones fallaban antes y las
 no requiere reinstalar la app. Se recuperó manualmente el resultado de la
 respuesta original del modelo (mensaje 23697), con copia del registro anterior,
 sin otra llamada al modelo ni crear una Task: `needs_review`, versión 7.
-Pendientes la aceptación física y la finalización posterior. No se envió la nota.
+El usuario aceptó desde el iPhone: Hermes terminó la misma Task en versión 9,
+con `review_required=false`, el bloque de seis palabras intacto y cuatro
+comprobaciones. Aceptación y finalización reales verificadas por API; no se envió
+la nota ni se utilizó un servicio externo. La nueva revisión anterior fue una
+recuperación manual del fallo, no una segunda revisión autónoma del modelo.
 
 Verificación más reciente del plugin: 710 pruebas; 708 pasan, una omitida,
 un timeout en `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes`.
