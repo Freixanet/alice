@@ -339,3 +339,24 @@ Watchers sobre ese archivo y conserva esos hooks. Se comprobó la sintaxis del
 resultado y `git apply --check` sobre el plugin real: resultado 0, sin modificarlo.
 No se usó el instalador general, que sobrescribiría archivos vivos.
 **Fase 2 no iniciada.**
+
+
+## Despliegue solicitado (9 de octubre de 2026)
+
+- Paso 1: iPhone `A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B` tenía build 87.
+  Se compiló y firmó build **88**, revisión `8a3fd02`, se instaló y se leyó de
+  vuelta mediante `devicectl device info apps`: build 88 confirmado.
+  La firma en Documents falló por FinderInfo en AliceShare; el build temporal
+  `/private/tmp/alice-watchers-device-build` completó correctamente. Sin simulador.
+- Paso 2: backup `~/.hermes/backups/plugin-alice-20261009-133429`, parche comprobado
+  y aplicado, conservando `_register_purchase_browser(ctx)`. Plugin habilitado,
+  gateway reiniciado y confirmado mediante `hermes gateway status --deep`, luego
+  dashboard reiniciado y puerto 9119 escuchando. GET sin sesión a Watchers devuelve
+  401, como exige la autenticación. No se ha comprobado aún la pantalla autenticada.
+- Paso 4: creado exactamente un watcher Gmail test pausado, 0 pendientes:
+  **`4ae19f9cce5546adb661d9634108528b`**. Sin cron activado ni dry run/modelo llamado.
+  Falta el consentimiento de Google y la ruta económica explícita del usuario.
+  Se preparó OAuth con su cliente existente de Descargas; no se aprobó consentimiento.
+- No se envió ningún correo, no se hicieron pruebas UI en el teléfono y no se
+  configuró Bark. La creación no inicia trabajo hasta activarse explícitamente.
+  Fase 2 no iniciada.

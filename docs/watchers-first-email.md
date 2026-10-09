@@ -1,8 +1,9 @@
 # Install Watchers and test one real Gmail watch
 
 This is Phase 1 only. These steps install on the existing iPhone and Mac Hermes
-host; they do not start Review Tasks. The device build has compiled, but this
-installation and a real email/model/push test have not been performed by Codex.
+host; they do not start Review Tasks. On 9 October, Codex installed and verified
+build 88 and deployed the plugin with a backup. The test watcher was created
+paused; real email/model/push checks await OAuth and cheap-route configuration.
 Run the commands in **zsh**. Keep the existing app; do not delete it.
 
 ## 1. Install on iPhone
@@ -22,18 +23,19 @@ xcrun devicectl device info apps \
 read 'alice_next_build?Enter an integer greater than the installed Alice build: '
 xcodegen generate --spec ios/project.yml
 xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
-  -destination 'generic/platform=iOS' -derivedDataPath ios/.build/DeviceData \
+  -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/alice-watchers-device-build \
   -allowProvisioningUpdates CURRENT_PROJECT_VERSION="$alice_next_build" \
   ALICE_SOURCE_REVISION="$(git rev-parse --short HEAD)" build
 ```
 
-Continue only after `BUILD SUCCEEDED`. This is a signed device build; the earlier
+Continue only after `BUILD SUCCEEDED`. The temporary build directory avoids Finder metadata added under Documents that
+can block extension signing. This is a signed device build; the earlier
 `CODE_SIGNING_ALLOWED=NO` verification product cannot be installed as-is.
 
 ```sh
 xcrun devicectl device install app \
   --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
-  ios/.build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
+  /private/tmp/alice-watchers-device-build/Build/Products/Debug-iphoneos/Alice.app
 xcrun devicectl device info apps \
   --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
   --bundle-id com.freixanet.alice --columns '*'
