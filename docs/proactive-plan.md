@@ -2,7 +2,7 @@
 
 ## Estado vigente — 9 octubre 2026
 
-Rama `codex/proactive-watchers`. Plugin instalado: `d042d5f`; app iPhone:
+Rama `codex/proactive-watchers`. Plugin instalado: `958cc0e`; app iPhone:
 build 97, `99f3b7f`. El cambio posterior del plugin no requiere otra app.
 Las compras están desactivadas y sus herramientas no se registran.
 
@@ -32,12 +32,19 @@ Las compras están desactivadas y sus herramientas no se registran.
   notificación con peticiones firmadas/reintento, y tarjetas con varias opciones
   que creen Tasks conservando el contexto. No añadir más tipos de rutinas.
 
-Comprobación real de Tasks en curso: Alice creó
-`7c2c4723a4e742498e900f046161cdf9` («Validación de Tasks — nota de prueba»)
-en la sesión principal existente; llegó a `needs_review`, versión 3, con un
-bloque de texto y comprobaciones. No se envió la nota ni se autorizó una acción
-externa. Pendientes los botones físicos de pedir cambios y aceptar, la nueva
-versión y la finalización después de la decisión del usuario.
+Comprobación real de Tasks en curso: misma Task
+`7c2c4723a4e742498e900f046161cdf9` («Validación de Tasks — nota de prueba»).
+El usuario encontró la tarjeta en la columna horizontal Para revisar y pidió
+una frase de máximo ocho palabras. La continuación real produjo «Gracias de
+corazón; lo valoro mucho.» (seis palabras), pero el código permitió finalizar
+sin nueva aceptación y borró el texto al omitir `blocks_json`.
+`958cc0e` corrige ambos fallos: la revisión pendiente persiste hasta aceptar y
+omitir bloques conserva el resultado. Tres regresiones fallaban antes y las
+24 pruebas Tasks/API/hook pasan con la corrección. Plugin instalado con backup;
+no requiere reinstalar la app. Se recuperó manualmente el resultado de la
+respuesta original del modelo (mensaje 23697), con copia del registro anterior,
+sin otra llamada al modelo ni crear una Task: `needs_review`, versión 7.
+Pendientes la aceptación física y la finalización posterior. No se envió la nota.
 
 Verificación más reciente del plugin: 710 pruebas; 708 pasan, una omitida,
 un timeout en `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes`.
