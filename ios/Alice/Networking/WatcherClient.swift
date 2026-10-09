@@ -58,9 +58,7 @@ struct WatcherSnapshot: Decodable, Sendable {
 struct WatcherClient: Sendable {
     let dashboard: DashboardClient
     func morning(_ settings: WatcherSnapshot.Morning) async throws {
-        try await dashboard.send("PUT", "api/plugins/alice/watchers/morning", [
-            "enabled": settings.enabled, "time": settings.time, "timezone": settings.timezone
-        ])
+        try await dashboard.configureWatcherMorning(settings)
     }
     func load() async throws -> WatcherSnapshot { try await dashboard.watcherSnapshot() }
     func configure(_ route: WatcherSnapshot.Route) async throws { try await dashboard.configureWatcherRoute(route) }
@@ -71,6 +69,12 @@ struct WatcherClient: Sendable {
 }
 
 extension DashboardClient {
+    func configureWatcherMorning(_ settings: WatcherSnapshot.Morning) async throws {
+        try await send("PUT", "api/plugins/alice/watchers/morning", [
+            "enabled": settings.enabled, "time": settings.time, "timezone": settings.timezone
+        ])
+    }
+
     func watcherSnapshot() async throws -> WatcherSnapshot {
         let object = try await get("api/plugins/alice/watchers")
         return try JSONDecoder().decode(WatcherSnapshot.self, from: JSONSerialization.data(withJSONObject: object))
