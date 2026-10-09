@@ -17,6 +17,12 @@ cd /Users/mfreixanet/Documents/ChatGPT/Alice
 git status --short
 # Expected: clean; branch codex/proactive-watchers.
 git branch --show-current
+# Both checks must succeed: the branch contains the installed source and is pushed.
+alice_home="${HERMES_HOME:-$HOME/.hermes}"
+alice_installed_source=$(cat "$alice_home/plugins/alice/INSTALLED_FROM")
+git merge-base --is-ancestor "$alice_installed_source" HEAD
+test "$(git rev-parse HEAD)" = "$(git rev-parse '@{upstream}')"
+# A higher build number alone does NOT preserve another branch's features.
 xcrun devicectl device info apps \
   --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
   --bundle-id com.freixanet.alice --columns '*'
@@ -47,61 +53,19 @@ fails, reconnect/unlock the phone before proceeding; no install is established.
 
 ## 2. Update the existing plugin safely
 
-These commands update an **already installed** Alice plugin. They back it up and
-apply a checked patch instead of overwriting unrelated live modifications. If the
-check fails, stop and reconcile that conflict; do not force the patch. Pause any
-existing watchers before updating an installation that already has this feature.
+The previous manual patch instructions were for the original Watchers-only
+checkout. They are superseded by the recovered combined source. Do not reinstall
+from the old `9dc0dcc`/`8a3fd02` code: it omits the previous native UI.
 
-```sh
-cd /Users/mfreixanet/Documents/ChatGPT/Alice
-alice_home="${HERMES_HOME:-$HOME/.hermes}"
-alice_backup="$alice_home/backups/plugin-alice-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$alice_home/backups"
-cp -R "$alice_home/plugins/alice" "$alice_backup"
-git diff --binary 684c4da HEAD -- hermes-plugin \
-  ':!hermes-plugin/tests' ':!hermes-plugin/README.md' ':!hermes-plugin/__init__.py' \
-  > /private/tmp/alice-watchers-plugin.patch
-# Compose the registration hunk against the live file, preserving its extra hooks.
-ALICE_WATCHER_PLUGIN_HOME="$alice_home" python3 - <<'PYINSTALL'
-import difflib, os
-from pathlib import Path
-repo = Path('/Users/mfreixanet/Documents/ChatGPT/Alice')
-live = Path(os.environ['ALICE_WATCHER_PLUGIN_HOME'])/'plugins/alice/__init__.py'
-old = live.read_text()
-anchor = '    _register_work_tools(ctx)\n'
-marker = '    watcher_tools = _module("watcher_tools.py", "alice_watcher_tools")'
-assert old.count(anchor) == 1, 'Ambiguous live registration: stop and reconcile.'
-assert marker not in old, 'Watchers already registered: stop; do not install twice.'
-source = (repo/'hermes-plugin/__init__.py').read_text()
-block = source[source.index(marker):]
-assert len(block) < 1000, 'Registration layout changed: stop and reconcile.'
-new = old.replace(anchor, anchor + block)
-patch = ''.join(difflib.unified_diff(old.splitlines(True), new.splitlines(True),
-    fromfile='a/hermes-plugin/__init__.py', tofile='b/hermes-plugin/__init__.py'))
-with Path('/private/tmp/alice-watchers-plugin.patch').open('a') as handle:
-    handle.write(patch)
-PYINSTALL
-git apply --check --unsafe-paths -p2 \
-  --directory="$alice_home/plugins/alice" /private/tmp/alice-watchers-plugin.patch
-# Run the next command only if the check returned successfully.
-git apply --unsafe-paths -p2 \
-  --directory="$alice_home/plugins/alice" /private/tmp/alice-watchers-plugin.patch
-hermes plugins enable alice --no-allow-tool-override
-launchctl kickstart -k "gui/$(id -u)/ai.hermes.gateway"
-hermes gateway status --deep
-```
+Before any plugin or iPhone installation, use a clean committed and pushed branch
+that contains the commit in `~/.hermes/plugins/alice/INSTALLED_FROM`. Follow the
+"one source, one agent at a time" section in **AGENTS.md**. Use the repository's
+`hermes-plugin/install.sh` for a future plugin update, preserving its backup and
+source receipt; restart gateway and verify it before restarting dashboard.
 
-Wait for the gateway status to report healthy before restarting the dashboard:
-
-```sh
-launchctl kickstart -k "gui/$(id -u)/ai.hermes.dashboard"
-```
-
-Reconnect Alice. Open the existing main Alice chat. Watchers deliver into that
-installation's main chat, not an arbitrary bot. No source data or keys go to a
-shared Alice backend. To roll back, restore the backup and restart gateway then
-dashboard in this same order. The watcher journal is kept separately under
-`$alice_home/.alice/watchers`; do not delete it during rollback.
+The live Watchers plugin was already updated with a backup on 9 October. The UI
+recovery changes the iPhone app; it does not require another live plugin restart.
+The watcher journal under `$alice_home/.alice/watchers` must remain in place.
 
 ## 3. Connect Gmail and configure the cheap classifier
 
