@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 LOG = Path(".alice") / "actions.jsonl"
+TEXT_CHARS = 2500
 # Bounded: a phone shows the recent weeks, and the file must not grow forever.
 MAX_BYTES = 1_000_000
 KEEP_LINES = 2000
@@ -192,6 +193,9 @@ def classify(tool: str, args: Optional[Dict[str, Any]], result: Any = None,
             kind = "skill.changed"
         else:
             return None
+        if _parsed_result(result).get("staged"):
+            # Staged for review, not yet written: skill_keeper.py says whether it was kept or held.
+            kind = "skill.proposed"
         return {"kind": kind, "target": ", ".join(dict.fromkeys(names))}
     if tool in ("write_file", "patch"):
         path = args.get("path") or args.get("file_path") or ""
@@ -236,28 +240,42 @@ def _log_path(root: Path) -> Path:
 
 
 def record(root: Path, *, profile: str, session: str, tool: str, kind: str, target: Any,
-           ok: bool, now: Optional[float] = None) -> Dict[str, Any]:
+           ok: bool, now: Optional[float] = None, summary: str = "", text: str = "") -> Dict[str, Any]:
     entry = {"v": 1, "id": uuid.uuid4().hex[:16], "at": round(now or time.time(), 3),
              "profile": profile or "default", "session": session or "", "tool": tool,
              "kind": kind, "target": _clip(target), "ok": bool(ok)}
+    # What a lesson taught, for the person to read when they tap it (skill_keeper.py).
+    if summary:
+        entry["summary"] = summary.strip()[:400]
+    if text:
+        entry["text"] = text.strip()[:TEXT_CHARS]
     path = _log_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, ensure_ascii=False) + "\n"
-    # One short line in append mode: whole even with two gateways writing at once.
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(line)
-    try:
-        if path.stat().st_size > MAX_BYTES:
-            _trim(path)
-    except OSError:
-        pass
+    # Appending and trimming under one file lock: a line appended while the trim rewrote the file
+    # was lost (two processes write here: the gateway and the dashboard).
+    import fcntl
+    with open(str(path) + ".lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line)
+            try:
+                if path.stat().st_size > MAX_BYTES:
+                    _trim(path)
+            except OSError:
+                pass
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
     return entry
 
 
 def _trim(path: Path) -> None:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-    temp = path.with_suffix(".tmp")
-    temp.write_text("".join(lines[-KEEP_LINES:]), encoding="utf-8")
+    import tempfile
+    fd, temp = tempfile.mkstemp(dir=str(path.parent), prefix=".actions.")
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write("".join(lines[-KEEP_LINES:]))
     os.replace(temp, path)
 
 

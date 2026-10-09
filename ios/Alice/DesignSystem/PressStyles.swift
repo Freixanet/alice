@@ -59,3 +59,18 @@ extension ButtonStyle where Self == PressableRowStyle {
     static var pressableRow: PressableRowStyle { PressableRowStyle() }
     static func pressableRow(cornerRadius: CGFloat) -> PressableRowStyle { PressableRowStyle(cornerRadius: cornerRadius) }
 }
+
+/// `withAnimation`, except with Reduce Motion on: then the change happens at once. Most of Alice's
+/// animations (99 calls) ignored the setting.
+@MainActor
+@discardableResult
+func withMotion<Result>(_ animation: Animation? = .default, _ body: () throws -> Result) rethrows -> Result {
+    try withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : animation, body)
+}
+
+/// The same, with a completion (which then runs at once).
+@MainActor
+func withMotion<Result>(_ animation: Animation? = .default, _ body: () throws -> Result,
+                        completion: @escaping () -> Void) rethrows -> Result {
+    try withAnimation(UIAccessibility.isReduceMotionEnabled ? nil : animation, body, completion: completion)
+}

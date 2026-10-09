@@ -112,6 +112,41 @@ class CheckoutTests(Base):
         self.assertEqual(checkout["currency"], "EUR")
         self.assertEqual(checkout["items"][0]["qty"], 1)
 
+    def test_the_checkout_keeps_the_breakdown_and_the_conditions(self):
+        entry = self.errand()
+        args = {**CHECKOUT, "breakdown": [{"label": "Subtotal", "amount": "28,98 €"},
+                                          {"label": "Cupón MRKEHEL", "amount": "-1,00 €"},
+                                          {"label": "Envío", "amount": ""}, "bad"],
+                "conditions": ["Se renueva solo a 14,93 €/año", "", "Sin devoluciones"]}
+        errands.request_checkout(self.home, entry["id"], args, now=NOW)
+        checkout = errands.get(self.home, entry["id"])["checkout"]
+        self.assertEqual([line["label"] for line in checkout["breakdown"]], ["Subtotal", "Cupón MRKEHEL"])
+        self.assertEqual(checkout["conditions"], ["Se renueva solo a 14,93 €/año", "Sin devoluciones"])
+
+    def test_lines_that_do_not_add_up_to_the_total_are_read_again(self):
+        entry = self.errand()
+        args = {**CHECKOUT, "total": "31,98 €", "currency": "EUR",
+                "breakdown": [{"label": "Subtotal", "amount": "27,98 €"}, {"label": "Envío", "amount": "3,99 €"}]}
+        out = errands.request_checkout(self.home, entry["id"], args, now=NOW)
+        self.assertFalse(out["ok"])
+        self.assertIn("31,97", out["error"])
+        out = errands.request_checkout(self.home, entry["id"], {**args, "breakdown_checked": True}, now=NOW)
+        self.assertTrue(out["ok"])
+        args["breakdown"].append({"label": "Cupón X", "amount": "-0,99 €"})
+        args["total"] = "30,98 €"
+        self.assertTrue(errands.request_checkout(self.home, entry["id"], {**args}, now=NOW)["ok"])
+
+    def test_an_approval_stands_when_the_checkout_comes_back_unchanged(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        checkout = errands.get(self.home, entry["id"])["checkout"]
+        errands.decide_checkout(self.home, entry["id"], True, now=NOW, card_label="Visa ···4242")
+        again = errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW + 60)
+        self.assertEqual(again["status"], "approved")
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["id"], checkout["id"])
+        moved = errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "29,98 €"}, now=NOW + 120)
+        self.assertEqual(moved["status"], "needs_approval")
+
     def test_only_https_images_are_kept(self):
         entry = self.errand()
         items = [{"name": "X", "image": "javascript:alert(1)"}, {"name": "Y", "image": "http://x/y.jpg"}]
@@ -252,6 +287,58 @@ class GateTests(Base):
         entry = self.approved(at=NOW)
         self.assertIsNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
                                            args={"code": "click_text('Pagar')"}, now=NOW + 20))
+
+    def test_page_code_devtools_and_dialogs_pay_like_a_click(self):
+        # browser_console runs any JavaScript; browser_cdp sends raw DevTools input; browser_dialog
+        # accepts the page's «Confirm purchase?». None of them may pay without the approval.
+        entry = self.errand()
+        session = entry["session_id"]
+        pay_page = "https://www.hsnstore.com/checkout/index/index/step/payment/"
+        console = {"expression": "document.querySelector('#place-order').click()"}
+        cdp = {"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed", "x": 400, "y": 508}}
+        dialog = {"action": "accept"}
+        for tool, args in (("browser_console", console), ("browser_cdp", cdp), ("browser_dialog", dialog)):
+            self.assertEqual(errands.pay_gate(self.home, session, tool_name=tool, args=args, active_url=pay_page,
+                                              press_pays=True)["action"], "block", tool)
+        self.assertEqual(errands.pay_gate(self.home, session, tool_name="browser_console", args=console,
+                                          active_url=pay_page)["action"], "block")
+        # Reading is not pressing.
+        self.assertFalse(errands._raw_presses("browser_console", {"expression": "document.title"}))
+        self.assertFalse(errands._raw_presses("browser_console", {}))
+        self.assertFalse(errands._raw_presses("browser_cdp", {"method": "Target.getTargets"}))
+        self.assertFalse(errands._raw_presses("browser_dialog", {"action": "dismiss"}))
+        self.assertTrue(errands._raw_presses("browser_console", {"expression": "fetch('/order',{method:'POST'})"}))
+
+    def test_a_stopped_errand_cannot_pay_even_with_an_approval(self):
+        entry = self.approved(at=NOW)
+        errands.stop(self.home, entry["id"])
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "revoked")
+        self.assertIsNotNone(errands.pay_gate(self.home, entry["session_id"], tool_name="browser_exec",
+                                              args={"code": "click_text('Pagar')"}, now=NOW + 20))
+
+    def test_an_approval_pays_once_and_only_on_its_shop(self):
+        entry = self.approved(at=NOW)
+        session = entry["session_id"]
+        pay = {"code": "click_text('Pagar')"}
+        self.assertIsNotNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay,
+                                              active_url="https://www.amazon.es/checkout/pay", now=NOW + 20))
+        self.assertIsNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay,
+                                           active_url="https://sis.redsys.es/pay", gateways=GATEWAYS, now=NOW + 20))
+        errands.record_receipt(self.home, session, {"outcome": "paid", "order": "HSN-1", "total": "27,98 €"},
+                               now=NOW + 40)
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "consumed")
+        self.assertIsNotNone(errands.pay_gate(self.home, session, tool_name="browser_exec", args=pay, now=NOW + 60))
+
+    def test_allow_and_deny_together_decide_once(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda allow: errands.decide_checkout(self.home, entry["id"], allow, now=NOW + 5),
+                                    (True, False)))
+        self.assertEqual(sum(1 for r in results if r is not None), 1)
+        final = errands.get(self.home, entry["id"])
+        self.assertIn(final["checkout"]["status"], ("approved", "denied"))
+        self.assertEqual(final["status"], "working" if final["checkout"]["status"] == "approved" else "denied")
 
     def test_a_saved_login_is_used_without_asking_unless_asked_to_ask(self):
         self.assertIsNone(errands.login_gate(self.home, self.errand()["session_id"]))
@@ -613,6 +700,11 @@ class AuditFixTests(Base):
             self.assertEqual(errands.blocked_by(said, offer), {"kind": "other"})
         self.assertEqual(errands.blocked_by("precio 34,99 € en la cesta", offer), {"kind": "price", "price": "34,99 €"})
         self.assertEqual(errands.blocked_by("el navegador no está disponible", offer), {"kind": "other"})
+        # 06-10: cheaper at the shop is not a stop, and it is read without the word «precio».
+        chosen = {"price": "29,99 €", "currency": "EUR"}
+        self.assertEqual(errands.blocked_by("la ficha permite 80 cápsulas veganas por 23,99 €, no por los 29,99 € "
+                                            "elegidos", chosen), {"kind": "cheaper", "price": "23,99 €"})
+        self.assertEqual(errands.blocked_by("precio 31,99 € en la cesta", chosen), {"kind": "price", "price": "31,99 €"})
         entry = errands.create(self.home, "Comprar", offer=offer)
         gateway = FakeGateway([done("BLOQUEADO: precio 24,49 € en la ficha frente a 34,99 € tachados"),
                                done("BLOQUEADO: no se pudo confirmar la cesta")])

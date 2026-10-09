@@ -40,7 +40,15 @@ enum ErrandTranscript {
                         && (messages[$0].mentionSessionID ?? session) == errand.originSession
                         && abs(messages[$0].createdAt.timeIntervalSince(errand.startedAt)) <= 120
                 }
-                if let owner = choices.last(where: { messages[$0].createdAt <= errand.startedAt }) ?? choices.first {
+                // Started by the plugin with no tap (the one option asked for, 07-10): under the
+                // request it answered, the last thing the person said in this chat before it.
+                let asked = choices.isEmpty && errand.originSession == session
+                    ? messages.indices.last(where: {
+                        messages[$0].role == .user && messages[$0].createdAt <= errand.startedAt
+                            && errand.startedAt.timeIntervalSince(messages[$0].createdAt) <= 1800
+                    })
+                    : nil
+                if let owner = choices.last(where: { messages[$0].createdAt <= errand.startedAt }) ?? choices.first ?? asked {
                     // The reply to the choice («La estoy preparando…») reads first, then the errand:
                     // shown before it, the reply landed above a card already on screen.
                     let replied = messages[(owner + 1)...].contains { canHost($0) }

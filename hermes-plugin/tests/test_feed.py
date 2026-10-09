@@ -37,7 +37,9 @@ class FakeGateway:
         self.stopped = []
         self.on_start = on_start
 
-    def start(self, session_id, text):
+    def start(self, session_id, text, *, model, provider):
+        # The real signature (errands.Gateway.start): a fake that drifted from it hid a feed that
+        # could never start (StartContractTests).
         self.started.append((session_id, text))
         if self.on_start:
             self.on_start(session_id)
@@ -118,6 +120,22 @@ class Publishing(Base):
             feed.publish(self.home, self.session, [post(["src_01", "src_02"], body="Only one.[1]")])
         with self.assertRaisesRegex(feed.FeedError, "inline"):
             feed.publish(self.home, self.session, [post(["src_01"], body="No markers.")])
+
+    def test_personal_post_from_connected_services_needs_no_web_source(self):
+        personal = post([], body="Stripe ha vuelto a rechazar el cobro de 10,27 €.", basis="mail",
+                        offer="Reviso qué tarjeta usa la suscripción y te digo cómo arreglarlo")
+        feed.publish(self.home, self.session, [personal], now=NOW)
+        stored = feed.listing(self.home)["posts"][0]
+        self.assertEqual((stored["basis"], stored["sources"]), ("mail", []))
+        self.assertTrue(stored["offer"].startswith("Reviso"))
+
+    def test_post_without_sources_or_basis_is_rejected(self):
+        with self.assertRaisesRegex(feed.FeedError, "set basis"):
+            feed.publish(self.home, self.session, [post([], body="Sin fuente.")])
+        with self.assertRaisesRegex(feed.FeedError, "basis must be one of"):
+            feed.publish(self.home, self.session, [post([], body="Sin fuente.", basis="rumor")])
+        with self.assertRaisesRegex(feed.FeedError, "markers need sources"):
+            feed.publish(self.home, self.session, [post([], body="Un dato.[1]", basis="mail")])
 
     def test_empty_publication_is_valid_and_only_once(self):
         self.assertEqual(feed.publish(self.home, self.session, [])["published"], 0)
@@ -340,6 +358,15 @@ class Schedule(unittest.TestCase):
         jobs = FakeJobs([theirs])
         feed.ensure_schedule(self.home, profile="inbox", jobs=jobs)
         self.assertEqual(jobs.jobs, [theirs])
+
+
+
+class StartContractTests(unittest.TestCase):
+    def test_the_fake_gateway_matches_the_real_one(self):
+        import inspect
+        errands = feed._sibling("alice_errands", "errands.py")
+        shape = lambda f: [(p.name, p.kind) for p in inspect.signature(f).parameters.values()]
+        self.assertEqual(shape(FakeGateway.start), shape(errands.Gateway.start))
 
 
 if __name__ == "__main__":

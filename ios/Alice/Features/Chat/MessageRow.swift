@@ -26,6 +26,9 @@ struct MessageRow: View {
     var errandRefs: [ErrandRef] = []
     /// This reply was written by another model than the reply before it (`ModelChange`).
     var modelChange: ModelChange? = nil
+    /// The lessons Alice kept after this reply (`LessonNotice`); tapped, they say what she learned.
+    var learned: [AgentAction] = []
+    @State private var showingLessons = false
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
@@ -33,6 +36,7 @@ struct MessageRow: View {
     @AppStorage("alice.modelChoices") private var modelChoices: String = "{}"
     /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
     @State private var showingExtras = false
+    @State private var purchaseSets: [String: PurchaseOptionSet] = [:]
 
     /// The agent this reply is from when it was asked by name in a chat that
     /// is not its own.
@@ -48,6 +52,16 @@ struct MessageRow: View {
 
     /// The experimental interface draws every reply's words in a bubble, in Alice's chat and the agents'.
     private var bubblesReplies: Bool { store.developerMode && homeInterface == .experimental }
+
+    /// The reply's language: its own words once there are some; before that (cards drawn while it
+    /// still streams) the person's message it answers. From the empty reply it read English first.
+    private var replyLanguage: ChatLanguage {
+        if !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return ChatLanguage.of(message.content)
+        }
+        let asked = store.shownConversation?.messages.last { $0.role == .user && $0.createdAt <= message.createdAt }
+        return ChatLanguage.of(asked?.content ?? "")
+    }
 
     @ViewBuilder
     private func inBubble<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -95,6 +109,15 @@ struct MessageRow: View {
         } else {
             RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras,
                             bubbled: bubbled)
+                // A hold is the menu, so the words are not selected in place; Select opens them.
+                .environment(\.allowsRichTextSelection, false)
+                .contentShape(.contextMenuPreview, .rect(cornerRadius: 22))
+                .contextMenu {
+                    if canShowActions { ReplyMenu(message: actionsMessage, selecting: $selectingText) }
+                }
+                // Only the words swipe to be answered: cards and carousels keep their own swipes.
+                .replySwipe(actionsMessage, author: ReplyMenu.author(of: actionsMessage, in: store),
+                            enabled: !message.pending && !message.content.isEmpty)
         }
     }
 
@@ -173,15 +196,19 @@ struct MessageRow: View {
                     // shown in the card that asked («Elegida»), not as words the person typed.
                     EmptyView()
                 } else if !message.content.isEmpty {
+                    // An answer to one reply carries it on top, quoted (`ReplyQuote`).
+                    if let quoted = ReplyQuote.split(message.content) {
+                        QuotedReply(text: quoted.quote)
+                    }
                     // Only a hold opens its actions, as in Messages; a tap does
                     // nothing. (A tap-opened SwiftUI `Menu` crashed on a double
                     // tap in build 60, and a row of buttons under every sent
                     // message on a tap was not wanted either.)
                     // Only the named agent is emphasized; the bubble keeps one text colour.
                     Text(store.mentionStyled(
-                        PurchaseChoice.display(AskPerson.display(message.content)),
+                        PurchaseChoice.display(AskPerson.display(ReplyQuote.split(message.content)?.text ?? message.content)),
                         bareSlugs: message.mentionProfile.map { [$0] } ?? [],
-                        selectedRanges: message.selectedMentionRanges
+                        selectedRanges: ReplyQuote.ranges(message.selectedMentionRanges, in: message.content)
                     ))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
@@ -194,13 +221,13 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
                 ForEach(errandRefs, id: \.self) { ref in
-                    ErrandChatBlock(ref: ref).frame(maxWidth: .infinity, alignment: .leading)
+                    ErrandChatBlock(ref: ref).chatWide()
                 }
             case .assistant:
                 // Said where it happened: the model changed (chosen, or Hermes fell back because the
                 // usual one failed), with nothing else in the chat to show it.
                 if let modelChange {
-                    Label(modelChange.said(in: ChatLanguage.of(message.content)), systemImage: "arrow.triangle.2.circlepath")
+                    Label(modelChange.said(in: replyLanguage), systemImage: "arrow.triangle.2.circlepath")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -273,6 +300,7 @@ struct MessageRow: View {
                     if BrowserActivity.used(message.tools), working {
                         LiveBrowserCard(working: working, browsing: BrowserActivity.running(message.tools),
                                         caption: BrowserActivity.caption(message.tools))
+                            .chatWide()
                             .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
 
@@ -280,9 +308,16 @@ struct MessageRow: View {
                     // its words about them. Drawn under the words, the text arrived afterwards above a
                     // card already on screen, and the chat read out of order.
                     ForEach(message.tools.filter { PurchaseOptionSet.isTool($0.name) && $0.status == .done }) { call in
-                        PurchaseOptionsCard(detail: call.detail, language: ChatLanguage.of(message.content),
+                        PurchaseOptionsCard(detail: call.detail, language: replyLanguage,
                                             session: message.mentionSessionID ?? store.shownConversation?.hermesSessionID,
-                                            replyProfile: message.mentionProfile)
+                                            replyProfile: message.mentionProfile,
+                                            onLoaded: { purchaseSets[call.id] = $0 })
+                            .chatWide()
+                    }
+                    ForEach(message.tools.filter { ProductList.isTool($0.name) && $0.status == .done }) { call in
+                        if let list = ProductList.parse(call.detail) {
+                            ProductListCard(list: list)
+                        }
                     }
                     ForEach(message.tools.filter { AskPerson.isTool($0.name) }) { call in
                         if let ask = AskPerson.parse(call.detail),
@@ -311,6 +346,9 @@ struct MessageRow: View {
                         }
                     } else if store.pendingHomeModelConfirmation?.replyID == message.id {
                         ModelConfirmationCard()
+                    } else if let set = message.tools.reversed().compactMap({ purchaseSets[$0.id] }).first,
+                              let recommendation = set.recommendation(replyLanguage) {
+                        replyBody(recommendation, bubbled: bubblesReplies)
                     } else if !message.content.isEmpty {
                         // Markdown as blocks — headings, lists, tables, code,
                         // callouts, formulas and reply buttons — the way
@@ -327,15 +365,13 @@ struct MessageRow: View {
                     }
                     }
                     .accessibilityHint(
-                        canRevealExtras
-                            ? "Shows actions. Hold to select text."
-                            : (canSelectReplyText ? "Hold to select text." : "")
+                        canShowActions ? "Hold for Reply, Copy, Select and Share." : ""
                     )
 
                     if message.role == .assistant, message.choosesModelInAPicker {
                         if let chosen = chosenModel {
                             // Done: the picker changed it (or it already was that one).
-                            Label(ChatLanguage.of(message.content).pick("Model changed to \(chosen)", "Modelo cambiado a \(chosen)"),
+                            Label(replyLanguage.pick("Model changed to \(chosen)", "Modelo cambiado a \(chosen)"),
                                   systemImage: "checkmark.circle.fill")
                                 .font(.subheadline.weight(.medium))
                                 .foregroundStyle(Palette.success(scheme))
@@ -352,7 +388,7 @@ struct MessageRow: View {
                     // The errand this turn started, after everything the turn said.
                     if message.role == .assistant {
                         ForEach(errandRefs, id: \.self) { ref in
-                            ErrandChatBlock(ref: ref)
+                            ErrandChatBlock(ref: ref).chatWide()
                         }
                     }
 
@@ -401,18 +437,29 @@ struct MessageRow: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    // Only once the reply has finished: acting on half an
-                    // answer copies or shares something that is still changing.
-                    if showingExtras, canShowActions {
-                        MessageActions(message: actionsMessage)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                if !learned.isEmpty {
+                    Button { showingLessons = true } label: {
+                        Label(LessonNotice.said(in: replyLanguage), systemImage: "graduationcap")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 4)
+                    .accessibilityHint("Shows what was learned.")
+                    .sheet(isPresented: $showingLessons) { LessonSheet(lessons: learned, reply: message.content) }
+                }
             }
         }
         .sheet(isPresented: $showingModelPicker) {
             ModelPicker(onChanged: { label in rememberModelChoice(label) })
         }
+        // The same rule for links SwiftUI opens (Markdown in Text): none of these from a reply.
+        .environment(\.openURL, OpenURLAction { url in
+            AgentLinks.refused(url) && message.role == .assistant ? .discarded : .systemAction
+        })
         .sheet(isPresented: $selectingText) {
             SelectableTextSheet(text: message.role == .user ? PurchaseChoice.display(message.content) : message.content)
         }
@@ -443,7 +490,8 @@ struct MessageRow: View {
         modelChoices = (try? String(data: JSONEncoder().encode(all), encoding: .utf8)) ?? "{}"
     }
 
-    private var canRevealExtras: Bool { canShowActions || developerLine != nil }
+    /// A tap shows only the developer line now; what to do with a reply is in its hold menu.
+    private var canRevealExtras: Bool { developerLine != nil }
 
     private var canSelectReplyText: Bool {
         !message.pending && !actionsMessage.content.isEmpty
@@ -610,108 +658,6 @@ private struct ChollometroDeals: View {
     }
 }
 
-/// The row of things you can do with a finished reply.
-///
-/// Glyphs chosen to match what a reader coming from another model client
-/// expects: overlapping squares for copy, the tray-and-arrow iOS share, a
-/// speaker for reading aloud, and the two-arrow cycle for another attempt.
-private struct MessageActions: View {
-    @Environment(AppStore.self) private var store
-    @Environment(ReadAloud.self) private var speech
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.givenReaction) private var given
-    let message: Message
-    @State private var copied = false
-
-    var body: some View {
-        // Every slot carries its own half of the gap, so spacing here is 0
-        // and the leading inset pulls the first glyph's ink back onto the
-        // paragraph's left edge rather than onto its slot's edge.
-        HStack(spacing: 0) {
-            // First, because they answer: a yes or a no to what the reply
-            // proposed, sent as his turn. The one given stays filled.
-            if store.canReact(to: message) {
-                ForEach(Reaction.allCases, id: \.self) { reaction in
-                    reactionButton(reaction)
-                }
-            }
-
-            Button {
-                UIPasteboard.general.string = message.content
-                Haptic.success.play()
-                withAnimation(.snappy(duration: 0.2)) { copied = true }
-                Task {
-                    try? await Task.sleep(for: .seconds(1.5))
-                    withAnimation(.snappy(duration: 0.2)) { copied = false }
-                }
-            } label: {
-                ActionIcon(copied ? "checkmark" : "square.on.square", slot: 16.67)
-            }
-            .accessibilityLabel(copied ? "Copied" : "Copy")
-
-            ShareLink(item: message.content) {
-                ActionIcon("square.and.arrow.up", slot: 14)
-            }
-            .accessibilityLabel("Share")
-
-            Button {
-                speech.toggle(message.content, id: message.id)
-            } label: {
-                ActionIcon(
-                    speech.isSpeaking(message.id) ? "speaker.slash" : "speaker.wave.2",
-                    slot: 17.33
-                )
-            }
-            .accessibilityLabel(
-                speech.isSpeaking(message.id) ? "Stop reading" : "Read aloud"
-            )
-
-            // A routine's report was not an answer to anything the person
-            // said, so there is nothing to ask again.
-            if message.routineName == nil {
-                Button {
-                    Haptic.tap.play()
-                    store.retry(message.id)
-                } label: {
-                    ActionIcon("arrow.triangle.2.circlepath", slot: 19.33)
-                }
-                .disabled(store.isSending)
-                .accessibilityLabel("Try again")
-            }
-        }
-        // Slots carry half a gap each, so the first glyph's ink would sit
-        // half a gap in from the paragraph. Pull it back out, less the
-        // 0.67pt of left side bearing the text above already carries, so the
-        // copy square lines up with the letters instead of overhanging them.
-        .padding(.leading, -ActionIcon.gap / 2 + 0.67)
-        .foregroundStyle(.secondary)
-        // Each icon gives a little under the finger, as the chat's cards do.
-        .buttonStyle(.pressable)
-        .padding(.top, 2)
-    }
-}
-
-extension MessageActions {
-    private func reactionButton(_ reaction: Reaction) -> some View {
-        let chosen = given == reaction
-        return Button {
-            guard !chosen else { return }
-            ReactionTip().invalidate(reason: .actionPerformed)
-            Task { await store.react(reaction, to: message) }
-        } label: {
-            // 16.67: the thumb paints 17pt of ink at 16pt, as the copy
-            // squares do (`scripts/measure-symbol-ink.swift`).
-            ActionIcon(chosen ? reaction.symbol + ".fill" : reaction.symbol, slot: 16.67)
-                .foregroundStyle(chosen ? AnyShapeStyle(store.accent.primary(scheme)) : AnyShapeStyle(.secondary))
-                .symbolEffect(.bounce, value: chosen)
-        }
-        .disabled(store.isSending && !chosen)
-        .sensoryFeedback(.selection, trigger: chosen) { _, now in now }
-        .accessibilityLabel(reaction == .yes ? Text("Answer yes") : Text("Answer no"))
-        .accessibilityValue(chosen ? Text("Chosen") : Text(verbatim: ""))
-        .accessibilityHint("Sends it to the agent as your answer")
-    }
-}
 
 /// His answer with a thumb: the thumb itself, large, as a single emoji is in
 /// Messages, under the start of the reply it answers when that was not the
@@ -755,29 +701,11 @@ private struct ReactionBubble: View {
     }
 }
 
-/// One action glyph, laid out by the pixels it actually paints.
-///
-/// SF Symbols share neither a layout box nor an ink size. At 16pt the share
-/// tray paints 14x17.75pt inside an 18x21 box while the refresh cycle paints
-/// 19.75x16 inside 20x18, so spacing them by their boxes — or on a fixed
-/// pitch — leaves uneven whitespace: the gap before the refresh glyph
-/// measured 2pt tighter than the others, which is what made the row read as
-/// ragged.
-///
-/// Each glyph gets a slot as wide as its own ink plus one shared gap. Two
-/// neighbours then contribute half a gap each, so the whitespace between any
-/// two glyphs is exactly `gap` whatever their widths. `slot` is the widest
-/// ink among the states one button can show, so the row does not reflow when
-/// a glyph swaps.
-///
-/// Slot widths are the ink the device actually paints, which runs a little
-/// under what `scripts/measure-symbol-ink.swift` reports — the renderer
-/// drops the faintest antialiased edge, 1.4pt of it on the speaker's outer
-/// wave. Take the script's numbers as the starting point and settle them
-/// against a screenshot; re-derive both if the symbol set, weight or point
-/// size changes.
+/// Keep the existing 16pt glyphs, with a full native touch target. The fixed
+/// footprint also keeps the row stable when copy becomes a checkmark.
 private struct ActionIcon: View {
-    static let gap: CGFloat = 12
+    static let targetSize: CGFloat = 44
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let pointSize: CGFloat = 16
 
     private let symbol: String
@@ -791,9 +719,10 @@ private struct ActionIcon: View {
     var body: some View {
         Image(systemName: symbol)
             .font(.system(size: Self.pointSize))
-            .contentTransition(.symbolEffect(.replace))
+            .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
             .offset(y: -Self.inkDropBelowCentre(symbol))
-            .frame(width: slot + Self.gap, height: 30)
+            .frame(width: slot)
+            .frame(width: Self.targetSize, height: Self.targetSize)
             .contentShape(.rect)
     }
 
@@ -807,6 +736,33 @@ private struct ActionIcon: View {
 
 /// Holding a message you sent: copy it, rewrite it, pick out part of it, or
 /// pass the prompt on.
+/// A finished reply's hold menu: answer it, copy it, pick words out of it, or send it on.
+private struct ReplyMenu: View {
+    @Environment(AppStore.self) private var store
+    let message: Message
+    @Binding var selecting: Bool
+
+    /// Who a reply is quoted from: the agent asked by name, or Alice.
+    @MainActor static func author(of message: Message, in store: AppStore) -> String {
+        guard let bot = message.botName, !bot.isEmpty, bot != AppStore.todayProfile else { return "Alice" }
+        return store.botCurrentName(for: bot)
+    }
+
+    var body: some View {
+        Button("Reply", systemImage: "arrowshape.turn.up.left") {
+            store.replyingTo = ReplyQuote(messageID: message.id, author: Self.author(of: message, in: store), content: message.content)
+        }
+        Button("Copy", systemImage: "doc.on.doc") {
+            UIPasteboard.general.string = message.content
+            Haptic.success.play()
+        }
+        Button("Select", systemImage: "selection.pin.in.out") { selecting = true }
+        ShareLink(item: message.content) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+    }
+}
+
 private struct SentMessageMenu: View {
     @Environment(AppStore.self) private var store
     let message: Message
@@ -901,10 +857,10 @@ private struct SentAttachments: View {
 
     var body: some View {
         // Every image in the message, so the viewer can swipe between them.
-        let images = attachments.compactMap { $0.kind == .image ? UIImage(data: $0.data) : nil }
+        let images = attachments.compactMap { $0.kind == .image ? AttachmentImages.image($0) : nil }
         HStack(spacing: 8) {
             ForEach(attachments) { attachment in
-                if attachment.kind == .image, let image = UIImage(data: attachment.data) {
+                if attachment.kind == .image, let image = AttachmentImages.image(attachment) {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
@@ -941,7 +897,7 @@ enum ToolCaption {
     /// Listing it as a step would leave "Asking a question" standing in the
     /// trace under an answer they have already given.
     static func steps(in tools: [Message.ToolCall]) -> [Message.ToolCall] {
-        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) && !PurchaseOptionSet.isTool($0.name) }
+        tools.filter { !$0.name.lowercased().contains("clarify") && !AskPerson.isTool($0.name) && !ErrandRef.isTool($0.name) && !PurchaseOptionSet.isTool($0.name) && !ProductList.isTool($0.name) }
     }
 
     /// The line above the reply: what it is doing, or what it took.
@@ -1119,7 +1075,7 @@ private struct RunApprovalCard: View {
             if approval.smartDenied == true {
                 Label(ApprovalExplainer.smartDeniedWarning, systemImage: "exclamationmark.shield")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(Palette.warning(scheme))
             }
 
             ViewThatFits(in: .horizontal) {
@@ -1309,7 +1265,7 @@ private struct ModelConfirmationCard: View {
     @ViewBuilder
     private var buttons: some View {
         Button("Use this model") { store.confirmHomeModel() }
-            .buttonStyle(.borderedProminent)
+            .buttonStyle(.borderedProminent).onAccentLabel()
             .controlSize(.small)
         Button("Not now", role: .cancel) { store.declineHomeModel() }
             .buttonStyle(.bordered)
@@ -1438,6 +1394,8 @@ private struct SlashChoiceFlow: Layout {
 }
 
 struct ApprovalChoiceButton: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.colorScheme) private var scheme
     let title: String
     var deny = false
     var disabled = false
@@ -1449,7 +1407,8 @@ struct ApprovalChoiceButton: View {
         if deny {
             control.buttonStyle(.bordered).tint(.secondary)
         } else {
-            control.buttonStyle(.borderedProminent).tint(tint)
+            // The label on the accent fill: white on the dark theme's light accents was unreadable.
+            control.buttonStyle(.borderedProminent).tint(tint).foregroundStyle(store.accent.onControl(scheme))
         }
     }
 
@@ -1580,5 +1539,25 @@ struct FeedContextCard: View {
         .background(Palette.card(scheme), in: .rect(cornerRadius: 18))
         .accessibilityElement(children: .combine)
         .accessibilityLabel("From your feed: \(post.headline)")
+    }
+}
+
+
+/// Decoded once per attachment: the transcript redraws about ten times a second while a reply
+/// streams, and each redraw decoded every sent picture twice.
+@MainActor
+enum AttachmentImages {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 120
+        return cache
+    }()
+
+    static func image(_ attachment: Attachment) -> UIImage? {
+        let key = attachment.id as NSString
+        if let hit = cache.object(forKey: key) { return hit }
+        guard let image = UIImage(data: attachment.data) else { return nil }
+        cache.setObject(image, forKey: key)
+        return image
     }
 }

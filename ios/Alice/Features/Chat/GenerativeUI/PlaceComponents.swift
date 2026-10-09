@@ -101,6 +101,7 @@ struct PlacesMapCard: View {
             }
             .contentShape(.rect)
             .onTapGesture { open(places.first) }
+            .accessibilityAddTraits(.isButton)
 
             VStack(alignment: .leading, spacing: 0) {
                 if let title {

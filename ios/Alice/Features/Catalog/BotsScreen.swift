@@ -284,7 +284,7 @@ struct BotsScreen: View {
                 if let deletingBot {
                     let name = deletingBot.name
                     Haptic.warning.play()
-                    withAnimation(.snappy) { rows.removeAll { $0.name == name } }
+                    withMotion(.snappy) { rows.removeAll { $0.name == name } }
                     Task {
                         do {
                             try await store.deleteBot(name)
@@ -389,7 +389,7 @@ struct BotsScreen: View {
         HStack(spacing: 10) {
             if showSearch {
                 Button {
-                    withAnimation(.snappy(duration: 0.25)) {
+                    withMotion(.snappy(duration: 0.25)) {
                         showSearch = false
                         searchQuery = ""
                         searchFocused = false
@@ -438,7 +438,7 @@ struct BotsScreen: View {
                 Menu {
                     Picker("Filter", selection: $selectedFilter) {
                         ForEach(SearchFilter.allCases) { filter in
-                            Text(filter.rawValue).tag(filter)
+                            Text(LocalizedStringKey(filter.rawValue)).tag(filter)
                         }
                     }
                 } label: {
@@ -450,7 +450,7 @@ struct BotsScreen: View {
                 }
                 .buttonStyle(.plain)
                 .glassEffect(.regular.interactive(), in: .circle)
-                .accessibilityLabel("Filter: \(selectedFilter.rawValue)")
+                .accessibilityLabel("Filter: \(String(localized: String.LocalizationValue(selectedFilter.rawValue)))")
             } else {
                 // Now that this is a page rather than a sheet, Done was the
                 // wrong word for it: nothing here is being confirmed, and
@@ -475,7 +475,7 @@ struct BotsScreen: View {
 
                 HStack(spacing: 16) {
                     Button {
-                        withAnimation(.snappy(duration: 0.25)) {
+                        withMotion(.snappy(duration: 0.25)) {
                             showSearch = true
                         }
                         searchFocused = true
@@ -880,7 +880,7 @@ struct BotsScreen: View {
                 .font(.footnote)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(.orange)
+        .foregroundStyle(Palette.warning(scheme))
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 14))
@@ -955,7 +955,7 @@ struct BotsScreen: View {
             count: unpinnedRows.count, bots: unpinnedRows.map(\.name),
             identifier: "bots.home"
         ) {
-            withAnimation(.snappy(duration: 0.2)) {
+            withMotion(.snappy(duration: 0.2)) {
                 store.homeCollapsed.toggle()
             }
         }
@@ -1046,7 +1046,7 @@ struct BotsScreen: View {
             count: members.count + teams.count, bots: members.map(\.name),
             identifier: "bots.channel.\(channel.name)", reorderID: channel.id
         ) {
-            withAnimation(.snappy(duration: 0.2)) {
+            withMotion(.snappy(duration: 0.2)) {
                 store.toggleChannelCollapsed(channel.id)
             }
         }
@@ -1120,7 +1120,7 @@ struct BotsScreen: View {
         return HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withMotion(.snappy(duration: 0.2)) {
                     store.toggleChannelSectionCollapsed(channel.id, section: section)
                 }
             } label: {
@@ -1630,7 +1630,7 @@ struct BotsScreen: View {
         HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withMotion(.snappy(duration: 0.2)) {
                     store.toggleSectionCollapsed(title)
                 }
             } label: {
@@ -1701,7 +1701,7 @@ struct BotsScreen: View {
         HStack(spacing: 0) {
             Button {
                 guard canOpenBot() else { return }
-                withAnimation(.snappy(duration: 0.2)) {
+                withMotion(.snappy(duration: 0.2)) {
                     store.unassignedExpanded.toggle()
                 }
             } label: {
@@ -1866,7 +1866,7 @@ struct BotsScreen: View {
 
     private func moveBot(_ source: String, _ target: String, _ peers: [String]) {
         guard source != target, peers.contains(source), peers.contains(target) else { return }
-        withAnimation(.snappy(duration: 0.22)) {
+        withMotion(.snappy(duration: 0.22)) {
             store.reorderBot(source, relativeTo: target, within: peers)
         }
     }
@@ -2017,6 +2017,7 @@ struct BotDetail: View {
     @State private var clearing = false
     @State private var clearFailure: String?
     @State private var confirmingClear = false
+    @State private var confirmingDelete = false
 
     private var renameSlugNote: String? {
         let shown = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2050,7 +2051,7 @@ struct BotDetail: View {
                 // A failed rename is said here, by the name, not at the foot
                 // of the page where it went unseen.
                 if let failure {
-                    Text(failure).foregroundStyle(.red)
+                    Text(failure).foregroundStyle(Palette.danger(scheme))
                 } else if let note = renameSlugNote {
                     Text(note)
                 }
@@ -2094,7 +2095,7 @@ struct BotDetail: View {
                 // Said under the button that failed, not at the foot of the
                 // page, where a refusal looked like a button doing nothing.
                 if let clearFailure {
-                    Text(clearFailure).foregroundStyle(.red)
+                    Text(clearFailure).foregroundStyle(Palette.danger(scheme))
                 } else {
                     Text("Starts this agent’s chat again, empty.")
                 }
@@ -2337,7 +2338,7 @@ struct BotDetail: View {
                 }
             } footer: {
                 if let failure {
-                    Text(failure).foregroundStyle(.red)
+                    Text(failure).foregroundStyle(Palette.danger(scheme))
                 } else if exportedURL != nil {
                     Text("The template was downloaded from Hermes and is ready to share from this iPhone.").foregroundStyle(.secondary)
                 } else if let exported {
@@ -2349,6 +2350,13 @@ struct BotDetail: View {
         .navigationBarTitleDisplayMode(.inline)
         // On the page, not on the row: a list re-renders its rows, and an
         // alert hung on one can fail to appear at all.
+        // The same question the list asks: deleting from here went through at once.
+        .alert("Delete Agent", isPresented: $confirmingDelete) {
+            Button("Delete", role: .destructive) { deleteAgent() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Are you sure you want to delete '\(store.botCurrentName(for: bot))'? This cannot be undone.")
+        }
         .alert("Clear Chat?", isPresented: $confirmingClear) {
             Button("Clear", role: .destructive) { clearChat() }
             Button("Cancel", role: .cancel) {}
@@ -2382,16 +2390,14 @@ struct BotDetail: View {
                         }
                         if !bot.isDefault {
                             Divider()
-                            Button("Delete Bot", systemImage: "trash", role: .destructive) {
-                                let name = bot.name
-                                Haptic.warning.play()
-                                dismiss()
-                                Task { try? await store.deleteBot(name) }
+                            Button("Delete Agent", systemImage: "trash", role: .destructive) {
+                                confirmingDelete = true
                             }
                         }
                     } label: {
                         Image(systemName: "ellipsis")
                     }
+                    .accessibilityLabel("More")
                 }
             }
         }
@@ -2562,6 +2568,21 @@ struct BotDetail: View {
                   let chosen = option.provider, !chosen.isEmpty
             else { return false }
             return chosen != provider
+        }
+    }
+
+    /// Leaves the page only once the agent is gone; a failure stays on the page, said.
+    private func deleteAgent() {
+        let name = bot.name
+        Haptic.warning.play()
+        Task {
+            do {
+                try await store.deleteBot(name)
+                dismiss()
+            } catch {
+                Haptic.error.play()
+                failure = describeBotError(error)
+            }
         }
     }
 
@@ -2865,7 +2886,7 @@ private struct NewBotSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)) }
                 }
 
                 Section {
@@ -2945,6 +2966,7 @@ private struct NewBotSheet: View {
                             .font(.system(size: 14, weight: .bold))
                             .foregroundStyle(.secondary)
                     }
+                    .accessibilityLabel("Close")
                     .disabled(busy)
                 }
                 ToolbarItemGroup(placement: .keyboard) {
@@ -3294,14 +3316,24 @@ private func describeBotError(_ error: Error) -> String {
 /// pressed.
 private struct GlassTile: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
+        GlassTileBody(configuration: configuration)
+    }
+}
+
+/// With Reduce Motion the press is told by opacity alone, no shrinking spring.
+private struct GlassTileBody: View {
+    let configuration: ButtonStyleConfiguration
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
         configuration.label
             // Enough to see. At 0.955 the tile moved two points and the press
             // read as nothing happening at all; the give has to be visible
             // from a hand's distance to stand in for the light that was
             // taken away.
-            .scaleEffect(configuration.isPressed ? 0.90 : 1)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.90 : 1)
             .opacity(configuration.isPressed ? 0.82 : 1)
-            .animation(.snappy(duration: 0.18, extraBounce: 0.1),
+            .animation(reduceMotion ? nil : .snappy(duration: 0.18, extraBounce: 0.1),
                        value: configuration.isPressed)
     }
 }

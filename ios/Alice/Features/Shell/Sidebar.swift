@@ -17,7 +17,7 @@ struct Sidebar: View, Equatable {
     /// destinations are listed visibly; configuration is progressively disclosed
     /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
-        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect, models, memory
         var id: String { rawValue }
     }
 
@@ -83,6 +83,8 @@ struct Sidebar: View, Equatable {
                 case .system: closable { SystemScreen() }
                 case .files: closable { HermesFilesScreen() }
                 case .library: closable { LibraryView() }
+                case .models: closable { ModelsProvidersScreen() }
+                case .memory: closable { MemoryScreen() }
                 // These two bring their own Done; a second would be one too many.
                 case .settings: NavigationStack { SettingsView() }
                     .presentationBackground(Palette.background(scheme))
@@ -158,58 +160,16 @@ struct Sidebar: View, Equatable {
         store.developerMode && homeInterface == .experimental
     }
 
-    /// The agents themselves, not a row that leads to them: each opens its own
-    /// chat. Pinned first, then the rest in the order the dashboard lists them,
-    /// with "All Agents" for the full page.
-    private var agentsSection: some View {
-        let bots = store.cachedBots
-            .filter { !store.isBotHidden($0) && !AgentMaker.matches(profile: $0.name, role: $0.aliceRole) }
-        let shown = (bots.filter { store.isBotPinned($0) } + bots.filter { !store.isBotPinned($0) })
-            .prefix(Self.agentRowLimit)
-        return VStack(spacing: 2) {
-            Text("Agents")
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 12)
-                .padding(.top, 14)
-                .padding(.bottom, 6)
-            ForEach(Array(shown)) { bot in
-                Button {
-                    store.markNoticesSeen(.agents)
-                    onDismiss()
-                    store.showingBots = false
-                    store.openBotConversation(for: bot)
-                } label: {
-                    HStack(spacing: 10) {
-                        BotMarkView(mark: store.mark(for: bot.name), size: 30)
-                            .frame(width: 30, height: 30)
-                        Text(store.botCurrentName(for: bot))
-                        Spacer(minLength: 0)
-                        if store.isBotUnread(bot.name) {
-                            Circle().fill(store.accent.primary(scheme)).frame(width: 8, height: 8)
-                                .accessibilityLabel("Unread")
-                        }
-                    }
-                    .font(.subheadline)
-                    .padding(.horizontal, 12)
-                    .frame(minHeight: 40)
-                    .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("sidebar.agent.\(bot.name)")
-            }
-            row("All Agents", systemImage: "square.grid.2x2", weight: .medium, iconWidth: 30,
-                badge: store.unreadNotices(in: .agents), destination: .bots, identifier: "Agents") {
-                store.markNoticesSeen(.agents)
-                onDismiss()
-                store.botsFromLeading = false
-                store.showingBots = true
-            }
+    /// One row to the Agents page, not the agents themselves: each agent's chat opens from there.
+    private var agentsRow: some View {
+        row("Agents", systemImage: "person.2", weight: .medium,
+            badge: store.unreadNotices(in: .agents), destination: .bots, identifier: "Agents") {
+            store.markNoticesSeen(.agents)
+            onDismiss()
+            store.botsFromLeading = false
+            store.showingBots = true
         }
     }
-
-    private static let agentRowLimit = 6
 
     /// The drawer is for places people use while working with Alice, not for
     /// configuring Hermes. Technical administration remains searchable and is
@@ -220,24 +180,11 @@ struct Sidebar: View, Equatable {
             // writes before you ask (`AppStore.openToday`). The count is what
             // she wrote since.
             // Today is set aside for now (29-09): Alice's chat is the one place.
-            agentsSection
-            // Under the experimental interface all of these live in the round
-            // menu beside the composer instead.
-            if !experimental {
-                // Agenda and Goals are set aside (29-09): goals and their step-by-step plans are made
-                // in the chat, where the plan card follows the work. So are Errands: each one's cards
-                // follow the message that started it, and that is where it is answered.
-                // Then Notes: a note is written in the moment or
-                // not at all, so it is the shortest way in the drawer.
-                row("Notes", systemImage: "note.text", weight: .medium, destination: .notes) { openNotes() }
-                row("Routines", systemImage: "clock", weight: .medium,
-                    badge: store.unreadNotices(in: .routines), destination: .routines) {
-                    store.markNoticesSeen(.routines)
-                    going = .routines
-                }
-                // Projects set aside for now (29-09).
-                row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
-            }
+            // Who you work with, what you write, what they made: the agents first, as the most used;
+            // then the Library: what they made, and your notes.
+            // Routines moved to Settings › Alice, beside Activity, where their results arrive.
+            agentsRow
+            row("Library", systemImage: "photo.on.rectangle", weight: .medium, destination: .library) { going = .library }
         }
         .padding(.horizontal, 12)
         // Most of the gap to Pinned is the list's own top inset, which has to
@@ -411,9 +358,10 @@ struct Sidebar: View, Equatable {
         case .git: going = .git
         case .system: going = .system
         case .connect: going = .connect
-        // Reached inside Settings. Landing there is one tap short of the
-        // destination and still far better than not finding it at all.
-        case .settings, .memory, .models, .usage, .sessions, .insights,
+        case .models: going = .models
+        case .memory: going = .memory
+        // Other management destinations retain their existing Settings entry.
+        case .settings, .usage, .sessions, .insights,
              .configuration, .pairing, .plugins:
             going = .settings
         }
@@ -455,7 +403,8 @@ struct Sidebar: View, Equatable {
                     .font(.system(size: 15, weight: weight))
                     .foregroundStyle(store.accent.primary(scheme))
                     .frame(width: iconWidth, alignment: .center)
-                Text(title)
+                // Looked up in the catalog: a plain String bypassed the translations.
+                Text(LocalizedStringKey(title))
                 Spacer(minLength: 0)
                 if badge > 0 {
                     Text("\(badge)")
@@ -501,6 +450,7 @@ private struct SidebarList: View, Equatable {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let width: CGFloat
     let onDismiss: () -> Void
 
@@ -622,6 +572,7 @@ private struct SidebarList: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
+            .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
@@ -656,7 +607,7 @@ private struct SidebarList: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let attention {
                     ChatAttentionMark(attention: attention)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
                 }
             }
             .frame(width: width - 48, alignment: .leading)
@@ -672,9 +623,10 @@ private struct SidebarList: View, Equatable {
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
         .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
+        .accessibilityAddTraits(conversation.id == store.activeID ? .isSelected : [])
         .buttonStyle(.pressableRow(cornerRadius: 10))
         // A new reply or a question marks the row as it arrives, not in a jump.
-        .animation(.snappy(duration: 0.25), value: attention)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: attention)
         .contextMenu {
             menu(for: conversation)
         } preview: {

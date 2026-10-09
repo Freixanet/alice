@@ -134,7 +134,7 @@ struct MacLoadScreen: View {
                         Text(item.rawValue).tag(item)
                     }
                 }
-                .pickerStyle(.segmented)
+                .segments()
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
             }
@@ -540,7 +540,7 @@ struct MacLoadScreen: View {
     private func refresh() async {
         do {
             let next = try await store.hostLoad()
-            withAnimation(.snappy(duration: 0.35)) {
+            withMotion(.snappy(duration: 0.35)) {
                 load = next
                 if !next.warming {
                     let id = (history.last?.id ?? -1) + 1

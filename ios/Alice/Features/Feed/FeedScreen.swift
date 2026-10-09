@@ -28,6 +28,7 @@ struct FeedScreen: View {
                     post: post,
                     onLove: { Task { await feed.toggleLove(post) } },
                     onDiscuss: { discuss(post) },
+                    onOffer: { takeOffer(post) },
                     onWhy: { explaining = post },
                     onDelete: { delete(post) },
                     onExpand: { feed.markRead(post) }
@@ -41,6 +42,20 @@ struct FeedScreen: View {
                     }
                 }
             }
+            // Nothing yet and nothing being made: say what this is and how to get the first posts,
+            // instead of a blank page.
+            if feed.posts.isEmpty, feed.generation.state == .idle, feed.offlineReason == nil {
+                ContentUnavailableView {
+                    Label("No posts yet", systemImage: "newspaper")
+                } description: {
+                    Text("Your Mac writes posts here about what interests you. Ask for the first ones now, or wait for the next round.")
+                } actions: {
+                    Button("Get posts now") { Task { await feed.requestGeneration() } }
+                        .buttonStyle(.borderedProminent).onAccentLabel()
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
             if let reason = feed.offlineReason {
                 Text(reason)
                     .font(.footnote)
@@ -52,6 +67,7 @@ struct FeedScreen: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
+        .contentMargins(.top, 36, for: .scrollContent)
         .background(Palette.background(scheme))
         .navigationTitle("Feed")
         .navigationBarTitleDisplayMode(.inline)
@@ -154,14 +170,19 @@ struct FeedScreen: View {
 
     private func delete(_ post: FeedPost) {
         Haptic.warning.play()
-        withAnimation(.snappy) { undoable = post }
+        withMotion(.snappy) { undoable = post }
         Task { await feed.delete(post) }
         undoTask?.cancel()
         undoTask = Task {
             try? await Task.sleep(for: .seconds(5))
             guard !Task.isCancelled else { return }
-            withAnimation(.snappy) { undoable = nil }
+            withMotion(.snappy) { undoable = nil }
         }
+    }
+
+    private func takeOffer(_ post: FeedPost) {
+        store.takeOffer(post)
+        onOpenedChat()
     }
 
     private func discuss(_ post: FeedPost) {

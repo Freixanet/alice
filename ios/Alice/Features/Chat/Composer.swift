@@ -27,6 +27,8 @@ struct Composer: View {
     @ScaledMetric(relativeTo: .body) private var compactRowHeight: CGFloat = 34
     @Namespace private var glass
     @State private var showModels = false
+    /// `/yolo` lets agents act without asking, risky actions included: asked once more before it goes.
+    @State private var confirmingYolo = false
     @State private var dictation = Dictation()
     /// Set by swiping the command list away. Cleared on the next keystroke,
     /// so dismissing it is about this moment, not about the whole draft.
@@ -39,6 +41,7 @@ struct Composer: View {
     @State private var showFiles = false
     @State private var showCamera = false
     @State private var attachmentConversationID: String?
+    @State private var attachmentFailures: [String: [String]] = [:]
     /// Counts taps rather than watching `listening`, so the tap is felt even
     /// when dictation fails to start — which is exactly when the reader most
     /// needs to know the button registered.
@@ -103,6 +106,12 @@ struct Composer: View {
                 }
         )
         .sheet(isPresented: $showModels) { ModelPicker() }
+        .confirmationDialog("Let Alice act without asking?", isPresented: $confirmingYolo, titleVisibility: .visible) {
+            Button("Act without asking", role: .destructive) { sendDraft(confirmed: true) }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Alice and your agents will run commands, change files and use your accounts without asking first, including risky actions. Send /yolo again to turn it off.")
+        }
         .fullScreenCover(isPresented: $showCamera) {
             CameraPicker { store.appendDraftAttachments([$0], to: attachmentConversationID) }
                 .ignoresSafeArea()
@@ -119,6 +128,11 @@ struct Composer: View {
                 for item in picked {
                     if let attachment = await AttachmentLoader.image(from: item) {
                         store.appendDraftAttachments([attachment], to: target)
+                    } else {
+                        recordAttachmentFailure(
+                            String(localized: "This attachment could not be read. Try downloading it first or choosing it again."),
+                            for: target
+                        )
                     }
                 }
             }
@@ -135,15 +149,40 @@ struct Composer: View {
             allowedContentTypes: [.item],
             allowsMultipleSelection: true
         ) { result in
-            guard case let .success(urls) = result else { return }
-            for url in urls {
-                if let attachment = AttachmentLoader.file(at: url) {
-                    store.appendDraftAttachments([attachment], to: attachmentConversationID)
+            let target = attachmentConversationID
+            switch result {
+            case .success(let urls):
+                for url in urls {
+                    do {
+                        let attachment = try AttachmentLoader.loadFile(at: url)
+                        store.appendDraftAttachments([attachment], to: target)
+                    } catch {
+                        recordAttachmentFailure(url.lastPathComponent + "\n" + error.localizedDescription, for: target)
+                    }
                 }
+            case .failure(let error):
+                let cocoa = error as NSError
+                guard cocoa.domain != NSCocoaErrorDomain || cocoa.code != NSUserCancelledError else { return }
+                recordAttachmentFailure(
+                    String(localized: "This attachment could not be read. Try downloading it first or choosing it again."),
+                    for: target
+                )
             }
         }
-        .onChange(of: store.draft) { _, _ in
+        .alert("Couldn’t add attachment", isPresented: Binding(
+            get: { !(attachmentFailures[store.activeID ?? ""] ?? []).isEmpty },
+            set: { if !$0, let id = store.activeID { attachmentFailures.removeValue(forKey: id) } }
+        )) {
+            Button("OK", role: .cancel) {
+                if let id = store.activeID { attachmentFailures.removeValue(forKey: id) }
+            }
+        } message: {
+            Text(verbatim: (attachmentFailures[store.activeID ?? ""] ?? []).joined(separator: "\n\n"))
+        }
+        .onChange(of: store.draft) { old, new in
             commandsDismissed = false
+            // A command is on its way: Hermes' command process starts now, not after the send.
+            if old.isEmpty, new.hasPrefix("/") { Task { await store.warmCommands() } }
         }
         .onChange(of: store.activeChat.id) { _, _ in
             dictation.stop()
@@ -176,8 +215,13 @@ struct Composer: View {
         .onChange(of: store.editingMessageID) { _, editing in
             if editing != nil { focused.wrappedValue = true }
         }
-        .animation(.snappy(duration: 0.2), value: store.editingMessageID)
-        .animation(.snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
+        // A reply swiped to be answered opens the keyboard, as editing does.
+        .onChange(of: store.replyingTo) { _, quote in
+            if quote != nil { focused.wrappedValue = true }
+        }
+
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: store.editingMessageID)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: commands.isEmpty && matchingBots.isEmpty)
         .task(id: store.dashboardReady) {
             _ = try? await store.bots()
         }
@@ -367,7 +411,7 @@ struct Composer: View {
                     if value.translation.height > 40 { commandsDismissed = true }
                 }
         )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var commandList: some View {
@@ -391,7 +435,7 @@ struct Composer: View {
                         HStack(alignment: .firstTextBaseline, spacing: 10) {
                             Text(item.cmd)
                                 .font(.subheadline.monospaced())
-                            Text(item.hint)
+                            Text(LocalizedStringKey(item.hint))
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -421,7 +465,7 @@ struct Composer: View {
                     if value.translation.height > 40 { commandsDismissed = true }
                 }
         )
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// Says that sending replaces the message being edited, and lets go of it.
@@ -442,12 +486,12 @@ struct Composer: View {
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
             .frame(width: 28, height: 28)
-            .contentShape(.rect)
+            .contentShape(Rectangle().inset(by: -8))
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 4)
         .glassEffect(.regular, in: .capsule)
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     /// Hermes queued or folded this send into a busy turn. Stop clears that
@@ -468,7 +512,7 @@ struct Composer: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
         .glassEffect(.regular, in: .rect(cornerRadius: 14))
-        .transition(.opacity.combined(with: .move(edge: .bottom)))
+        .transition(reduceMotion ? .opacity : .opacity.combined(with: .move(edge: .bottom)))
     }
 
     private var aliceComposer: some View {
@@ -609,7 +653,7 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: 32, height: 32)
-                .contentShape(.circle)
+                .contentShape(Rectangle().inset(by: -6))
         }
         .buttonStyle(.plain)
         // Without this, Menu's own automatic style paints a background pill
@@ -726,9 +770,18 @@ struct Composer: View {
         store.isConnected || store.dashboardReady
     }
 
+    private func recordAttachmentFailure(_ reason: String, for conversationID: String?) {
+        guard let conversationID else { return }
+        attachmentFailures[conversationID, default: []].append(reason)
+    }
+
     /// Send what is written, stopping dictation first so it cannot keep
     /// writing into the field after the message has gone.
-    private func sendDraft() {
+    private func sendDraft(confirmed: Bool = false) {
+        if !confirmed, store.draft.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "/yolo" {
+            confirmingYolo = true
+            return
+        }
         if dictation.isListening || pendingListen == true {
             dictation.stop()
             pendingListen = nil
@@ -748,10 +801,12 @@ struct Composer: View {
                 .font(.system(size: 16, weight: .medium))
                 .foregroundStyle(listening ? store.accent.primary(scheme) : Color.secondary)
                 .frame(width: 32, height: 32)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
+        // Drawn at 32 pt, touched at 44.
+        .contentShape(Rectangle().inset(by: -6))
         .sensoryFeedback(.impact(weight: .medium), trigger: micTaps)
         .accessibilityLabel(listening ? "Stop dictating" : "Dictate")
         .onChange(of: dictation.isListening) { _, _ in pendingListen = nil }
@@ -780,22 +835,23 @@ struct Composer: View {
                     .foregroundStyle(scheme == .dark ? Color.black : Color.white)
                     .frame(width: 32, height: 32)
                     // Send turns into Stop in place, as the main composer's does.
-                    .contentTransition(.symbolEffect(.replace))
+                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                     .background { Circle().fill(botSendFill) }
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             } else {
                 Image(systemName: "waveform.circle.fill")
                     .font(.system(size: 30))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(voiceAvailable ? store.accent.primary(scheme) : Color.secondary)
                     .frame(width: 32, height: 32)
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale.combined(with: .opacity))
             }
         }
         .buttonStyle(.plain)
+        .contentShape(Rectangle().inset(by: -6))
         // The transitions above need a change to animate: voice ⇄ send ⇄ stop.
-        .animation(.snappy(duration: 0.2), value: sending)
-        .animation(.snappy(duration: 0.2), value: stopping)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: sending)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: stopping)
         .disabled(!sending && !voiceAvailable)
         .accessibilityLabel(stopping ? "Stop" : (hasDraft ? "Send" : "Voice conversation"))
         .accessibilityIdentifier("composer.action")
@@ -896,7 +952,7 @@ struct Composer: View {
             Image(systemName: listening ? "waveform" : "mic")
                 .font(.system(size: 16, weight: listening ? .semibold : .medium))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
                 .symbolEffect(.variableColor, isActive: listening && !reduceMotion)
         }
         .buttonStyle(.plain)
@@ -930,7 +986,7 @@ struct Composer: View {
             Image(systemName: stopping ? "stop.fill" : (hasDraft ? "arrow.up" : "waveform"))
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: controlHeight, height: controlHeight)
-                .contentTransition(.symbolEffect(.replace))
+                .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
         }
         // `.glassProminent` sizes itself, adding about 10pt of its own padding
         // around the label — measured at 44pt tall next to a 34pt chip. Applying

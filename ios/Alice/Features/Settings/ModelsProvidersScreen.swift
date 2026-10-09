@@ -158,6 +158,7 @@ struct ModelsProvidersScreen: View {
                 Button { Task { await load(refreshing: true) } } label: {
                     Image(systemName: "arrow.clockwise")
                 }
+                .accessibilityLabel("Refresh")
                 .disabled(loading || !store.dashboardReady)
             }
         }

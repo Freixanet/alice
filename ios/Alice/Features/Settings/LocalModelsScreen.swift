@@ -53,7 +53,7 @@ struct LocalModelsScreen: View {
                 Section("Last error") {
                     Text(failure)
                         .font(.footnote)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Palette.danger(scheme))
                         .textSelection(.enabled)
                         .listRowBackground(Palette.card(scheme))
                 }
@@ -201,7 +201,7 @@ struct LocalModelsScreen: View {
                     if status.updateAvailable {
                         Text("UPDATE")
                             .font(.caption2.weight(.bold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                     }
                 }
                 .listRowBackground(Palette.card(scheme))
@@ -238,7 +238,7 @@ struct LocalModelsScreen: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Label("No curated model fits the current memory budget", systemImage: "exclamationmark.triangle")
                             .font(.subheadline.weight(.medium))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(Palette.warning(scheme))
                         Text("You can still browse Hugging Face or sideload a GGUF manually, but Hermes' curated catalog does not currently recommend a safe quickstart on this machine.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -280,7 +280,7 @@ struct LocalModelsScreen: View {
                             Text(job.detail).font(.caption).foregroundStyle(.secondary)
                         }
                         if let error = job.error, !error.isEmpty {
-                            Text(error).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                            Text(error).font(.caption).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled)
                         }
                         if let total = job.totalBytes, total > 0 {
                             Text("\(bytes(job.doneBytes)) of \(bytes(total))")
@@ -311,12 +311,12 @@ struct LocalModelsScreen: View {
                                     if model.id == status.activeModelID {
                                         Text("DEFAULT")
                                             .font(.caption2.weight(.bold))
-                                            .foregroundStyle(.green)
+                                            .foregroundStyle(Palette.success(scheme))
                                     }
                                 }
                                 Text(model.sizeLabel).font(.caption).foregroundStyle(.secondary)
                                 if let loaded = status.loadedModels[model.id] {
-                                    Text(loaded.capitalized).font(.caption2).foregroundStyle(.orange)
+                                    Text(loaded.capitalized).font(.caption2).foregroundStyle(Palette.warning(scheme))
                                 }
                                 if let placement = status.placement[model.id] {
                                     Text(placementText(placement)).font(.caption2).foregroundStyle(.secondary)
@@ -373,7 +373,7 @@ struct LocalModelsScreen: View {
                         if item.recommended {
                             Text("RECOMMENDED")
                                 .font(.caption2.weight(.bold))
-                                .foregroundStyle(.green)
+                                .foregroundStyle(Palette.success(scheme))
                         }
                         Spacer()
                         Text(item.sizeLabel).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -392,11 +392,11 @@ struct LocalModelsScreen: View {
                     }
                     if item.needsEngine, let minimum = item.minEngine {
                         Text("Requires llama.cpp \(minimum) or newer.")
-                            .font(.caption).foregroundStyle(.orange)
+                            .font(.caption).foregroundStyle(Palette.warning(scheme))
                     }
                     if item.downloaded, let id = item.downloadedModelID {
                         HStack(spacing: 8) {
-                            Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                            Label("Downloaded", systemImage: "checkmark.circle.fill").foregroundStyle(Palette.success(scheme))
                             if id != status?.activeModelID, status?.runtimeInstalled == true {
                                 Button("Use") { Task { await activate(id) } }
                                     .buttonStyle(.bordered).controlSize(.small)
@@ -413,7 +413,7 @@ struct LocalModelsScreen: View {
                                 .buttonStyle(.bordered).controlSize(.small)
                             if !statusRuntimeReady {
                                 Button("Install & use") { confirmQuickstart = item }
-                                    .buttonStyle(.borderedProminent).controlSize(.small)
+                                    .buttonStyle(.borderedProminent).onAccentLabel().controlSize(.small)
                             }
                         }
                     }
@@ -685,7 +685,7 @@ private struct LocalModelBrowserSheet: View {
                                         HStack(spacing: 6) {
                                             Text(hit.repo).font(.subheadline).foregroundStyle(.primary)
                                             if hit.gated {
-                                                Text("GATED").font(.caption2.weight(.bold)).foregroundStyle(.orange)
+                                                Text("GATED").font(.caption2.weight(.bold)).foregroundStyle(Palette.warning(scheme))
                                             }
                                         }
                                         Text("\(hit.downloads.formatted()) downloads · \(hit.likes.formatted()) likes\(hit.updated.isEmpty ? "" : " · \(hit.updated)")")
@@ -710,12 +710,12 @@ private struct LocalModelBrowserSheet: View {
                     Text("This path is on the Hermes Mac, not on the iPhone. Hermes links the file into its managed models directory when possible; the original stays in place.")
                         .font(.caption).foregroundStyle(.secondary)
                     if let sideloadResult {
-                        Text(sideloadResult).font(.caption).foregroundStyle(.green)
+                        Text(sideloadResult).font(.caption).foregroundStyle(Palette.success(scheme))
                     }
                 }
 
                 if let failure {
-                    Section { Text(failure).font(.footnote).foregroundStyle(.red).textSelection(.enabled) }
+                    Section { Text(failure).font(.footnote).foregroundStyle(Palette.danger(scheme)).textSelection(.enabled) }
                 }
             }
             .navigationTitle("Find Local Models")

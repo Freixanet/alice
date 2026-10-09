@@ -60,7 +60,7 @@ struct PaymentCardOfferCard: View {
                     ProgressView()
                 } else if known == nil {
                     Button(language.pick("Add", "Añadir")) { showingForm = true }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.borderedProminent).onAccentLabel()
                 }
             }
             if let known {
@@ -70,7 +70,7 @@ struct PaymentCardOfferCard: View {
                     } label: {
                         if working { ProgressView() } else { Text(language.pick("Use \(known.label)", "Usar \(known.label)")) }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .disabled(working)
                     Button(language.pick("Another card", "Otra tarjeta")) { showingForm = true }
                         .buttonStyle(.bordered)
@@ -133,7 +133,7 @@ struct PaymentCardOfferCard: View {
     }
 
     private func finish(_ card: SavedCard) {
-        withAnimation(.snappy) { saved = card }
+        withMotion(.snappy) { saved = card }
         if let demo {
             demo.onSaved(card)
             return

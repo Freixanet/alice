@@ -33,7 +33,7 @@ struct PairingForm: View {
                 }
             } else {
                 Text("This pairing code is incomplete or damaged.")
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Palette.danger(scheme))
             }
         }
         .scrollContentBackground(.hidden)
@@ -55,6 +55,17 @@ struct PairingForm: View {
                     .foregroundStyle(.secondary)
             }
 
+            // Which machine Alice would hand its connection to: a link from a web page or a message
+            // could point anywhere, and the sheet never said where.
+            if let host = flow.payload?.claimURL.host {
+                LabeledContent("Server", value: host)
+                if !HermesAddress.allowsPrivateHTTP(host: host) {
+                    Label("This server is on the internet, not on your network or Tailscale. Connect only if it is yours.",
+                          systemImage: "exclamationmark.triangle.fill")
+                        .font(.footnote)
+                        .foregroundStyle(Palette.warning(scheme))
+                }
+            }
             if let profile = flow.payload?.profileName {
                 LabeledContent("Profile", value: profile)
             }
@@ -96,7 +107,7 @@ struct PairingForm: View {
         Section {
             LabeledContent {
                 Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
+                    .foregroundStyle(Palette.success(scheme))
             } label: {
                 Text("Connected")
             }
@@ -134,7 +145,7 @@ struct PairingForm: View {
         retryable: Bool
     ) -> some View {
         Section {
-            Text(message).foregroundStyle(.red)
+            Text(message).foregroundStyle(Palette.danger(scheme))
             if retryable {
                 Button("Try again") {
                     Task { await flow.run(store: store) }

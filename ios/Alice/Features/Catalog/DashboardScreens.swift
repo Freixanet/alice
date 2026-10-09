@@ -330,6 +330,7 @@ struct ProjectsScreen: View {
 }
 
 private struct NewHermesProjectSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -370,7 +371,7 @@ private struct NewHermesProjectSheet: View {
                     Text("Hermes groups sessions into this Project by their working directory. You can leave it empty and add folders later.")
                 }
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
                 }
             }
             .navigationTitle(seed == nil ? "New Project" : "Make Project")
@@ -410,6 +411,7 @@ private struct NewHermesProjectSheet: View {
 }
 
 private struct ProjectDetailSheet: View {
+    @Environment(\.colorScheme) private var scheme
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
 
@@ -526,7 +528,7 @@ private struct ProjectDetailSheet: View {
                 }
 
                 if let failure {
-                    Section { Text(failure).foregroundStyle(.red).font(.footnote) }
+                    Section { Text(failure).foregroundStyle(Palette.danger(scheme)).font(.footnote) }
                 }
             }
             .navigationTitle(project.name)
@@ -901,7 +903,7 @@ struct UsageScreen: View {
                             Text("30 days").tag(30)
                             Text("90 days").tag(90)
                         }
-                        .pickerStyle(.segmented)
+                        .segments()
                     }
 
                     if let billing, billing.available {

@@ -57,6 +57,8 @@ SOURCE_TOOLS = ("web_search", "web_extract", "browser_")
 TRACKING = re.compile(r"^(utm_.*|fbclid|gclid|mc_.*|ref|ref_src|igshid)$", re.I)
 URL_RE = re.compile(r"https?://[^\s\"'<>()\[\]{}\\]+", re.I)
 MARKER = re.compile(r"\[(\d{1,2})\]")
+# Where a post without web sources came from: the person's own connected services.
+BASIS = ("mail", "calendar", "health", "money", "notes", "errands", "goals")
 
 
 class FeedError(ValueError):
@@ -417,8 +419,12 @@ def _check_post(raw: Dict[str, Any], registry: Registry, index: int) -> Dict[str
     if not headline or not body:
         raise FeedError(f"{where}: headline and body are required.")
     refs = [str(r).strip() for r in (raw.get("sources") or [])]
-    if not refs:
-        raise FeedError(f"{where}: cite at least one source.")
+    basis = _clean(raw.get("basis"), 40).lower() or None
+    if basis and basis not in BASIS:
+        raise FeedError(f"{where}: basis must be one of {', '.join(BASIS)}.")
+    if not refs and not basis:
+        raise FeedError(f"{where}: cite at least one source, or set basis for a post drawn only "
+                        "from the person's own connected services.")
     sources = []
     for ref in refs:
         if URL_RE.match(ref):
@@ -431,7 +437,9 @@ def _check_post(raw: Dict[str, Any], registry: Registry, index: int) -> Dict[str
     if len({s["ref"] for s in sources}) != len(sources):
         raise FeedError(f"{where}: a source is listed twice.")
     markers = [int(m) for m in MARKER.findall(body)]
-    if not markers:
+    if not sources and markers:
+        raise FeedError(f"{where}: [n] markers need sources; a basis-only post has none.")
+    if sources and not markers:
         raise FeedError(f"{where}: cite each claim inline with [n], n being its position in sources.")
     bad = sorted({m for m in markers if not 1 <= m <= len(sources)})
     if bad:
@@ -445,6 +453,8 @@ def _check_post(raw: Dict[str, Any], registry: Registry, index: int) -> Dict[str
         "storyKey": re.sub(r"[^a-z0-9-]", "", _clean(raw.get("storyKey"), 80).lower()) or None,
         "whyThis": _clean(raw.get("whyThis"), 240) or None,
         "language": _clean(raw.get("language"), 12) or None,
+        "basis": basis,
+        "offer": _clean(raw.get("offer"), 200) or None,
     }
 
 
@@ -505,6 +515,17 @@ Each post:
   its provenance in whyThis ("because your email said…"). Use abstract reasons ("You've shown
   repeated interest in AI agents") or omit whyThis for private or delicate inferences.
 - language: write in the person's language (the brief's language; Spanish if unsure) and set it.
+
+Two more kinds of post, both welcome when they are real:
+- Something in the person's own life from their connected services: a charge that failed, a
+  renewal or deadline coming up, an offer about to expire, a new hit on something they watch.
+  Lead with the concrete fact (amount, date, who). Set basis to where it came from (mail,
+  calendar, health, money, notes, errands, goals). Web sources are optional for these; without
+  sources, write no [n] markers. Only what you read in this run — never from memory or guesswork.
+- An offer of help: when a post points at something you could do for them, set offer to that
+  task in one first-person sentence in their language ("Compruebo cuál de los buffets guardados
+  sigue abierto y qué incluye el precio"). It becomes a "Hazlo" button that starts the task.
+  At most one offer per post, and only for things you can actually do with your tools.
 
 Up to 6 posts, quality before quantity: better 2 good posts than 5 of filler. Keep breadth — do not
 let the feed collapse into 2–3 topics."""
@@ -698,9 +719,20 @@ class Worker:
                   publishedCount=0, error="")
         logger.info("feed: run %s started (%s)", session, ", ".join(gen.get("reasons") or [gen.get("reason")]))
         try:
-            run_id = self.gateway.start(session, prompt(self.home, started))
+            # The gateway runs a session on an explicit model; the feed uses the errands' fixed one
+            # (without it every run raised TypeError, reported as «could not reach Hermes»).
+            route = _sibling("alice_errands", "errands.py").model_selection(self.home)
         except Exception as exc:  # noqa: BLE001
+            self._settle(f"no model set for background runs: {exc}")
+            return True
+        try:
+            run_id = self.gateway.start(session, prompt(self.home, started), **route)
+        except (OSError, TimeoutError) as exc:
             self._settle(f"could not reach Hermes: {type(exc).__name__}")
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("feed: run %s could not start", session)
+            self._settle(f"the run could not start: {type(exc).__name__}")
             return True
         self._set(runId=run_id)
         try:
@@ -827,13 +859,17 @@ PUBLISH_SCHEMA = {
                     "properties": {
                         "kicker": {"type": "string"}, "category": {"type": "string"},
                         "headline": {"type": "string"},
-                        "body": {"type": "string", "description": "Markdown; every claim cited inline as [n]."},
+                        "body": {"type": "string", "description": "Markdown; every web claim cited inline as [n]."},
                         "sources": {"type": "array", "items": {"type": "string"},
                                     "description": "Source ids in citation order, e.g. [\"src_03\", \"src_07\"]."},
                         "storyKey": {"type": "string"}, "whyThis": {"type": "string"},
                         "language": {"type": "string"},
+                        "basis": {"type": "string", "enum": list(BASIS),
+                                  "description": "For a post from the person's own connected services."},
+                        "offer": {"type": "string",
+                                  "description": "A task you can do for them about this post, one first-person sentence."},
                     },
-                    "required": ["kicker", "category", "headline", "body", "sources", "language"],
+                    "required": ["kicker", "category", "headline", "body", "language"],
                 },
             },
         },

@@ -17,10 +17,31 @@ if ! command -v hermes >/dev/null; then
   exit 1
 fi
 
-mkdir -p "$dest"
-# Skills are left read-only (below); an update replaces them.
-[[ -d $dest/skills ]] && chmod -R u+w "$dest/skills"
-cp -R "$here/." "$dest/"
+# The installed plugin is kept beside the new one until this install finishes, and comes back
+# if it fails: a half-copied plugin left Hermes without its purchase gates.
+backup=""
+if [[ -d $dest ]]; then
+  mkdir -p "$hermes_home/backups"
+  backup=$hermes_home/backups/alice-plugin-$(date +%Y%m%d-%H%M%S)
+  [[ -d $dest/skills ]] && chmod -R u+w "$dest/skills"
+  cp -R "$dest" "$backup"
+  print "Previous plugin kept at $backup"
+fi
+restore() {
+  if [[ -n $backup && -d $backup ]]; then
+    print -u2 "The install failed; the previous plugin is back in place."
+    rm -rf "$dest" && cp -R "$backup" "$dest"
+  fi
+}
+trap restore ERR
+staging=$hermes_home/plugins/.alice-new
+rm -rf "$staging"
+mkdir -p "$staging"
+cp -R "$here/." "$staging/"
+rm -rf "$dest"
+mv "$staging" "$dest"
+# Which source this is: the plugin's version never changed (always 1.0.0), so nobody could tell.
+git -C "$here" rev-parse --short HEAD > "$dest/INSTALLED_FROM" 2>/dev/null || print "unknown" > "$dest/INSTALLED_FROM"
 
 # pypdf (BSD) for PDF forms, into the plugin's own folder: Hermes' environment is not touched.
 python=$hermes_home/hermes-agent/venv/bin/python

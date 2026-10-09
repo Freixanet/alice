@@ -54,6 +54,11 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(sent["filters"]["price"], {"max": 4000})
         self.assertEqual(sent["pagination"], {"limit": 3})
 
+    def test_a_price_limit_is_sent_in_exact_cents(self):
+        post = Recorder({"result": {"structuredContent": {"products": [PRODUCT]}}})
+        catalog.search("camiseta", max_price=19.99, post=post)
+        self.assertEqual(post.sent[0]["params"]["arguments"]["catalog"]["filters"]["price"], {"max": 1999})
+
     def test_unknown_country_and_currency_are_not_invented(self):
         post = Recorder({"result": {"structuredContent": {"products": []}}})
         out = catalog.search("lámpara", post=post)

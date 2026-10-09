@@ -7,11 +7,13 @@ struct FeedPostCard: View {
     let post: FeedPost
     let onLove: () -> Void
     let onDiscuss: () -> Void
+    var onOffer: () -> Void = {}
     let onWhy: () -> Void
     let onDelete: () -> Void
     let onExpand: () -> Void
 
     @State private var expanded = false
+    @State private var truncated = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -33,14 +35,16 @@ struct FeedPostCard: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
 
-            FeedBodyText(post: post, collapsed: !expanded)
-            Button(expanded ? "Less" : "More") {
-                withAnimation(.snappy) { expanded.toggle() }
-                if expanded { onExpand() }
+            FeedBodyText(post: post, collapsed: !expanded, onTruncation: { truncated = $0 })
+            if truncated || expanded {
+                Button(expanded ? "Less" : "More") {
+                    withMotion(.snappy) { expanded.toggle() }
+                    if expanded { onExpand() }
+                }
+                .font(.footnote.weight(.semibold))
+                .buttonStyle(.borderless)
+                .accessibilityLabel(expanded ? "Show less" : "Show the whole post")
             }
-            .font(.footnote.weight(.semibold))
-            .buttonStyle(.borderless)
-            .accessibilityLabel(expanded ? "Show less" : "Show the whole post")
 
             if !post.sourceLinks.isEmpty {
                 sources
@@ -99,6 +103,21 @@ struct FeedPostCard: View {
             }
             .accessibilityLabel("Discuss with Alice")
 
+            if post.offer != nil {
+                Button {
+                    Haptic.tap.play()
+                    onOffer()
+                } label: {
+                    Text("Do it")
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(.primary)
+                }
+                .buttonStyle(.bordered)
+                .buttonBorderShape(.capsule)
+                .frame(minHeight: 44)
+                .accessibilityHint(post.offer ?? "")
+            }
+
             if post.whyThis != nil {
                 Button(action: onWhy) {
                     Label("Why this", systemImage: "questionmark.circle")
@@ -129,14 +148,34 @@ struct FeedPostCard: View {
 struct FeedBodyText: View {
     let post: FeedPost
     var collapsed: Bool
+    /// Whether four lines cut the body short, so More has something to show.
+    var onTruncation: (Bool) -> Void = { _ in }
+    @State private var fullHeight: CGFloat = 0
+    @State private var shownHeight: CGFloat = 0
 
     var body: some View {
+        text
+            .lineLimit(collapsed ? 4 : nil)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { shownHeight = $0; report() }
+            .background {
+                // The whole body, unseen, measured at the same width.
+                text
+                    .hidden()
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullHeight = $0; report() }
+            }
+    }
+
+    private var text: some View {
         Text(Self.attributed(post))
             .font(.body)
             .foregroundStyle(.primary)
-            .lineLimit(collapsed ? 4 : nil)
             .fixedSize(horizontal: false, vertical: true)
             .tint(.accentColor)
+    }
+
+    private func report() {
+        guard collapsed, shownHeight > 0 else { return }
+        onTruncation(fullHeight > shownHeight + 1)
     }
 
     nonisolated static func attributed(_ post: FeedPost) -> AttributedString {

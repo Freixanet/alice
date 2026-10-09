@@ -360,3 +360,18 @@ No se usó el instalador general, que sobrescribiría archivos vivos.
 - No se envió ningún correo, no se hicieron pruebas UI en el teléfono y no se
   configuró Bark. La creación no inicia trabajo hasta activarse explícitamente.
   Fase 2 no iniciada.
+
+
+## Recuperación de regresión de instalación
+
+El build 88 salió de una rama basada en `28f48c8` (main) que no contenía las
+mejoras previas del teléfono. Un número superior de build no garantiza que se
+conserve el código más reciente. El usuario identificó Settings, sidebar,
+composer y header regresados. Se recupera **toda** la rama `claude/muse-parity`
+(`18a214d`), descendiente de `claude/sidebar-settings-composer` (`1fc290c`),
+que además coincide con `INSTALLED_FROM` del plugin antes de Watchers.
+Se conservan ambas historias en un merge y las adiciones de Watchers.
+No se reconstruyen esos controles de memoria ni se modifica el journal real.
+La UI existente queda igual que `18a214d`, salvo el enlace de Watchers y su cliente.
+La guía de instalación debe aplicar las reglas actuales de AGENTS: rama subida,
+ancestría del origen instalado y lectura del build justo antes de instalar.

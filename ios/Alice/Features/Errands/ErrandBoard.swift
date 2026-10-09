@@ -45,7 +45,10 @@ final class ErrandBoard {
                 guard let self else { return }
                 await self.refresh()
                 let busy = self.errands.contains { $0.status == .working }
-                try? await Task.sleep(for: .seconds(busy ? 3 : 10))
+                let waiting = self.errands.contains { $0.status.needsPerson }
+                // With nothing under way the board rarely changes: a minute apart, not ten seconds,
+                // while any chat is open (network, disk and a transcript redraw each time).
+                try? await Task.sleep(for: .seconds(busy ? 3 : waiting ? 10 : 60))
             }
         }
     }
@@ -69,10 +72,14 @@ final class ErrandBoard {
     func refresh() async {
         guard let store else { return }
         do {
-            errands = try await store.listErrands()
+            let next = try await store.listErrands()
             fresh = true
             failure = nil
-            store.rememberLaunchList(.errands, errands)
+            // Unchanged, nothing is reassigned or rewritten.
+            if next != errands {
+                errands = next
+                store.rememberLaunchList(.errands, errands)
+            }
         } catch {
             failure = error.localizedDescription
         }
@@ -81,12 +88,18 @@ final class ErrandBoard {
 
     /// «Permitir» pays, so it asks for Face ID first; «Denegar» does not.
     func decide(_ errand: Errand, allow: Bool, card: String = "") async {
-        guard let store, let checkout = errand.checkout, checkout.status == .pending else { return }
+        guard let store, let checkout = errand.checkout, checkout.status == .pending,
+              !sending.contains(errand.id) else { return }
         if allow {
+            // In flight from the first tap: two quick taps asked for Face ID twice and could send
+            // two decisions. The card is disabled while Face ID asks.
+            sending.insert(errand.id)
             let language = errand.language
             let merchant = checkout.merchant.nonEmpty(or: checkout.site)
             let reason = language.pick("Pay \(checkout.total) at \(merchant)", "Pagar \(checkout.total) en \(merchant)")
-            guard await Biometrics.authenticate(reason: reason) else { return }
+            let approved = await Biometrics.authenticate(reason: reason)
+            sending.remove(errand.id)
+            guard approved else { return }
         }
         await answer(errand) {
             try await store.decideCheckout(errand.id, checkoutID: checkout.id, allow: allow, card: card)
@@ -200,21 +213,31 @@ struct ErrandStack: View {
             // The browser only while it is being used: not before it starts, and gone once the
             // errand waits for the person or ends (a still page left there read as broken). Under
             // the errand's card, which is on screen first: above it, it pushed that card down.
-            if errand.status == .working && !errand.steps.isEmpty {
+            if (errand.status.isOpen || errand.status == .stuck) && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             if errand.status == .needsLogin, let request = errand.accessRequest {
                 VStack(alignment: .leading, spacing: 12) {
-                    Label(errand.language.pick("Shop access", "Acceso a la tienda"), systemImage: "lock.shield")
+                    let code = errand.access?.isCode == true
+                    Label(code ? errand.language.pick("Verification code", "Código de verificación")
+                               : errand.language.pick("Shop access", "Acceso a la tienda"),
+                          systemImage: code ? "number" : "lock.shield")
                         .font(.headline)
-                    Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
-                                              "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
-                    Button(errand.language.pick("Continue securely", "Continuar de forma segura")) {
+                    if code, case let .code(_, hint?) = request.kind {
+                        // Why, and where it went: never a bare «enter the code» (06-10).
+                        Text(hint)
+                    } else {
+                        Text(errand.language.pick("Sign in securely to continue this order. Nothing has been paid.",
+                                                  "Inicia sesión de forma segura para continuar este pedido. No se ha pagado nada."))
+                    }
+                    Button(code ? errand.language.pick("Enter the code", "Escribir el código")
+                                : errand.language.pick("Continue securely", "Continuar de forma segura")) {
                         store.secureRequest = request
                     }
-                    .buttonStyle(.borderedProminent)
+                    .buttonStyle(.borderedProminent).onAccentLabel()
                     .disabled(sending)
-                    Button(errand.language.pick("Later", "Ahora no")) {
+                    Button(code ? errand.language.pick("I don’t have it", "No lo tengo")
+                                : errand.language.pick("Later", "Ahora no")) {
                         Task { _ = await store.answerSecureRequest(request, value: "") }
                     }
                     .disabled(sending)
@@ -237,11 +260,10 @@ struct ErrandStack: View {
             }
             if let checkout = errand.checkout, let phase = checkoutPhase {
                 if phase == .pending || phase == .sending {
-                    // Alice's words, in a reply's bubble like every other reply.
-                    ReplyBubble {
-                        RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
-                                                                            language: errand.language), bubbled: true)
-                    }
+                    // Alice's words, in a reply's bubble like every other reply (`bubbled` draws it;
+                    // wrapped in another bubble they sat narrower and inset, unlike the rest).
+                    RichMessageView(content: PurchaseSummaryText.summary(checkout, card: chosen?.label ?? checkout.cardLabel,
+                                                                        language: errand.language), bubbled: true)
                 }
                 CheckoutApprovalCard(checkout: checkout, logoID: logoID, logo: logo,
                                      language: errand.language, phase: phase, compact: true, error: problem,
@@ -264,12 +286,10 @@ struct ErrandStack: View {
                     }
             }
             if let receipt = errand.receipt {
-                ReplyBubble {
-                    RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
-                }
+                RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
             } else if [.stuck, .denied, .stopped].contains(errand.status) {
                 ErrandStoppedCard(errand: errand, session: session, sending: sending,
-                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel)
+                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel, onOpenBrowser: onOpenBrowser)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -304,8 +324,20 @@ struct ErrandChatBlock: View {
 
     @Environment(AppStore.self) private var store
     @State private var browsing = false
+    @State private var browserProblem: String?
 
     private var board: ErrandBoard { store.errandBoard }
+
+    private func openBrowser(for errand: Errand) {
+        guard errand.browserTarget != nil else {
+            browserProblem = errand.language.pick(
+                "This purchase’s browser is unavailable. Retry the purchase to reopen it.",
+                "El navegador de esta compra no está disponible. Reintenta la compra para recuperarlo.")
+            return
+        }
+        browserProblem = nil
+        browsing = true
+    }
 
     var body: some View {
         Group {
@@ -313,8 +345,8 @@ struct ErrandChatBlock: View {
                 ErrandStack(
                     errand: errand, logoID: errand.id,
                     // A saved errand's buttons wait for the Mac's own word on it.
-                    sending: board.sending.contains(errand.id) || !board.fresh, problem: board.problems[errand.id],
-                    onOpenBrowser: { browsing = true },
+                    sending: board.sending.contains(errand.id) || !board.fresh, problem: browserProblem ?? board.problems[errand.id],
+                    onOpenBrowser: { openBrowser(for: errand) },
                     onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },
                     onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
@@ -334,7 +366,8 @@ struct ErrandChatBlock: View {
                     board.fresh && !old && new
                 }
                 .fullScreenCover(isPresented: $browsing) {
-                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
+                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text,
+                                      pinnedTarget: errand.browserTarget)
                 }
             } else if !board.loaded {
                 HStack(spacing: 10) {

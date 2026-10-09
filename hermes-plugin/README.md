@@ -232,3 +232,7 @@ Review Tasks and the phase 3 routine/chat presentation are still pending.
 
 For device installation, safe plugin update and one real Gmail test, follow
 [the first email watcher guide](../docs/watchers-first-email.md).
+
+## Verified purchase preparation
+
+`purchase_browser` adapts Open Instinct’s observe/act/verify loop to Alice’s existing errands. It exposes observed controls, executes one preparation action and returns the verified post-action state. Stale controls, duplicate actions, secrets and payment actions are refused. See [execution and recovery](../docs/purchase-execution.md).

@@ -115,7 +115,11 @@ enum GalleryFixtures {
                         items: [item(language)],
                         delivery: language.pick("Free delivery · arrives Friday, Oct 2", "Envío gratis · llega el viernes 2 oct"),
                         address: "Calle Mayor 1, 28013 Madrid", email: "nombre@email.com",
-                        cardLabel: "Visa ···4242", total: "27,98 €", currency: "EUR")
+                        cardLabel: "Visa ···4242", total: "27,98 €", currency: "EUR",
+                        breakdown: [.init(label: "Subtotal", amount: "29,98 €"),
+                                    .init(label: language.pick("Coupon WELCOME", "Cupón BIENVENIDA"), amount: "-2,00 €"),
+                                    .init(label: language.pick("Shipping", "Envío"), amount: language.pick("Free", "Gratis"))],
+                        conditions: [language.pick("No returns on opened supplements", "Sin devoluciones si se abre el envase")])
     }
 
     static func receipt(_ language: ChatLanguage) -> Errand.Receipt {

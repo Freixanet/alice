@@ -31,12 +31,18 @@ provides_tools:
   - purchase_discover
   - purchase_verify
   - purchase_options
+  - product_list
   - purchase_check_cart
+  - purchase_browser
   - login_request
   - login_fill
   - errand_start
   - checkout_request
   - card_request
+  - purchase_outcome
+  - catalog_search
+  - catalog_product
+  - ask_person
 provides_hooks:
   - pre_tool_call
   - post_tool_call

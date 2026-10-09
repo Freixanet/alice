@@ -86,6 +86,18 @@ final class FeedStoreTests: XCTestCase {
         XCTAssertEqual(parsed.viewer.discussCount, 2)
     }
 
+    func testPersonalPostCarriesBasisAndOffer() throws {
+        let json = """
+        {"revision": 1, "generation": {"state": "idle"},
+         "posts": [{"id": "p2", "headline": "Cobro fallido", "body": "Stripe rechazó 10,27 €.", "sources": [],
+                    "basis": "mail", "offer": "Reviso la tarjeta de la suscripción", "createdAt": 1800000000}]}
+        """
+        let post = try XCTUnwrap(try JSONDecoder().decode(FeedPayload.self, from: Data(json.utf8)).feedPosts.first)
+        XCTAssertEqual(post.basis, "mail")
+        XCTAssertEqual(post.offer, "Reviso la tarjeta de la suscripción")
+        XCTAssertTrue(post.sourceLinks.isEmpty)
+    }
+
     func testCitationsBecomeLinksToTheirSources() {
         let sources = [FeedSource(ref: "src_01", title: "A", url: URL(string: "https://a.example/1")!),
                        FeedSource(ref: "src_02", title: "B", url: URL(string: "https://b.example/2")!)]

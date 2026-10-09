@@ -249,7 +249,7 @@ struct CardImage: View {
                 }
                 guard image != nil || page != nil else { return }
                 let found = await CardImages.load(image: image, page: page)
-                withAnimation(.easeOut(duration: 0.25)) {
+                withMotion(.easeOut(duration: 0.25)) {
                     picture = found
                     looked = true
                 }

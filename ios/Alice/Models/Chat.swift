@@ -121,6 +121,12 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         /// not to the gateway's runs, whatever kind of chat it appeared in.
         var viaSocket: Bool? = nil
 
+        /// `resolving` is left out on purpose: saved as true by an app killed mid-decision, it came back
+        /// as «Sending decision…» with the buttons off until Hermes gave up. A relaunch asks again.
+        private enum CodingKeys: String, CodingKey {
+            case runID, requestID, title, detail, command, choices, error, smartDenied, viaSocket
+        }
+
         /// Hermes' own statement of what makes this risky.
         ///
         /// Not in the same place on both routes: a run keeps the tool's name in

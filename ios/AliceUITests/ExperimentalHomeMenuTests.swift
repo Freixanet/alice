@@ -1,5 +1,7 @@
 import XCTest
 
+/// The experimental home: the composer alone, full width and centred. The round section button
+/// that sat at its left was removed; Notes and Library are in the drawer, Routines in Settings.
 @MainActor
 final class ExperimentalHomeMenuTests: XCTestCase {
     override func setUp() async throws {
@@ -7,149 +9,45 @@ final class ExperimentalHomeMenuTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testAvatarSwitchPreservesDraftAndSurvivesRelaunch() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-alice.developerMode", "YES"]
-        app.launch()
-        chooseInterface("Current", in: app)
-        XCTAssertFalse(menuButton(in: app).exists)
-
-        chooseInterface("Experimental", in: app)
-        // «Today options» left the experimental home; its section button is what it shows now.
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
-        let draft = "Keep this draft while switching"
-        let field = app.descendants(matching: .any)["composer.text"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        field.typeText(draft)
-        XCTAssertTrue(menuButton(in: app).exists)
-        XCTAssertTrue((field.value as? String)?.contains(draft) == true)
-        capture(app, "experimental-today-keyboard")
-
-        app.terminate()
-        // Use Alice's real local main chat on both launches. The visual-review
-        // fixture is seeded after launch and can replace the selected chat.
-        app.launchArguments = ["-alice.developerMode", "YES"]
-        app.launch()
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20), "The interface choice must survive relaunch")
-        XCTAssertTrue((field.value as? String)?.contains(draft) == true)
-        chooseInterface("Current", in: app)
-        XCTAssertFalse(menuButton(in: app).exists)
-        XCTAssertTrue((field.value as? String)?.contains(draft) == true)
-        capture(app, "current-home-restored")
-    }
-
-    /// The round button and the composer sit in one row at the button's own
-    /// height, and both stay put — and hittable — once the keyboard is up.
-    func testMenuRoutesKeepDraftAndStayWithKeyboard() {
+    func testComposerIsAloneCentredAndKeepsItsDraft() {
         let app = XCUIApplication()
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "light"]
         app.launch()
-        let button = menuButton(in: app)
-        XCTAssertTrue(button.waitForExistence(timeout: 20))
-        XCTAssertEqual(button.frame.width, button.frame.height, accuracy: 1)
-        XCTAssertGreaterThanOrEqual(button.frame.height, 44)
-        let field = app.descendants(matching: .any)["composer.text"]
-        // Bottom-aligned with the composer's capsule, not with the text field inside it.
         let capsule = app.descendants(matching: .any)["composer.capsule"]
-        XCTAssertTrue(capsule.waitForExistence(timeout: 5))
-        XCTAssertEqual(button.frame.maxY, capsule.frame.maxY, accuracy: 2)
+        XCTAssertTrue(capsule.waitForExistence(timeout: 20))
+        XCTAssertFalse(app.buttons["home.experimentalMenu"].exists, "The section button beside the composer is gone")
+        assertCentredAndWide(capsule, in: app)
 
+        let field = app.descendants(matching: .any)["composer.text"]
         field.tap()
-        field.typeText(" Menu route draft")
+        field.typeText("Keep this draft")
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(button.exists)
-        XCTAssertTrue(button.isHittable)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
+        assertCentredAndWide(capsule, in: app)
         capture(app, "experimental-home-keyboard")
 
         app.terminate()
         app.launch()
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
-        XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
-
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 10))
-        // These are the destinations the menu currently offers; Feed is a swipe away.
-        for name in ["Notes", "Routines", "Library", "Chat"] {
-            selectSection(name, in: app)
-            switch name {
-            case "Notes": XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 5))
-            case "Routines": XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 5))
-            case "Library": XCTAssertTrue(app.navigationBars["Library"].waitForExistence(timeout: 5))
-            default: XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 5))
-            }
-            capture(app, "experimental-section-\(name.lowercased())")
-        }
-        XCTAssertTrue((field.value as? String)?.contains("Menu route draft") == true)
+        XCTAssertTrue(capsule.waitForExistence(timeout: 20))
+        XCTAssertTrue((field.value as? String)?.contains("Keep this draft") == true)
     }
 
-    func testDeveloperGateAndLargeText() {
+    func testLargeTextKeepsTheComposerReachable() {
         let app = XCUIApplication()
-        app.launchArguments = ["-visualReview", "-alice.developerMode", "NO", "-alice.developer.homeInterface", "experimental"]
-        app.launch()
-        XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(menuButton(in: app).exists, "Developer mode must gate the experiment")
-        app.buttons["chat.leading"].tap()
-        app.buttons["sidebar.settings"].press(forDuration: 1)
-        XCTAssertTrue(app.buttons["Settings"].waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Interface"].exists)
-        app.terminate()
-
         app.launchArguments = ["-visualReview", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental", "-alice.theme", "dark", "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
         app.launch()
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
-        capture(app, "experimental-home-dark-large-text")
+        let capsule = app.descendants(matching: .any)["composer.capsule"]
+        XCTAssertTrue(capsule.waitForExistence(timeout: 20))
         app.descendants(matching: .any)["composer.text"].tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(menuButton(in: app).isHittable)
         XCTAssertTrue(app.buttons["composer.action"].isHittable)
         capture(app, "experimental-home-dark-large-keyboard")
-        app.terminate()
-        app.launch()
-        XCTAssertTrue(menuButton(in: app).waitForExistence(timeout: 20))
-        // The feed left the menu for a swipe from the chat (f0a915b); a section still in it opens.
-        selectSection("Notes", in: app)
-        XCTAssertTrue(app.navigationBars["Folders"].waitForExistence(timeout: 10))
-        app.terminate()
-
-        app.launchArguments = ["-seedLongBotChat", "-alice.developerMode", "YES", "-alice.developer.homeInterface", "experimental"]
-        app.launch()
-        XCTAssertTrue(app.buttons["chat.leading"].waitForExistence(timeout: 20))
-        XCTAssertFalse(menuButton(in: app).exists, "Agent chats retain their existing composer")
     }
 
-    /// The round button itself, wherever it sits — beside the composer or
-    /// alone above a destination page.
-    private func menuButton(in app: XCUIApplication) -> XCUIElement {
-        // The live chat stays mounted under a destination. Its invisible
-        // composer can remain in XCTest's snapshot; operate the visible menu.
-        let matches = app.buttons.matching(identifier: "home.experimentalMenu")
-        return matches.allElementsBoundByIndex.first(where: { $0.isHittable }) ?? matches.firstMatch
-    }
-
-    /// Opens the button's menu and taps a section by its title.
-    private func selectSection(_ name: String, in app: XCUIApplication) {
-        let button = menuButton(in: app)
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        button.tap()
-        let item = app.buttons[name]
-        XCTAssertTrue(item.waitForExistence(timeout: 5))
-        item.tap()
-    }
-
-    private func chooseInterface(_ name: String, in app: XCUIApplication) {
-        let leading = app.buttons["chat.leading"]
-        XCTAssertTrue(leading.waitForExistence(timeout: 20))
-        leading.tap()
-        let avatar = app.buttons["sidebar.settings"]
-        XCTAssertTrue(avatar.waitForExistence(timeout: 5))
-        avatar.press(forDuration: 1)
-        let menu = app.buttons["Interface"]
-        XCTAssertTrue(menu.waitForExistence(timeout: 5))
-        menu.tap()
-        let choice = app.buttons[name]
-        XCTAssertTrue(choice.waitForExistence(timeout: 5))
-        choice.tap()
+    private func assertCentredAndWide(_ capsule: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let window = app.windows.firstMatch.frame
+        XCTAssertEqual(capsule.frame.midX, window.midX, accuracy: 2, "centred", file: file, line: line)
+        XCTAssertGreaterThanOrEqual(capsule.frame.width, window.width - 48, "full width", file: file, line: line)
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {

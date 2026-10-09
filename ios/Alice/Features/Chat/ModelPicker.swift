@@ -9,6 +9,7 @@ struct ModelPicker: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var query = ""
     @State private var applyingModel = false
     /// The model Hermes just confirmed, shown before the sheet closes.
@@ -305,7 +306,7 @@ struct ModelPicker: View {
                         .padding(.vertical, 12)
                         .glassEffect(.regular, in: .capsule)
                         .padding(.bottom, 24)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                         .accessibilityAddTraits(.updatesFrequently)
                 }
             }
@@ -424,6 +425,8 @@ struct ModelPicker: View {
             }
         }
         .disabled(applyingModel)
+        .accessibilityAddTraits(uses(model) ? .isSelected : [])
+        .accessibilityValue(applyingModel && pendingBotModel == model ? Text("Changing model") : Text(verbatim: ""))
     }
 
     private func choose(_ model: HermesClient.ModelOption) {
@@ -531,7 +534,7 @@ struct ModelPicker: View {
                     if warning == nil {
                         onChanged?(model.label)
                         // Said, not assumed: the change is confirmed before the sheet closes.
-                        withAnimation(.snappy) { confirmed = model.label }
+                        withMotion(reduceMotion ? nil : .snappy) { confirmed = model.label }
                         try? await Task.sleep(for: .milliseconds(900))
                         dismiss()
                     }

@@ -38,6 +38,10 @@ struct FeedPost: Codable, Hashable, Sendable, Identifiable {
     var readAt: Date?
     var whyThis: String?
     var language: String?
+    /// For a post drawn from the person's own connected services rather than the web: "mail", "calendar"…
+    var basis: String?
+    /// A task Alice offers to do about this post, in her words; shown as "Do it".
+    var offer: String?
     var isSeeded = false
     var viewer = FeedViewerState()
     /// Hidden by the person; kept until the server has the delete, so an undo can bring it back.
@@ -110,6 +114,8 @@ struct FeedPayload: Decodable, Sendable {
         var createdAt: Double
         var whyThis: String?
         var language: String?
+        var basis: String?
+        var offer: String?
         var viewerState: Viewer?
     }
 
@@ -148,6 +154,7 @@ struct FeedPayload: Decodable, Sendable {
                 storyKey: post.storyKey,
                 createdAt: Date(timeIntervalSince1970: post.createdAt),
                 whyThis: post.whyThis, language: post.language,
+                basis: post.basis, offer: post.offer,
                 viewer: FeedViewerState(
                     loved: post.viewerState?.loved ?? false,
                     lovedAt: post.viewerState?.lovedAt.map { Date(timeIntervalSince1970: $0) },
@@ -234,3 +241,36 @@ enum FeedSeed {
         }
     }
 }
+
+#if DEBUG
+/// Debug only (`-feedSamples`): what a lived-in feed looks like, for reviewing the screen.
+enum FeedSamples {
+    static func posts(now: Date = Date()) -> [FeedPost] {
+        func post(_ id: String, _ kicker: String, _ headline: String, _ body: String, hours: Double,
+                  sources: [FeedSource] = [], basis: String? = nil, offer: String? = nil) -> FeedPost {
+            FeedPost(id: "sample-\(id)", kicker: kicker, category: "", headline: headline, body: body,
+                     sourceLinks: sources, storyKey: nil, createdAt: now.addingTimeInterval(-hours * 3600),
+                     whyThis: nil, language: "es", basis: basis, offer: offer, isSeeded: true)
+        }
+        let indeed = FeedSource(ref: "src_01", title: "Indeed Hiring Lab", url: URL(string: "https://www.hiringlab.org")!)
+        let gurman = FeedSource(ref: "src_02", title: "Bloomberg", url: URL(string: "https://www.bloomberg.com")!)
+        return [
+            post("charge", "Pagos", "El cobro de 10,27 € ha vuelto a fallar",
+                 "Stripe reintentó esta mañana el cobro de tu suscripción con tu Visa y volvió a rechazarlo. Si no actualizas la tarjeta, la suscripción se cancela el viernes.",
+                 hours: 2, basis: "mail", offer: "Miro qué tarjeta usa la suscripción y te dejo el cambio preparado"),
+            post("jobs", "Empleo", "España lidera la contratación de centros de datos en Europa",
+                 "Las ofertas para centros de datos en España llegan a 260 en el índice de Indeed, más del doble que antes de la pandemia.[1] La demanda se concentra en los nuevos campus de IA de Aragón.",
+                 hours: 5, sources: [indeed]),
+            post("renewal", "Suscripciones", "Apple One se renueva el viernes a 19,95 €",
+                 "Tu mes de prueba de Apple One pasa a ser de pago el viernes. Si cancelas antes, pierdes el acceso al momento, así que el jueves es el último día para decidir.",
+                 hours: 9, basis: "mail", offer: "Compruebo en qué cuenta está la prueba y te preparo la cancelación"),
+            post("apple", "Tecnología", "Apple prepara un evento para el 13 de octubre",
+                 "Según Mark Gurman, Apple presentará ese día su pantalla para el hogar, un panel cuadrado de 6 pulgadas con cámara para FaceTime.[1]",
+                 hours: 20, sources: [gurman]),
+            post("flat", "Casa", "Un chalet en el Vallès a 1.850 €/mes",
+                 "Tu búsqueda guardada ha encontrado un chalet de 4 habitaciones y 246 m² con piscina y jardín alrededor de la casa.",
+                 hours: 26, basis: "mail", offer: "Compruebo si el anuncio es real y te preparo un mensaje para el propietario"),
+        ]
+    }
+}
+#endif

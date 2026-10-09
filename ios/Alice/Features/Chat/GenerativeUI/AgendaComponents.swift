@@ -114,6 +114,7 @@ struct TimelineCard: View {
                                 .contentShape(.rect)
                         }
                         .buttonStyle(.pressable)
+                        .accessibilityLabel("Open link")
                     }
                 }
             }

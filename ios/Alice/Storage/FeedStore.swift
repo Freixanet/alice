@@ -39,9 +39,11 @@ final class FeedStore {
     /// Newest first; the intro posts after the real ones, and hidden once enough real ones exist.
     var posts: [FeedPost] {
         let shown = cache.posts.filter { !$0.deleted }
+        // Debug samples (`-feedSamples`) always show, on top.
+        let samples = shown.filter { $0.isSeeded && $0.id.hasPrefix("sample-") }
         let real = shown.filter { !$0.isSeeded }
-        if real.count >= FeedSeed.retireAfter { return real }
-        return real + shown.filter(\.isSeeded)
+        if real.count >= FeedSeed.retireAfter { return samples + real }
+        return samples + real + shown.filter { $0.isSeeded && !$0.id.hasPrefix("sample-") }
     }
 
     var generation: FeedGeneration { cache.generation }
@@ -74,7 +76,9 @@ final class FeedStore {
                 server: payload.feedPosts, local: cache.posts.filter { !$0.isSeeded }, outbox: cache.outbox
             )
             // New posts slide in and gone ones fold away, rather than the list jumping.
-            withAnimation(.snappy) { cache.posts = merged + seeded }
+            // Debug samples (`-feedSamples`) go on top, where a review looks first.
+            let samples = seeded.filter { $0.id.hasPrefix("sample-") }
+            withMotion(.snappy) { cache.posts = samples + merged + seeded.filter { !$0.id.hasPrefix("sample-") } }
             if let text = payload.brief?.text { cache.brief = text }
         }
         cache.generation = payload.feedGeneration
@@ -205,7 +209,7 @@ final class FeedStore {
     /// app's own and never reach the Mac.
     private func record(_ post: FeedPost, kind: FeedEvent.Kind, on: Bool?) async {
         let event = FeedEvent(id: UUID(), postID: post.id, kind: kind, on: on, createdAt: Date())
-        withAnimation(.snappy) { cache.posts = FeedMerge.replay([event], on: cache.posts) }
+        withMotion(.snappy) { cache.posts = FeedMerge.replay([event], on: cache.posts) }
         guard !post.isSeeded else {
             if kind == .delete, on == true { cache.posts.removeAll { $0.id == post.id && $0.deleted } }
             save()
@@ -219,6 +223,12 @@ final class FeedStore {
     // MARK: Seeds
 
     private func seedIfNew() {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-feedSamples") {
+            cache.posts = FeedSamples.posts()
+            return
+        }
+        #endif
         guard !cache.seeded else { return }
         cache.seeded = true
         cache.posts += FeedSeed.posts()
@@ -227,7 +237,8 @@ final class FeedStore {
 
     private func retireSeedsIfDue() {
         let real = cache.posts.filter { !$0.isSeeded && !$0.deleted }.count
-        if real >= FeedSeed.retireAfter { cache.posts.removeAll(where: \.isSeeded) }
+        // Debug samples (`-feedSamples`) stay for the whole review, next to the real posts.
+        if real >= FeedSeed.retireAfter { cache.posts.removeAll { $0.isSeeded && !$0.id.hasPrefix("sample-") } }
     }
 
     // MARK: Storage

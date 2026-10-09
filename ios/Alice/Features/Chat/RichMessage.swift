@@ -1315,6 +1315,9 @@ extension View {
 struct RichMessageView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .body) private var blockSpacing: CGFloat = 16
+    @ScaledMetric(relativeTo: .body) private var proseLineSpacing: CGFloat = 4
+    @ScaledMetric(relativeTo: .headline) private var headingLineSpacing: CGFloat = 2
     let content: String
     var failed = false
     var onTap: (@MainActor () -> Void)? = nil
@@ -1358,7 +1361,7 @@ struct RichMessageView: View {
                 ForEach(Array(groups(blocks).enumerated()), id: \.offset) { _, group in
                     if group.prose {
                         ReplyBubble {
-                            VStack(alignment: .leading, spacing: 14) {
+                            VStack(alignment: .leading, spacing: blockSpacing) {
                                 ForEach(group.blocks, id: \.0) { view(for: $0.1) }
                             }
                         }
@@ -1378,7 +1381,7 @@ struct RichMessageView: View {
     }
 
     private var plainBody: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: blockSpacing) {
             ForEach(Array((cachesParse ? RichMarkdown.cached(shown) : RichMarkdown.blocks(shown)).enumerated()),
                     id: \.offset) { index, block in
                 if separatesEntries, index > 0, Self.startsEntry(block) {
@@ -1419,11 +1422,11 @@ struct RichMessageView: View {
     private func view(for block: RichBlock) -> some View {
         switch block {
         case let .heading(level, text):
-            replyText(inline(text), font: Self.headingUIFont(level), spacing: 2)
-                .padding(.top, level <= 2 ? 4 : 0)
+            replyText(inline(text), font: Self.headingUIFont(level), spacing: headingLineSpacing)
+                .padding(.top, level <= 2 ? 8 : 4)
                 .accessibilityAddTraits(.isHeader)
         case let .paragraph(text):
-            replyText(inline(text), font: .preferredFont(forTextStyle: .body), spacing: 4)
+            replyText(inline(text), font: .preferredFont(forTextStyle: .body), spacing: proseLineSpacing)
         case let .list(items):
             RichListView(onTap: onTap, items: items, inline: inline)
         case let .callout(kind, body):
@@ -1477,20 +1480,22 @@ struct RichMessageView: View {
 
     static func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1: .title3.weight(.bold)
-        case 2: .headline
+        case 1: .title2.weight(.semibold)
+        case 2: .title3.weight(.semibold)
+        case 3: .headline
         default: .subheadline.weight(.semibold)
         }
     }
 
     static func headingUIFont(_ level: Int) -> UIFont {
         let style: UIFont.TextStyle = switch level {
-        case 1: .title3
-        case 2: .headline
+        case 1: .title2
+        case 2: .title3
+        case 3: .headline
         default: .subheadline
         }
         let size = UIFont.preferredFont(forTextStyle: style).pointSize
-        return .systemFont(ofSize: size, weight: level == 1 ? .bold : .semibold)
+        return .systemFont(ofSize: size, weight: .semibold)
     }
 
     static var mathUIFont: UIFont {
@@ -1514,6 +1519,7 @@ struct RichMessageView: View {
 /// The reply's own words, selectable where they are drawn. A hold brings up
 /// the system handles in the chat; a tap still reveals the reply's actions.
 private struct SelectableReplyText: UIViewRepresentable {
+    @Environment(\.allowsRichTextSelection) private var allowsSelection
     let attributed: AttributedString
     var font: UIFont
     var lineSpacing: CGFloat
@@ -1543,13 +1549,23 @@ private struct SelectableReplyText: UIViewRepresentable {
     func updateUIView(_ view: UITextView, context: Context) {
         context.coordinator.onTap = onTap
         view.tintColor = link
+        // In the chat a hold opens the reply's menu: the view's own holds (selection, the loupe,
+        // a link's preview) stand aside. Taps, links included, still work.
+        for press in view.gestureRecognizers ?? [] where press is UILongPressGestureRecognizer {
+            press.isEnabled = allowsSelection
+        }
+        for menu in view.interactions where menu is UIContextMenuInteraction && !allowsSelection {
+            view.removeInteraction(menu)
+        }
         if let tap = view.gestureRecognizers?.first(where: { $0.name == "alice.replyTap" }) {
             for case let press as UILongPressGestureRecognizer in view.gestureRecognizers ?? [] {
                 tap.require(toFail: press)
             }
         }
         let next = Self.rendered(attributed, font: font, lineSpacing: lineSpacing)
-        if view.attributedText.string != next.string {
+        // A Dynamic Type change can keep the words identical while changing
+        // their font and paragraph spacing. Compare the complete rendering.
+        if !view.attributedText.isEqual(to: next) {
             view.attributedText = next
         }
     }
@@ -1597,7 +1613,11 @@ private struct SelectableReplyText: UIViewRepresentable {
         func textView(
             _ textView: UITextView, primaryActionFor textItem: UITextItem, defaultAction: UIAction
         ) -> UIAction? {
-            guard case let .link(url) = textItem.content, RichReceipt(url: url) != nil else { return defaultAction }
+            guard case let .link(url) = textItem.content else { return defaultAction }
+            // An agent's reply can quote a hostile page: a link there must not pair Alice with another
+            // server, type into a chat or change what opens. Those links do nothing from a reply.
+            if AgentLinks.refused(url) { return nil }
+            guard RichReceipt(url: url) != nil else { return defaultAction }
             return UIAction { _ in
                 NotificationCenter.default.post(name: .aliceOpenReceipt, object: url)
             }
@@ -1608,12 +1628,14 @@ private struct SelectableReplyText: UIViewRepresentable {
 private struct RichListView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @ScaledMetric(relativeTo: .body) private var itemSpacing: CGFloat = 12
+    @ScaledMetric(relativeTo: .body) private var proseLineSpacing: CGFloat = 4
     var onTap: (@MainActor () -> Void)? = nil
     let items: [RichListItem]
     let inline: (String) -> AttributedString
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: itemSpacing) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     marker(item)
@@ -1621,7 +1643,7 @@ private struct RichListView: View {
                     SelectableReplyText(
                         attributed: inline(item.text),
                         font: .preferredFont(forTextStyle: .body),
-                        lineSpacing: 4,
+                        lineSpacing: proseLineSpacing,
                         link: UIColor(Palette.link(scheme)),
                         onTap: onTap
                     )
@@ -1906,7 +1928,7 @@ private struct RichReplyButtonsView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity, minHeight: 50)
-                .foregroundStyle(.white)
+                .foregroundStyle(store.accent.onFill(scheme))
                 .background(tint, in: .capsule)
                 .contentShape(.capsule)
         }
@@ -1986,7 +2008,32 @@ struct ReplyBubble<Content: View>: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(Palette.muted(scheme), in: .rect(cornerRadius: 22))
-            Spacer(minLength: 32)
+            // Room on the right for a swipe to reply to carry it without reaching the edge.
+            Spacer(minLength: ChatLayout.trailingRoom)
         }
+    }
+}
+
+/// One width for everything Alice puts in the chat: a reply bubble at its widest, and the wide
+/// components (the browser, product and purchase cards, errands) always that wide, as in Muse.
+enum ChatLayout {
+    /// What is left free on the right of Alice's side of the chat.
+    static let trailingRoom: CGFloat = 24
+}
+
+extension View {
+    /// As wide as a reply bubble can grow.
+    func chatWide() -> some View {
+        frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.trailing, ChatLayout.trailingRoom)
+    }
+}
+
+
+/// alice:// links that only the system (the Camera, the Mac's notifier, the share sheet) may open.
+enum AgentLinks {
+    static func refused(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == "alice" else { return false }
+        return ["pair", "compose", "open"].contains(url.host?.lowercased() ?? "")
     }
 }

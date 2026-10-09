@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 /// Everything the interface reads. One observable object on the main actor,
 /// which keeps the views free of their own state juggling and matches how the
@@ -137,6 +138,7 @@ final class AppStore {
         willSet {
             guard newValue != activeID else { return }
             if editingMessageID != nil { cancelEditing() }
+            replyingTo = nil
             stashDraft()
         }
         didSet {
@@ -221,6 +223,7 @@ final class AppStore {
         static let quietRuns = "alice.quietRoutineRuns"
         static let judgedRuns = "alice.judgedRoutineRuns"
         static let phoneActions = "alice.phoneActions"
+        static let keptLessons = "alice.keptLessons"
         static let theme = "alice.theme"
         static let accent = "alice.accent"
         static let gateway = "alice.gateway"
@@ -273,6 +276,7 @@ final class AppStore {
         static let pinnedNoteFolders = "alice.notes.pinnedFolders"
         static let noteFolderSort = "alice.notes.folderSort"
         static let recentlyDeleted = "alice.notes.recentlyDeleted"
+        static let pendingNoteEdits = "alice.notes.pending"
         static let activitySeen = "alice.events.activitySeen"
         static let agentsNoticesSeen = "alice.events.agentsNoticesSeen"
         static let routinesNoticesSeen = "alice.events.routinesNoticesSeen"
@@ -638,7 +642,7 @@ final class AppStore {
         loadActivity()
         loadQuietRuns()
         loadPhoneActions()
-        if let data = defaults.data(forKey: Keys.notesSnapshot) {
+        if let data = record(Keys.notesSnapshot) {
             notesSnapshot = try? JSONDecoder().decode(NotesSnapshot.self, from: data)
         }
         restoreSalvagedConversationsIfPossible()
@@ -1108,8 +1112,9 @@ final class AppStore {
         dashboardURL = ""
         dashboardUser = ""
         dashboardReady = false
-        // Another Hermes' notes are not this one's.
+        // Another Hermes' notes are not this one's, nor what was deleted from them.
         notesSnapshot = nil
+        recentlyDeleted = []
     }
 
     static let dashboardAccount = "dashboard-password"
@@ -2373,6 +2378,9 @@ final class AppStore {
     /// What this phone did at an agent's suggestion — a card, a 👍 — which
     /// the Mac never saw. Kept on the phone.
     private(set) var phoneActions: [AgentAction] = []
+    /// Lessons Alice kept (`skill.learned`), kept here too: a «He aprendido…» once shown under a reply
+    /// stays when the Mac is out of reach or its log has moved on (`LessonNotice`).
+    private(set) var keptLessons: [AgentAction] = []
     /// Whether the plugin answered at all, so an empty list can say why.
     private(set) var agentActionsAvailable: Bool?
     /// A cited conversation open over whatever is on screen (`ReceiptSheet`).
@@ -3529,6 +3537,10 @@ final class AppStore {
         switch link {
         case let .bot(name) where name == Self.todayProfile:
             openToday()
+        case let .bot(name) where !cachedBots.isEmpty && !cachedBots.contains(where: { $0.name == name }):
+            // A link naming an agent that does not exist opens Alice, not an empty chat shell for it.
+            _ = name
+            openToday()
         case let .bot(name):
             let bot = cachedBots.first(where: { $0.name == name }) ?? BotRow(
                 name: name, displayName: botCurrentName(for: name), detail: "",
@@ -3886,13 +3898,13 @@ final class AppStore {
         didSet {
             guard notesSnapshot != oldValue else { return }
             guard let notesSnapshot else {
-                defaults.removeObject(forKey: Keys.notesSnapshot)
+                dropRecord(Keys.notesSnapshot)
                 return
             }
             // Notes still on their way are not kept: Hermes has not got them.
             let settled = notesSnapshot.with(notes: notesSnapshot.notes.filter { !$0.sending })
             if let data = try? JSONEncoder().encode(settled) {
-                defaults.set(data, forKey: Keys.notesSnapshot)
+                keepRecord(data, Keys.notesSnapshot)
             }
         }
     }
@@ -3912,6 +3924,7 @@ final class AppStore {
             if snap.supportsAttachments == true { notesAttachmentsNeedPlugin = false }
             notesAccess = .from(snapshot: snap)
             await moveLegacyFoldersToStore()
+            await flushPendingNoteEdits()
         } catch is CancellationError {
             throw CancellationError()
         } catch {
@@ -3984,9 +3997,51 @@ final class AppStore {
             rememberNoteAttachmentsSync(saved, sent: wanted)
             if saved.attachments == nil { saved.attachments = wanted }
             put(saved)
+            forgetPendingNoteEdit(note.id)
         } catch {
-            put(note)
+            // Kept on this phone for real: in a file, sent again once the store answers, even after
+            // Alice was closed. The words stay on screen too; they are what the person wrote.
+            if !(error is CancellationError) {
+                pendingNoteEdits[note.id] = PendingNoteEdit(id: note.id, text: text, rich: rich, at: Date())
+                savePendingNoteEdits()
+            }
             throw error
+        }
+    }
+
+    struct PendingNoteEdit: Codable, Sendable {
+        let id: String
+        let text: String
+        let rich: String?
+        let at: Date
+    }
+
+    @ObservationIgnored private lazy var pendingNoteEdits: [String: PendingNoteEdit] =
+        record(Keys.pendingNoteEdits).flatMap { try? JSONDecoder().decode([String: PendingNoteEdit].self, from: $0) } ?? [:]
+
+    private func savePendingNoteEdits() {
+        if pendingNoteEdits.isEmpty {
+            dropRecord(Keys.pendingNoteEdits)
+        } else if let data = try? JSONEncoder().encode(pendingNoteEdits) {
+            keepRecord(data, Keys.pendingNoteEdits)
+        }
+    }
+
+    private func forgetPendingNoteEdit(_ id: String) {
+        guard pendingNoteEdits.removeValue(forKey: id) != nil else { return }
+        savePendingNoteEdits()
+    }
+
+    /// Edits that did not reach the store, sent again now that it answers. A note deleted meanwhile
+    /// drops its edit; one that fails again stays for next time.
+    private func flushPendingNoteEdits() async {
+        guard let snapshot = notesSnapshot, !pendingNoteEdits.isEmpty else { return }
+        for edit in pendingNoteEdits.values.sorted(by: { $0.at < $1.at }) {
+            guard let note = snapshot.notes.first(where: { $0.id == edit.id }) else {
+                forgetPendingNoteEdit(edit.id)
+                continue
+            }
+            try? await editNote(note, text: edit.text, rich: edit.rich)
         }
     }
 
@@ -4928,7 +4983,9 @@ final class AppStore {
     func deleteGoal(_ id: String) async throws { try await dashboard.deleteGoal(id) }
     func listErrands() async throws -> [Errand] { try await dashboard.errands() }
     func decideCheckout(_ id: String, checkoutID: String, allow: Bool, card: String = "") async throws -> Errand? {
-        try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow, card: card)
+        try await finishingInBackground("checkout") {
+            try await dashboard.decideCheckout(id, checkoutID: checkoutID, allow: allow, card: card)
+        }
     }
     func answerErrand(_ id: String, answers: [String: String]) async throws -> Errand? {
         try await dashboard.answerErrand(id, answers: answers)
@@ -4982,13 +5039,27 @@ final class AppStore {
         try await dashboard.placeResolved(trigger, latitude: latitude, longitude: longitude, label: label)
     }
     func placeEvent(id: String, profile: String, event: String) async throws {
-        try await dashboard.placeEvent(id: id, profile: profile, event: event)
+        // iOS relaunches Alice in the background for a crossed place, with no window: the dashboard
+        // was only restored by a window's task, so «when I arrive…» failed as «not configured».
+        if !dashboardReady { await restoreDashboard() }
+        try await finishingInBackground("place") {
+            try await dashboard.placeEvent(id: id, profile: profile, event: event)
+        }
+    }
+
+    /// A decision or a payment the person just made finishes even if they switch apps at once.
+    func finishingInBackground<T>(_ name: String, _ work: () async throws -> T) async rethrows -> T {
+        let task = UIApplication.shared.beginBackgroundTask(withName: "alice.\(name)")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
+        return try await work()
     }
     func saveAuthenticatorKey(site: String, key: String) async throws -> String {
         try await dashboard.saveAuthenticatorKey(site: site, key: key)
     }
     func saveCard(_ card: PaymentCardFields?, handle: String?, origin: String?, profile: String) async throws -> SavedCard {
-        try await dashboard.saveCard(card, handle: handle, origin: origin, profile: profile)
+        try await finishingInBackground("card") {
+            try await dashboard.saveCard(card, handle: handle, origin: origin, profile: profile)
+        }
     }
     func setSharedBrowser(on: Bool) async throws -> SharedBrowserState {
         try await dashboard.setSharedBrowser(on: on)
@@ -5945,6 +6016,15 @@ final class AppStore {
         Task { await feed.discussed(post) }
     }
 
+    /// "Do it" on a feed post: the same opening as Discuss, then Alice's own offer sent as the
+    /// person's request, so the task starts at once.
+    func takeOffer(_ post: FeedPost) {
+        guard let offer = post.offer?.trimmingCharacters(in: .whitespacesAndNewlines), !offer.isEmpty else { return }
+        discuss(post)
+        draft = offer
+        send()
+    }
+
     /// What the model reads for a discussed post: marked as context from the person's feed.
     nonisolated static func feedContextText(_ post: FeedPost) -> String {
         var lines = ["[From my feed — for context]", post.headline, "", post.body]
@@ -6350,12 +6430,39 @@ final class AppStore {
     var noteFolderFailure: String?
 
     private func save<T: Encodable>(_ value: T, as key: String) {
-        if let data = try? JSONEncoder().encode(value) { defaults.set(data, forKey: key) }
+        guard let data = try? JSONEncoder().encode(value) else { return }
+        if key == Keys.recentlyDeleted { keepRecord(data, key) } else { defaults.set(data, forKey: key) }
+    }
+
+    /// Large records go to files (`PrivateFiles`); a store with injected defaults (tests) keeps them there.
+    private var usesFiles: Bool { defaults === UserDefaults.standard }
+
+    private func keepRecord(_ data: Data, _ key: String) {
+        guard usesFiles else { defaults.set(data, forKey: key); return }
+        guard PrivateFiles.write(data, key) else {
+            // The preferences become the record: a file left from an earlier write would be read
+            // first on the next launch and bring back an older value (an older note edit).
+            PrivateFiles.remove(key)
+            defaults.set(data, forKey: key)
+            return
+        }
+        defaults.removeObject(forKey: key)
+    }
+
+    /// The file, or what an earlier build left in the preferences (moved to a file on its next save).
+    private func record(_ key: String) -> Data? {
+        (usesFiles ? PrivateFiles.read(key) : nil) ?? defaults.data(forKey: key)
+    }
+
+    private func dropRecord(_ key: String) {
+        if usesFiles { PrivateFiles.remove(key) }
+        defaults.removeObject(forKey: key)
     }
 
     private func loadNoteFolders() {
         func read<T: Decodable>(_ type: T.Type, _ key: String) -> T? {
-            defaults.data(forKey: key).flatMap { try? JSONDecoder().decode(type, from: $0) }
+            (key == Keys.recentlyDeleted ? record(key) : defaults.data(forKey: key))
+                .flatMap { try? JSONDecoder().decode(type, from: $0) }
         }
         legacyFolders = read([NoteFolder].self, Keys.noteFolders) ?? []
         legacyFolderOf = read([String: String].self, Keys.noteFolderOf) ?? [:]
@@ -6673,15 +6780,25 @@ final class AppStore {
         return nil
     }
 
-    func disconnectHealth() async {
-        healthConnected = false
-        try? await dashboard.disconnectHealth()
+    /// Disconnected only once the Mac has forgotten the days: it said «disconnected» while the Mac
+    /// still held two months of Health. The problem, in plain words, when it did not.
+    func disconnectHealth() async -> String? {
+        do {
+            try await dashboard.disconnectHealth()
+            healthConnected = false
+            return nil
+        } catch {
+            return PlainWords.describe(error, doing: "disconnect Health")
+        }
     }
 
     /// On return to the app and in background refresh: the last week again
     /// (last night's sleep settles in the morning), at most every half hour.
     func syncHealthIfConnected() async {
         guard healthConnected, HealthSync.available else { return }
+        // Locked, Health cannot be read: every day came back empty and was sent as zeros, then
+        // marked synced for half an hour.
+        guard UIApplication.shared.isProtectedDataAvailable else { return }
         if let last = healthSyncedAt, Date().timeIntervalSince(last) < 30 * 60 { return }
         try? await uploadHealth(days: 8)
     }
@@ -7889,16 +8006,44 @@ final class AppStore {
         return switched
     }
 
+    /// The person began typing a slash command in Alice's chat: its live session (kept warm for the
+    /// send) gets Hermes' slash worker started, the ~10 s a chat's first command otherwise waited.
+    /// Once per live session; the worker then stays with it.
+    func warmCommands() async {
+        guard let id = activeID,
+              let conversation = conversations.first(where: { $0.id == id }),
+              conversation.routedBotName == nil, !conversation.isRecoveredHistory, !conversation.isAgentTask
+        else { return }
+        await prepareHomeChatIfNeeded(conversationID: id)
+        guard let live = warmHomeSessions[id]?.session.liveID, !commandWarmed.contains(live),
+              let source = await botChatSource()
+        else { return }
+        commandWarmed.insert(live)
+        await source.warmSlashWorker(liveSessionID: live)
+    }
+
     /// Resumes Alice's chat as the person opens it, so the send that follows
-    /// does not first wait on `session.resume`. Only a chat Hermes already
-    /// has: creating one here would open an empty session for a chat the
-    /// person may never write in, and the create path needs the opening
-    /// history the send assembles.
+    /// does not first wait on `session.resume` (or, for a new chat, on
+    /// creating one).
+    /// Live sessions whose slash worker `warmCommands` already started.
+    @ObservationIgnored private var commandWarmed: Set<String> = []
+
     func prepareHomeChatIfNeeded(conversationID: String) async {
         guard let conversation = conversations.first(where: { $0.id == conversationID }),
-              conversation.routedBotName == nil, !conversation.isRecoveredHistory,
-              let storedID = conversation.hermesSessionID, !storedID.isEmpty
+              conversation.routedBotName == nil, !conversation.isRecoveredHistory
         else { return }
+        guard let storedID = conversation.hermesSessionID, !storedID.isEmpty else {
+            // A new chat is opened in Hermes now, as it appears, not when the first message or
+            // command is sent: making a session loads the agent, its tools and plugins, seconds a
+            // command like /reasoning spent under a thinking indicator.
+            if !dashboardReady { await restoreDashboard() }
+            guard let source = await botChatSource(),
+                  let session = try? await openHomeSession(source: source, conversationID: conversationID,
+                                                           earlier: conversation.messages)
+            else { return }
+            warmHomeSessions[conversationID] = (session, Date())
+            return
+        }
         if let warm = warmHomeSessions[conversationID], warm.session.storedID == storedID,
            Date().timeIntervalSince(warm.at) < Self.warmHomeSessionLifetime {
             return
@@ -8058,8 +8203,11 @@ final class AppStore {
         source: WebSocketBotChatSource, profile: String, storedID: String,
         submitted: String, replyID: String, conversationID: String
     ) async -> Bool {
-        guard let location = messageLocation(replyID, conversationID: conversationID),
-              let state = try? await source.sessionState(profile: profile, storedID: storedID)
+        // The message is looked up again after the wait: a chat opened or deleted meanwhile shifted the
+        // indices taken before it, which read the wrong message or crashed out of range.
+        guard messageLocation(replyID, conversationID: conversationID) != nil,
+              let state = try? await source.sessionState(profile: profile, storedID: storedID),
+              let location = messageLocation(replyID, conversationID: conversationID)
         else { return false }
         let sentAt = conversations[location.chat].messages[location.message].createdAt
         let wanted = submitted.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -8386,8 +8534,8 @@ final class AppStore {
             guard !call.isEmpty, let data = try? JSONSerialization.data(withJSONObject: call) else { return nil }
             return String(data: data, encoding: .utf8)
         }
-        // A question for the person, or purchase options: the whole call, to draw the card from.
-        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) {
+        // A question for the person, purchase options or compared products: the whole call, to draw the card from.
+        if let name = payload["name"] as? String, AskPerson.isTool(name) || PurchaseOptionSet.isTool(name) || ProductList.isTool(name) {
             guard let args = dictionary(payload["args"]),
                   let data = try? JSONSerialization.data(withJSONObject: args)
             else { return nil }
@@ -8505,6 +8653,18 @@ final class AppStore {
     func sendQuickReply(_ text: String, replyProfile: String? = nil, followsLatestAgent: Bool = true) {
         let reply = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !reply.isEmpty else { return }
+        // A product tapped while Alice is still working: sent as a message once the turn ends.
+        // Sent now it became a note to the running turn, which the purchase never saw (07-10).
+        if reply.contains("[elección:"), isSending, let chat = activeID {
+            Task { [weak self] in
+                while let self, self.sendingConversations.contains(chat) {
+                    try? await Task.sleep(for: .milliseconds(400))
+                }
+                guard let self, self.activeID == chat else { return }
+                self.sendQuickReply(reply, replyProfile: replyProfile, followsLatestAgent: followsLatestAgent)
+            }
+            return
+        }
         let savedDraft = draft
         let savedMentions = draftMentions
         let savedAttachments = draftAttachments
@@ -8524,7 +8684,12 @@ final class AppStore {
         draft = addressed
         draftMentions = []
         draftAttachments = []
+        // A tapped card, button or option is its own answer, never one to a quoted reply: a quote
+        // before «[elección:…]» hid the choice and the purchase never started (06-10).
+        let quoting = replyingTo
+        replyingTo = nil
         send()
+        replyingTo = quoting
         if keepsDraft {
             draft = savedDraft
             draftMentions = savedMentions
@@ -8667,10 +8832,11 @@ final class AppStore {
                             invokedBot = custom.key
                         } else if knownBotNames.contains(where: { $0.localizedCaseInsensitiveCompare(candidate) == .orderedSame }) {
                             invokedBot = candidate.lowercased()
-                        } else {
-                            // An unknown mention still routes to an agent, but
-                            // by its slug — "@My Bot" means profile `my-bot`,
-                            // not the display text verbatim.
+                        } else if cachedBots.isEmpty {
+                            // The agents are not known yet (just launched, offline): an unknown
+                            // mention still routes by its slug — "@My Bot" means profile `my-bot`.
+                            // Once they are known, «reply to @maria» is just text for Alice, not a
+                            // message to an agent called maria that does not exist.
                             let slug = AgentProfileID.slugify(candidate)
                             if !slug.isEmpty { invokedBot = slug }
                         }
@@ -8700,7 +8866,13 @@ final class AppStore {
         }
 
         let attachments = draftAttachments
-        let selectedMentionRanges = messageMentions.map(\.utf16Range)
+        // A swiped-to reply goes first, as a quote; the mentions move along with the words.
+        let quote = replyingTo?.prefix ?? ""
+        replyingTo = nil
+        let shift = quote.utf16.count
+        let selectedMentionRanges = messageMentions.map {
+            NSRange(location: $0.utf16Range.location + shift, length: $0.utf16Range.length)
+        }
         draft = ""
         draftMentions = []
         draftAttachments = []
@@ -8711,7 +8883,7 @@ final class AppStore {
         markLatency(conversationID, phase: "send")
 
         let user = Message(
-            id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
+            id: UUID().uuidString, role: .user, content: quote + text, createdAt: Date(),
             attachments: attachments,
             mentionProfile: mentionText == nil ? nil : invokedBot,
             selectedMentionRanges: selectedMentionRanges
@@ -8742,7 +8914,7 @@ final class AppStore {
                     profile: profile,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: mentionText ?? text,
+                    text: quote + (mentionText ?? text),
                     attachments: attachments,
                     mention: mention
                 )
@@ -8756,7 +8928,7 @@ final class AppStore {
                     profile: nil,
                     conversationID: conversationID,
                     replyID: replyID,
-                    text: text,
+                    text: quote + text,
                     attachments: attachments,
                     earlier: earlier
                 )
@@ -9066,6 +9238,16 @@ final class AppStore {
             self.finish(replyID, conversationID: conversationID)
         }
     }
+
+    // MARK: - Replying to one message
+
+    /// The reply of Alice's the next message answers, swiped right in the chat (`ReplySwipe`).
+    var replyingTo: ReplyQuote?
+    /// The reply in front while it is being answered: everything else blurs, and the
+    /// chat holds still, until it is sent or let go.
+    var replyFocusID: String? { replyingTo?.messageID }
+    /// The composer's top edge on screen; the reply being answered rests just above it.
+    var composerTop: CGFloat = 0
 
     // MARK: - Editing a sent message
 
@@ -9654,6 +9836,8 @@ final class AppStore {
     /// Answers a real Hermes approval request and resumes the same durable run.
     /// The view never receives the gateway key or constructs a control URL.
     func resolveApproval(messageID: String, choice: Message.ApprovalChoice) async {
+        let task = UIApplication.shared.beginBackgroundTask(withName: "alice.approval")
+        defer { if task != .invalid { UIApplication.shared.endBackgroundTask(task) } }
         guard let location = messageLocation(messageID),
               let approval = conversations[location.chat].messages[location.message].approval,
               approval.resolving != true
@@ -10609,6 +10793,7 @@ extension AppStore {
         guard dashboardReady else { return }
         do {
             agentActions = try await dashboard.agentActions()
+            keepLessons(from: agentActions)
             agentActionsAvailable = true
         } catch {
             // An older plugin has no record to serve; that is not a failure
@@ -10634,7 +10819,25 @@ extension AppStore {
         }
     }
 
+    private func keepLessons(from actions: [AgentAction]) {
+        var kept = Dictionary(keptLessons.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        var changed = false
+        for action in actions where action.kind == "skill.learned" && kept[action.id] != action {
+            kept[action.id] = action
+            changed = true
+        }
+        guard changed else { return }
+        keptLessons = Array(kept.values.sorted { $0.at > $1.at }.prefix(300))
+        if let data = try? JSONEncoder().encode(keptLessons) {
+            defaults.set(data, forKey: Keys.keptLessons)
+        }
+    }
+
     private func loadPhoneActions() {
+        if let data = defaults.data(forKey: Keys.keptLessons),
+           let stored = try? JSONDecoder().decode([AgentAction].self, from: data) {
+            keptLessons = stored
+        }
         guard let data = defaults.data(forKey: Keys.phoneActions),
               let stored = try? JSONDecoder().decode([AgentAction].self, from: data)
         else { return }

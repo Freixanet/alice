@@ -116,7 +116,10 @@ def search(query: str, *, country: str = "", currency: str = "", limit: int = 6,
     if "address_country" in context:
         catalog["filters"]["ships_to"] = {"country": context["address_country"]}
     if max_price:
-        catalog["filters"]["price"] = {"max": int(float(max_price) * 100)}
+        # In exact cents: int(19.99 * 100) is 1998, which left out an item priced exactly at the limit.
+        from decimal import Decimal, ROUND_HALF_UP
+        cents = int((Decimal(str(max_price)) * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        catalog["filters"]["price"] = {"max": cents}
     try:
         response = _call("search_catalog", catalog, post)
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:

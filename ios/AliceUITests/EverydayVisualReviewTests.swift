@@ -31,24 +31,27 @@ final class EverydayVisualReviewTests: XCTestCase {
         capture(app, "agents-\(theme)")
         app.buttons["bots.back"].tap()
         app.buttons["chat.leading"].tap()
-        app.buttons["sidebar.row.Notes"].tap()
-        XCTAssertTrue(app.buttons["notes.back"].waitForExistence(timeout: 10))
+        // Notes live in the Library, as its third part.
+        app.buttons["sidebar.row.Library"].tap()
+        let notesPart = app.segmentedControls["library.part"].buttons["Notes"]
+        XCTAssertTrue(notesPart.waitForExistence(timeout: 10))
+        notesPart.tap()
+        XCTAssertTrue(app.staticTexts["Quick Notes"].waitForExistence(timeout: 10))
         capture(app, "notes-folders-\(theme)")
         app.staticTexts["Quick Notes"].tap()
         XCTAssertTrue(app.navigationBars["Quick Notes"].waitForExistence(timeout: 5))
         capture(app, "populated-notes-\(theme)")
         app.navigationBars["Quick Notes"].buttons.firstMatch.tap()
-        app.buttons["notes.back"].tap()
+        app.navigationBars["Library"].buttons["Back"].tap()
         app.buttons["chat.leading"].tap()
-        // Agenda was moved out of the drawer; review its current Routines destination.
-        app.buttons["sidebar.row.Routines"].tap()
-        XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 10))
-        capture(app, "routines-unconnected-\(theme)")
-        app.buttons["Back"].tap()
         XCTAssertTrue(app.buttons["sidebar.settings"].waitForExistence(timeout: 5))
         app.buttons["sidebar.settings"].tap()
         XCTAssertTrue(app.navigationBars["Settings"].waitForExistence(timeout: 10))
         capture(app, "settings-\(theme)")
+        // Routines left the drawer for Settings › Alice, beside Activity.
+        app.buttons["settings.routines"].tap()
+        XCTAssertTrue(app.navigationBars["Routines"].waitForExistence(timeout: 10))
+        capture(app, "routines-unconnected-\(theme)")
     }
 
     private func capture(_ app: XCUIApplication, _ name: String) {
