@@ -30,6 +30,8 @@ def validate_route(route):
             or url.query or url.fragment or (url.scheme == "http" and url.hostname not in ("localhost", "127.0.0.1", "::1"))):
         raise ClassifierError("Use HTTPS for the cheap route, or HTTP on loopback only.")
     key = route.get("api_key_env", "")
+    if route["provider"] == "openai-codex" and (route["base_url"].rstrip("/") != "https://chatgpt.com/backend-api/codex" or key):
+        raise ClassifierError("The subscription classifier requires the official Codex origin and Hermes OAuth, without an API-key variable.")
     if key and (not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", key)):
         raise ClassifierError("Use the name of an existing API-key environment variable, never the key itself.")
     return {k: route.get(k, "") for k in ("provider", "model", "base_url", "api_key_env")}
@@ -111,6 +113,8 @@ def _credential(home, key):
 
 
 def request(route, payload, home):
+    if route["provider"] == "openai-codex":
+        return subscription_request(route, payload, home)
     url = urlsplit(route["base_url"])
     cls = http.client.HTTPSConnection if url.scheme == "https" else http.client.HTTPConnection
     connection = cls(url.hostname, url.port, timeout=10)
@@ -127,6 +131,49 @@ def request(route, payload, home):
         if len(body) > 131072:
             raise ClassifierError("Cheap classifier response exceeds the limit.")
         return json.loads(body)["choices"][0]["message"]["content"]
+    finally:
+        connection.close()
+
+
+def subscription_request(route, payload, home):
+    # Credential resolution only: never import the auxiliary/model fallback router.
+    from hermes_cli.auth_codex import resolve_codex_runtime_credentials
+    from agent.codex_headers import codex_cloudflare_headers
+    if Path(home).resolve() != Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes"))).resolve():
+        raise ClassifierError("The classifier must use this Hermes host's own OAuth store.")
+    credentials = resolve_codex_runtime_credentials(read_only=True)
+    if credentials.get("base_url", "").rstrip("/") != route["base_url"].rstrip("/") or credentials.get("auth_mode") != "chatgpt":
+        raise ClassifierError("Hermes OAuth does not match the explicit subscription route.")
+    token = credentials["api_key"]
+    headers = {"Content-Type": "application/json", "Accept": "text/event-stream",
+               "Authorization": "Bearer " + token, **codex_cloudflare_headers(token, base_url=route["base_url"])}
+    wire = {"model": payload["model"], "store": False, "stream": True,
+            "reasoning": {"effort": "none"},
+            "instructions": payload["messages"][0]["content"],
+            "input": payload["messages"][1:],
+            "text": {"format": {"type": "json_schema", **payload["response_format"]["json_schema"]}}}
+    connection = http.client.HTTPSConnection("chatgpt.com", timeout=10)
+    try:
+        connection.request("POST", "/backend-api/codex/responses", json.dumps(wire).encode(), headers)
+        response = connection.getresponse()
+        if response.status != 200:
+            raise ClassifierError("Subscription classifier request failed; no fallback.")
+        body = response.read(131073)
+        if len(body) > 131072:
+            raise ClassifierError("Subscription classifier response exceeds the limit.")
+        for line in body.decode().splitlines():
+            if not line.startswith("data: ") or line == "data: [DONE]":
+                continue
+            event = json.loads(line[6:])
+            if event.get("type") in ("error", "response.failed", "response.incomplete"):
+                raise ClassifierError("Subscription classifier stream failed; no fallback.")
+            if event.get("type") == "response.completed":
+                final = event["response"]
+                if final.get("model") != route["model"] or final.get("status") != "completed":
+                    raise ClassifierError("Subscription classifier did not complete with the explicit model.")
+                return "".join(part["text"] for item in final.get("output", [])
+                               for part in item.get("content", []) if part.get("type") == "output_text")
+        raise ClassifierError("Subscription classifier stream has no completed response.")
     finally:
         connection.close()
 

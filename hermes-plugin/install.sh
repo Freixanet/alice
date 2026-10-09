@@ -76,10 +76,24 @@ fi
 
 # The gateway runs the agents and keeps the plugin's modules loaded: without a restart it goes on
 # with the old code.
-for name in ai.hermes.dashboard ai.hermes.gateway; do
+for name in ai.hermes.gateway ai.hermes.dashboard; do
   service=gui/$(id -u)/$name
   if launchctl print "$service" >/dev/null 2>&1; then
     launchctl kickstart -k "$service"
+    port=9119
+    [[ $name == ai.hermes.gateway ]] && port=8644
+    "$python" - "$port" <<'PY'
+import socket, sys, time
+deadline = time.monotonic() + 30
+while time.monotonic() < deadline:
+    try:
+        with socket.create_connection(('127.0.0.1', int(sys.argv[1])), timeout=1):
+            break
+    except OSError:
+        time.sleep(0.5)
+else:
+    raise SystemExit('Hermes service did not open its port; stopping installation')
+PY
   fi
 done
 

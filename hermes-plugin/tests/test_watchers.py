@@ -306,5 +306,39 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(len(builtins.items(self.store.home, {"kind": "leave_now", "travel_minutes": 15}, now)), 1)
 
 
+class SubscriptionClassifierTests(unittest.TestCase):
+    route = {"provider": "openai-codex", "model": "gpt-6-luna", "base_url": "https://chatgpt.com/backend-api/codex"}
+
+    def test_subscription_wire_is_strict_fixed_model_and_no_reasoning(self):
+        auth = mock.Mock()
+        auth.resolve_codex_runtime_credentials.return_value = {"api_key": "fixture-token", "base_url": self.route["base_url"], "auth_mode": "chatgpt"}
+        headers = mock.Mock()
+        headers.codex_cloudflare_headers.return_value = {}
+        answer = {"action": {"probability": 0.9, "quiet": False}}
+        final = {"type": "response.completed", "response": {"model": "gpt-6-luna", "status": "completed", "output": [{"content": [{"type": "output_text", "text": json.dumps(answer)}]}]}}
+        connection = mock.Mock()
+        connection.getresponse.return_value.status = 200
+        connection.getresponse.return_value.read.return_value = ("data: " + json.dumps(final) + "\n\n").encode()
+        with mock.patch.dict(sys.modules, {"hermes_cli.auth_codex": auth, "agent.codex_headers": headers}), mock.patch.object(c.http.client, "HTTPSConnection", return_value=connection):
+            self.assertEqual(c.Classifier(Path.home() / ".hermes", self.route).classify({}, {"action": {"type": "yes_no"}}), answer)
+        wire = json.loads(connection.request.call_args.args[2])
+        self.assertEqual(wire["model"], "gpt-6-luna")
+        self.assertEqual(wire["reasoning"], {"effort": "none"})
+        self.assertIs(wire["text"]["format"]["strict"], True)
+        self.assertIs(wire["store"], False)
+        auth.resolve_codex_runtime_credentials.assert_called_once_with(read_only=True)
+
+    def test_subscription_timeout_cannot_call_main_router(self):
+        main = mock.Mock(side_effect=AssertionError("main model must never be called"))
+        with mock.patch.dict(sys.modules, {"agent.auxiliary_client": mock.Mock(call_llm=main)}), mock.patch.object(c, "subscription_request", side_effect=TimeoutError):
+            with self.assertRaisesRegex(c.ClassifierError, "classifier_error"):
+                c.Classifier(Path.home() / ".hermes", self.route).classify({}, {"action": {"type": "yes_no"}})
+        main.assert_not_called()
+
+    def test_subscription_cannot_send_oauth_to_custom_origin(self):
+        with self.assertRaises(c.ClassifierError):
+            c.validate_route({**self.route, "base_url": "https://other.invalid"})
+
+
 if __name__ == "__main__":
     unittest.main()

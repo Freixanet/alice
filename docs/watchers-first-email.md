@@ -69,6 +69,32 @@ The watcher journal under `$alice_home/.alice/watchers` must remain in place.
 
 ## 3. Connect Gmail and configure the cheap classifier
 
+### Verified Plus subscription route (9 October 2026)
+
+The local owner's classifier is explicitly configured as `openai-codex`, model
+`gpt-6-luna`, base URL `https://chatgpt.com/backend-api/codex`, with an empty
+API-key-variable field. This provider uses Hermes' own existing ChatGPT OAuth
+credentials and the Responses endpoint, with `reasoning.effort=none`,
+`store=false`, and strict JSON-schema output. It never uses Hermes' auxiliary
+model router. OAuth resolution is read-only: expired/unavailable credentials,
+timeouts, stream errors, or a returned model different from the configured model
+fail as `classifier_error`; they cannot trigger another model or origin.
+
+Live requests rejected `gpt-5-nano` and `gpt-5-mini` with HTTP 400: not supported
+with a ChatGPT account. `gpt-6-luna` accepted `none` despite the catalog advertising
+only `low` and above. A strict-schema invoice classification completed with the
+returned model `gpt-6-luna` and passed the full local decision validator.
+
+The account usage endpoint reported plan `plus`, a 604800-second (weekly) window,
+33% used, reset epoch `1791948661`; no secondary window, model-specific limit,
+or RPM/TPM limit was returned. These values are a snapshot, not guaranteed limits.
+
+The real dry run on `4ae19f9cce5546adb661d9634108528b` was attempted and stopped
+at Gmail because `google_token.json` is absent. It made no classifier/main-model
+call, no notification/ack, and no journal mutation. The watcher remains paused.
+Complete Google consent before rerunning against real email; a synthetic schema
+check is not evidence of a completed Gmail dry run.
+
 Use the dependency interpreter selected by Hermes' own package manager, rather
 than assuming its old `hermes-agent/venv` is the running environment:
 
