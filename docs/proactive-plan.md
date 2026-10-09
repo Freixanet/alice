@@ -375,3 +375,15 @@ No se reconstruyen esos controles de memoria ni se modifica el journal real.
 La UI existente queda igual que `18a214d`, salvo el enlace de Watchers y su cliente.
 La guía de instalación debe aplicar las reglas actuales de AGENTS: rama subida,
 ancestría del origen instalado y lectura del build justo antes de instalar.
+
+
+Resultado de recuperación: **build 89 instalado y leído de vuelta desde el iPhone**,
+con revisión de código `4befbc1`, rama subida `codex/proactive-watchers`.
+Antes de instalar se comprobó otra vez que el teléfono seguía en nuestro build 88.
+La compilación firmada pasó y se abrió Alice sin ejecutar pruebas UI ni enviar
+mensajes. Las 31 pruebas de Watchers pasan tras el merge. `ChatScreen`, `Composer`
+y `Features/Shell` son idénticos a `18a214d`; Settings solo añade el enlace Watchers.
+El watcher `4ae19f9cce5546adb661d9634108528b` sigue en el host, pausado.
+No se volvió a instalar el plugin ni se alteraron su journal o su configuración.
+La comprobación visual del teléfono sigue pendiente; el build no acredita esa UI.
+Fase 2 sigue sin iniciarse.
