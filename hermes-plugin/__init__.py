@@ -1862,6 +1862,8 @@ def _start_purchase(session: str, chosen: dict) -> dict:
 
 
 def _errand_turn(session_id="", user_message=None, **_):
+    if not _purchase_feature().ENABLED:
+        return None
     """Before a chat turn. A purchase request gets the person's context and the steps (1–6); nothing
     starts on its own. A tapped option («[elección:<id>]») starts that option's errand here, not at
     the model's discretion."""
@@ -1978,6 +1980,8 @@ def _purchase_flow_safe_chosen(user_message) -> bool:
 
 
 def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
+    if not _purchase_feature().ENABLED:
+        return None
     """A chat may search and read shops, but a cart is filled only by the errand of a chosen option."""
     name = str(tool_name or "")
     session = _session_id(session_id)
@@ -2446,7 +2450,34 @@ def _guard_review_task(tool_name=None, args=None, session_id="", **_):
         return {"action": "block", "message": "Task approval could not be checked. No action was executed; check the Hermes host before retrying."}
 
 
+def _purchase_feature():
+    return _module("purchase_feature.py", "alice_purchase_feature")
+
+
+def _guard_purchase_disabled(tool_name=None, args=None, session_id="", **_):
+    feature = _purchase_feature()
+    if feature.ENABLED:
+        return None
+    blocked = tool_name in feature.TOOLS
+    if tool_name == "browser_vault_fill":
+        try:
+            blocked = _card_fill(tool_name, args) is not None
+        except Exception:
+            blocked = True
+    # Existing errands must not continue via browser/terminal tools from old sessions.
+    if not blocked and (tool_name in ("terminal", "browser", "execute_code")
+                        or str(tool_name).startswith("browser_")):
+        try:
+            blocked = _errands().of_session(_hermes_root(), _session_id(session_id)) is not None
+        except Exception:
+            blocked = True
+    if blocked:
+        return {"action": "block", "message": feature.MESSAGE}
+    return None
+
+
 def register(ctx) -> None:
+    ctx.register_hook("pre_tool_call", _guard_purchase_disabled)
     _module("fallback_notices.py", "alice_fallback_notices").install(_errands())
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     ctx.register_hook("pre_tool_call", _guard_review_task)
@@ -2457,7 +2488,8 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _guard_errand_access)
     # Checkouts expire, forgotten pages close and restarted errands go on without anyone looking.
     try:
-        _errands().start_sweeper(_hermes_root())
+        if _purchase_feature().ENABLED:
+            _errands().start_sweeper(_hermes_root())
     except Exception:
         logging.getLogger(__name__).warning("errands: the sweeper could not start", exc_info=True)
     # After reading the web, sending data out or reading secrets needs the person (egress_guard.py).
@@ -2527,11 +2559,13 @@ def register(ctx) -> None:
     _register_goal_tools(ctx)
     _register_feed_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
-    _register_task_tools(ctx)
-    _register_purchase_browser(ctx)
+    if _purchase_feature().ENABLED:
+        _register_task_tools(ctx)
+        _register_purchase_browser(ctx)
     _register_ask_tools(ctx)
     # How a card payment ended, so the same order is never paid twice (purchases.py).
-    _register_purchase_tools(ctx)
+    if _purchase_feature().ENABLED:
+        _register_purchase_tools(ctx)
     # When the person arrives at or leaves a place, their iPhone wakes the agent (places.py).
     _register_place_tools(ctx)
     # Sleep, activity, heart rate and HRV from the iPhone's Health app (health.py).

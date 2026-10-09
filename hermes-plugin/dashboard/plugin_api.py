@@ -2624,6 +2624,12 @@ async def feed_event(post_id: str, body: _FeedEvent) -> JSONResponse:
 # ── Errands: tasks that run apart from the chat, and the checkout the person approves ──
 
 
+def _require_purchase_enabled():
+    feature = _sibling("purchase_feature.py", "alice_purchase_feature")
+    if not feature.ENABLED:
+        raise HTTPException(status_code=403, detail=feature.MESSAGE)
+
+
 def _errands_module():
     return _sibling("errands.py", "alice_errands")
 
@@ -2670,7 +2676,8 @@ async def errands_list() -> JSONResponse:
     def read():
         module, root = _errands_module(), _hermes_root()
         # Each upkeep step on its own: one failing never hides the person's errands.
-        module.sweep(root)
+        if _sibling("purchase_feature.py", "alice_purchase_feature").ENABLED:
+            module.sweep(root)
         return [module.public(e) for e in module.listing(root)]
 
     return JSONResponse({"errands": await asyncio.to_thread(read)}, headers=_NO_STORE)
@@ -2692,6 +2699,8 @@ class _CheckoutDecision(BaseModel):
 
 @router.post("/errands/{errand_id}/checkout")
 async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONResponse:
+    if body.decision == "allow":
+        _require_purchase_enabled()
     """The person's «Permitir» or «Denegar» on the checkout they saw (Face ID on the phone)."""
     if body.decision not in ("allow", "deny"):
         raise HTTPException(status_code=400, detail="decision must be allow or deny")
@@ -2755,6 +2764,7 @@ async def errand_access_answer(errand_id: str, request: Request) -> JSONResponse
         raise HTTPException(status_code=400, detail="Respuesta segura inválida.") from None
     del raw
     def answer():
+        _require_purchase_enabled()
         _errand_or_404(errand_id)
         access = _sibling("errand_access.py", "alice_errand_access")
         try:
@@ -2777,6 +2787,7 @@ class _ErrandAnswers(BaseModel):
 
 @router.post("/errands/{errand_id}/answer")
 async def errands_answer(errand_id: str, body: _ErrandAnswers) -> JSONResponse:
+    _require_purchase_enabled()
     """Answers to the questions an errand asked (ask_person inside it)."""
     def answer():
         module, root = _errands_module(), _hermes_root()
@@ -2825,6 +2836,7 @@ class _ErrandApproval(BaseModel):
 
 @router.post("/errands/{errand_id}/approval")
 async def errands_approval(errand_id: str, body: _ErrandApproval) -> JSONResponse:
+    _require_purchase_enabled()
     """Another confirmation Hermes asked inside the errand (a login the person wanted to approve)."""
     if body.choice not in ("once", "deny"):
         raise HTTPException(status_code=400, detail="choice must be once or deny")
@@ -2854,6 +2866,7 @@ class _ErrandCard(BaseModel):
 
 @router.post("/errands/{errand_id}/card")
 async def errands_card(errand_id: str, body: _ErrandCard) -> JSONResponse:
+    _require_purchase_enabled()
     """The person left a card ready for the errand's payment page (saved or bound in the vault)."""
     def ready():
         module, root = _errands_module(), _hermes_root()
@@ -2871,6 +2884,7 @@ async def errands_card(errand_id: str, body: _ErrandCard) -> JSONResponse:
 
 @router.post("/errands/{errand_id}/refresh")
 async def errands_refresh(errand_id: str) -> JSONResponse:
+    _require_purchase_enabled()
     """A stale checkout, prepared again: the errand goes back to the shop and asks for a new approval."""
     def refresh():
         module, root = _errands_module(), _hermes_root()
@@ -2892,6 +2906,7 @@ class _ErrandGoOn(BaseModel):
 
 @router.post("/errands/{errand_id}/continue")
 async def errands_continue(errand_id: str, body: _ErrandGoOn) -> JSONResponse:
+    _require_purchase_enabled()
     """A stopped purchase goes on: the same option at the shop's new price, or tried again."""
     def go():
         module, root = _errands_module(), _hermes_root()
