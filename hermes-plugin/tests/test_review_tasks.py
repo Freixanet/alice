@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -48,6 +49,37 @@ class ReviewTasksTests(unittest.TestCase):
         t=self.review(t)
         self.assertNotEqual(first,t['attention_id'])
         self.assertEqual(self.store.db.execute('SELECT count(*) FROM attention WHERE task=? AND live=1',(t['id'],)).fetchone()[0],1)
+
+    def test_requested_changes_require_a_new_review_before_completion(self):
+        t = self.review(decision='choose', proposal=None)
+        t = self.store.respond(t['id'], t['version'], 'change', 'One short sentence')
+        t = self.store.update(t['id'], t['version'], 'in_progress', session='session', profile='default', summary='Revising')
+        with self.assertRaisesRegex(ValueError, 'review'):
+            self.store.update(t['id'], t['version'], 'done', session='session', profile='default', checks=['Checked'])
+        self.assertEqual(self.store.get(t['id'])['version'], t['version'])
+        t = self.review(t, decision='choose', proposal=None, result=[{'type':'text','text':'Thanks for your help.'}])
+        with self.assertRaisesRegex(ValueError, 'review'):
+            self.store.update(t['id'], t['version'], 'done', session='session', profile='default', checks=['Checked'])
+        t = self.store.respond(t['id'], t['version'], 'accept')
+        t = self.store.update(t['id'], t['version'], 'done', session='session', profile='default', checks=['Checked'])
+        self.assertEqual(t['blocks'], [{'type':'text','text':'Thanks for your help.'}])
+
+    def test_omitted_tool_blocks_preserve_result_but_explicit_empty_clears_it(self):
+        tools = load('review_task_tools')
+        t = self.review()
+        result = t['blocks']
+        t = tools.run(self.temp.name, {'action':'update', 'id':t['id'], 'version':t['version'], 'status':'in_progress'}, 'session', 'default')['task']
+        self.assertEqual(t['blocks'], result)
+        t = tools.run(self.temp.name, {'action':'update', 'id':t['id'], 'version':t['version'], 'status':'in_progress', 'blocks_json':'[]'}, 'session', 'default')['task']
+        self.assertEqual(t['blocks'], [])
+
+    def test_legacy_review_record_cannot_skip_review(self):
+        t = self.review()
+        t.pop('review_required', None)
+        self.store.db.execute('UPDATE tasks SET record=? WHERE id=?', (json.dumps(t), t['id']))
+        t = self.store.respond(t['id'], t['version'], 'change', 'Revise it')
+        with self.assertRaisesRegex(ValueError, 'review'):
+            self.store.update(t['id'], t['version'], 'done', session='session', profile='default', checks=['Checked'])
     def test_task_change_invalidates_acceptance(self):
         t=self.review(); t=self.store.respond(t['id'],t['version'],'accept')
         self.store.update(t['id'],t['version'],'in_progress',session='session',profile='default',summary='Changed plan')

@@ -13,7 +13,9 @@ petición original, el resultado preparado y lo que Alice comprobó.
   retoma la conversación de origen. Si la tarea cambió mientras la revisabas,
   aparece la versión actual y debes revisarla antes de volver a aceptar.
 - **Pedir cambios:** escribe qué debe corregir Alice; la tarjeta sale de Para revisar
-  mientras trabaja. Una nueva revisión crea una tarjeta nueva.
+  mientras trabaja. El resultado corregido debe volver a Para revisar y esperar una nueva aceptación;
+  pedir cambios nunca equivale a aceptar. Las actualizaciones que omiten el resultado
+  conservan el texto preparado.
 - **Responder:** proporciona el dato que falta cuando la tarea está bloqueada.
 
 El botón de ajustes del tablero permite elegir **Actuar dentro de la tarea acordada**
