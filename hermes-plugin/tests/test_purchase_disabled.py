@@ -27,6 +27,9 @@ class PurchaseDisabledTests(unittest.TestCase):
         names = {c.kwargs['name'] for c in ctx.register_tool.call_args_list}
         self.assertFalse(names & self.feature.TOOLS)
         self.assertTrue({'watchers', 'review_tasks', 'review_read'} <= names)
+        for name in ('watchers', 'review_tasks', 'review_read'):
+            self.assertIsNone(self.plugin._guard_purchase_disabled(name, {}))
+        ctx.register_hook.assert_any_call('pre_tool_call', self.plugin._guard_review_task)
         self.assertEqual(ctx.register_hook.call_args_list[0].args,
                          ('pre_tool_call', self.plugin._guard_purchase_disabled))
 

@@ -2116,7 +2116,7 @@ def _card_rules(profile: str) -> str:
         return ""
 
 
-def _register_task_tools(ctx) -> None:
+def _register_purchase_errand_tools(ctx) -> None:
     """Errands (errands.py) replace finish_task: a goal on a chat's session was judged after every
     later turn of that chat, and an old purchase resumed in the middle of an unrelated question."""
     errands = _errands()
@@ -2440,6 +2440,10 @@ def _register_goal_tools(ctx) -> None:
     )
 
 
+# Compatibility for tests/extensions using the old name; this registers purchases only.
+_register_task_tools = _register_purchase_errand_tools
+
+
 def _guard_review_task(tool_name=None, args=None, session_id="", **_):
     try:
         from hermes_constants import get_hermes_home
@@ -2560,7 +2564,7 @@ def register(ctx) -> None:
     _register_feed_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     if _purchase_feature().ENABLED:
-        _register_task_tools(ctx)
+        _register_purchase_errand_tools(ctx)
         _register_purchase_browser(ctx)
     _register_ask_tools(ctx)
     # How a card payment ended, so the same order is never paid twice (purchases.py).
