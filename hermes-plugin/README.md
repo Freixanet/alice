@@ -229,3 +229,6 @@ secret. Normal dashboard credentials protect all management routes.
 
 See [implementation evidence and remaining checks](../docs/proactive-plan.md).
 Review Tasks and the phase 3 routine/chat presentation are still pending.
+
+For device installation, safe plugin update and one real Gmail test, follow
+[the first email watcher guide](../docs/watchers-first-email.md).

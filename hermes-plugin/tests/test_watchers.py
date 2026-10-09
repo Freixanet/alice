@@ -284,6 +284,18 @@ class WatcherTests(unittest.TestCase):
             with self.assertRaises(sources.SourceError):
                 sources.PinnedHTTPS("source.invalid").connect()
 
+    def test_gmail_empty_search_sentinel_costs_no_model_call(self):
+        sources = w.sibling("watcher_sources.py")
+        script = self.store.home / "hermes-agent/skills/productivity/google-workspace/scripts/google_api.py"
+        script.parent.mkdir(parents=True)
+        script.write_text("# fake Gmail helper")
+        command = mock.Mock(return_value=type("Result", (), {"returncode": 0, "stdout": "No messages found.\n"})())
+        source = sources.Sources(self.store.home, command=command)
+        rows = source.items({"source": "email", "config": {"query": "subject:ALICE-WATCHER-TEST"}}, self.now)
+        self.assertEqual(rows, [])
+        self.assertEqual(self.cheap.calls, 0)
+        self.assertEqual(self.main.calls, 0)
+
     def test_birthday_uses_this_year_and_calendar_accepts_iso_snapshot(self):
         builtins = w.sibling("watcher_builtins.py")
         from datetime import datetime, timezone

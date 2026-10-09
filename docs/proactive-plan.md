@@ -226,7 +226,7 @@ solo del host Hermes.
 
 ## Evidencia y pendientes de fase 1
 
-- Watchers: 30 pruebas aisladas, todas pasan. Incluyen los seis escenarios del
+- Watchers: 31 pruebas aisladas, todas pasan. Incluyen los seis escenarios del
   encargo, ausencia de fallback aunque falle la ruta económica, timeout, hash,
   sandbox real macOS, scopes del webhook, quotas, presupuesto y avisos terminales.
 - `npm run slash:check`: 52 comandos coinciden entre web e iOS.
@@ -235,10 +235,11 @@ solo del host Hermes.
   dispositivo con `CODE_SIGNING_ALLOWED=NO`, resultado 0. No se instaló en iPhone.
 - Regresión plugin completa: 565 pruebas, 4 fallos, 2 errores, 19 omitidas.
   Dos resultados fallidos se relacionan con `hermes_yaml` ausente; confirmado
-  por un import directo en el virtualenv instalado. Otros tres fallos corresponden
+  por un import directo en el virtualenv heredado usado por las pruebas. El archivo
+  existe en el checkout de Hermes: al incluir su raíz en PYTHONPATH sí se importa. Otros tres fallos corresponden
   a Goals/SessionDB y un error a timeout del test memory_review (60 segundos).
-  No se ha probado su reproducción en una copia de la base; no se declara la
-  regresión completa como superada ni se modifica Hermes para ocultarla.
+  La reproducción completa en el commit anterior se registra abajo. No se declara
+  la regresión completa como superada ni se modifica Hermes para ocultarla.
 - No se hicieron llamadas a modelos, credenciales reales, Gmail, RSS, GitHub,
   push real ni instalación/reinicio de servicios. La compatibilidad real con el
   contrato `cron.bot_chat_delivery.defer` inspeccionado requiere validación
@@ -285,3 +286,56 @@ fresco, dirección física y minutos de viaje proporcionados, sin adivinar ETA.
 Fases 2–3 pendientes: tablero Tasks/Needs Review, aprobación versionada, rutinas
 proactivas y presentación enriquecida en chat. Esta fase entrega avisos agrupados
 al chat existente, sin afirmar que esas fases estén implementadas.
+
+
+## Comparación anterior a fase 2 (9 de octubre de 2026)
+
+Por petición del usuario se obtuvo un checkout detached de `684c4da`, padre de
+`9dc0dcc`, en `/private/tmp/alice-before-watchers-684c4da`. Se ejecutó
+la suite plugin completa con el mismo virtualenv y sin PYTHONPATH adicional:
+
+```sh
+cd /private/tmp/alice-before-watchers-684c4da
+PYTHONDONTWRITEBYTECODE=1 /Users/mfreixanet/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests -v
+```
+
+Resultado: **540 pruebas, 95.263 segundos, 4 failures, 2 errors, 19 skipped**.
+Log conservado en `/private/tmp/alice-baseline-684c4da-tests.log`.
+Estos seis nombres y causas coinciden con la ejecución completa reportada en
+fase 1 (565 pruebas, 4 failures, 2 errors, 19 skipped):
+
+| Resultado | Test | Causa en ambas ejecuciones |
+| --- | --- | --- |
+| FAIL | `test_agent_engine.Safety.test_delayed_hermes_session_is_refused_before_any_move` | `hermes_yaml` no importable |
+| FAIL | `test_ask_person.GoalWaitTests.test_an_open_question_parks_the_goal_and_its_answer_releases_it` | Goal no queda esperando; SessionDB no disponible |
+| FAIL | `test_task_finish.AutoGoalTests.test_an_errand_opens_its_goal` | Goal no queda activo; SessionDB no disponible |
+| FAIL | `test_task_finish.AutoGoalTests.test_the_same_reply_twice_pauses_the_goal` | Guard de repetición no pausa Goal |
+| ERROR | `test_task_finish.FinishTaskTests.test_the_tool_uses_the_chat_turn_session` | `hermes_yaml` no importable |
+| ERROR | `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes` | Subprocess timeout de 60 segundos |
+
+**Ninguno de los seis es nuevo en Watchers.** La ejecución actual no se repitió
+completa: ya existía esa evidencia; se verificaron los 31 tests específicos tras
+corregir el caso real de Gmail vacío (`No messages found.` → sin eventos).
+
+Se comprobó además, sin modelos ni correo, que el intérprete administrado que
+Hermes selecciona mediante `pm.environments.project_python` importa cron/entrega
+y ejecuta `Runner().run("pass", ...)` bajo confinamiento. No es el antiguo venv
+que usó la suite; la guía descubre el intérprete correcto. Esto es un smoke check
+de imports/runner, no una prueba de entrega real.
+
+Opción push implementada: **mecanismo existente Mac → Bark**. No nuevo relay.
+Bark recibe avisos genéricos; el contenido se obtiene de Hermes al abrir Alice.
+Las notificaciones locales existentes son oportunistas, sin garantía con Alice
+suspendida o cerrada a la fuerza. El usuario no tiene que configurar un relay
+nuevo para esta opción.
+
+[Guía exacta de instalación y primer watcher Gmail](watchers-first-email.md).
+La consulta de solo lectura del iPhone falló por conexión CoreDevice; no se conoce
+su build actual y no se instaló nada. La guía pide comprobar e incrementar el
+número instalado. Tampoco se envió correo ni se llamó a un modelo real.
+El parche estándar no se aplica al `__init__.py` instalado porque incluye una
+integración previa de compras adicional. La guía compone solo la inserción de
+Watchers sobre ese archivo y conserva esos hooks. Se comprobó la sintaxis del
+resultado y `git apply --check` sobre el plugin real: resultado 0, sin modificarlo.
+No se usó el instalador general, que sobrescribiría archivos vivos.
+**Fase 2 no iniciada.**

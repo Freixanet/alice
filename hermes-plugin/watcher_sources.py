@@ -123,6 +123,10 @@ class Sources:
         out = self.command([sys.executable, str(script), "gmail", *args], capture_output=True, text=True, timeout=20)
         if out.returncode or len(out.stdout.encode()) > 1048576:
             raise SourceError("Gmail source failed; no classifier was called.")
+        # The bundled Python Gmail backend prints this sentinel on an empty
+        # search; gws returns JSON []. Both mean no events, not a source error.
+        if args and args[0] == "search" and out.stdout.strip() == "No messages found.":
+            return []
         return json.loads(out.stdout)
 
     def items(self, watcher, now):
