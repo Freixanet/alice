@@ -19519,6 +19519,546 @@
           }
         }
       }
+    },
+    "Watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vigilancias"
+          }
+        }
+      }
+    },
+    "Alice checks for updates and tells you when something needs your attention.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice comprueba si hay novedades y te avisa cuando algo necesita tu atención."
+          }
+        }
+      }
+    },
+    "To create a watch, tell Alice in chat what to follow and when to notify you.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Para crear una vigilancia, dile a Alice en el chat qué quieres seguir y cuándo debe avisarte."
+          }
+        }
+      }
+    },
+    "Watch emails from [sender]. Notify me when a new one arrives. Do not take any action on the emails.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vigila los correos de [remitente]. Avísame cuando llegue uno nuevo. No realices ninguna acción sobre los correos."
+          }
+        }
+      }
+    },
+    "Request copied — paste it in chat": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Petición copiada: pégala en el chat"
+          }
+        }
+      }
+    },
+    "Copy an example request": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Copiar una petición de ejemplo"
+          }
+        }
+      }
+    },
+    "One-time setup needed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta la configuración inicial"
+          }
+        }
+      }
+    },
+    "Choose how Alice checks your watches in Notification setup before starting one.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Antes de activar una vigilancia, configura cómo se comprueban las novedades en Configuración de avisos."
+          }
+        }
+      }
+    },
+    "Your watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tus vigilancias"
+          }
+        }
+      }
+    },
+    "No watches yet. Create your first one in chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aún no tienes vigilancias. Crea la primera hablando con Alice en el chat."
+          }
+        }
+      }
+    },
+    "Notification setup": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuración de avisos"
+          }
+        }
+      }
+    },
+    "Your Hermes must stay on to check for updates. Alerts while Alice is closed use your configured phone notifications.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Hermes debe permanecer encendido para comprobar las novedades. Los avisos con Alice cerrada dependen de las notificaciones que tengas configuradas en el teléfono."
+          }
+        }
+      }
+    },
+    "Loading watches…": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cargando vigilancias…"
+          }
+        }
+      }
+    },
+    "Needs setup": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta configurar"
+          }
+        }
+      }
+    },
+    "This watch doesn’t say which emails to check. Ask Alice in chat to add the sender or topic before starting it.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta vigilancia no indica qué correos debe revisar. Pídele a Alice en el chat que añada el remitente o el tema antes de activarla."
+          }
+        }
+      }
+    },
+    "This watch has no alert rule yet. Ask Alice in chat to finish setting it up.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Esta vigilancia aún no tiene una regla para avisarte. Pídele a Alice en el chat que termine de configurarla."
+          }
+        }
+      }
+    },
+    "The model used to check your watches isn’t ready. Review Notification setup. Your watch has not been started.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El modelo que comprueba tus vigilancias no está listo. Revisa Configuración de avisos. La vigilancia no se ha activado."
+          }
+        }
+      }
+    },
+    "Alice couldn’t read your email. Check that Gmail is connected to Hermes, then try again.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no ha podido leer tu correo. Comprueba que Gmail esté conectado a Hermes y vuelve a intentarlo."
+          }
+        }
+      }
+    },
+    "Alice couldn’t apply this change. Ask her in chat to review this watch’s setup.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice no ha podido aplicar el cambio. Pídele en el chat que revise la configuración de esta vigilancia."
+          }
+        }
+      }
+    },
+    "Your Hermes couldn’t complete this change. Try again in a moment.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tu Hermes no ha podido completar el cambio. Vuelve a intentarlo en un momento."
+          }
+        }
+      }
+    },
+    "No matching emails or updates were found. Nothing was sent.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se han encontrado correos ni novedades que coincidan. No se ha enviado ningún aviso."
+          }
+        }
+      }
+    },
+    "The test couldn’t finish checking every item. Nothing was sent. Ask Alice in chat to review this watch.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La prueba no ha podido comprobar todos los elementos. No se ha enviado ningún aviso. Pídele a Alice en el chat que revise esta vigilancia."
+          }
+        }
+      }
+    },
+    "Items checked: %lld. Alerts Alice would send: %lld. Items still undecided: %lld. Nothing was sent.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elementos comprobados: %lld. Avisos que enviaría Alice: %lld. Elementos aún sin decidir: %lld. No se ha enviado ningún aviso."
+          }
+        }
+      }
+    },
+    "Alice checks your matching emails and follows the alert rule you agreed in chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice revisa los correos que coinciden y sigue la regla de aviso que acordaste en el chat."
+          }
+        }
+      }
+    },
+    "Alice checks this source and follows the alert rule you agreed in chat.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice revisa esta fuente y sigue la regla de aviso que acordaste en el chat."
+          }
+        }
+      }
+    },
+    "Pause watch": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pausar vigilancia"
+          }
+        }
+      }
+    },
+    "Start watch": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activar vigilancia"
+          }
+        }
+      }
+    },
+    "Test alerts": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Probar avisos"
+          }
+        }
+      }
+    },
+    "Checks recent matching items without sending messages or changing them.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprueba los elementos recientes que coinciden, sin enviar mensajes ni modificarlos."
+          }
+        }
+      }
+    },
+    "Waiting to be checked": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pendientes de comprobar"
+          }
+        }
+      }
+    },
+    "Items waiting: %lld. They have not been successfully processed yet.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Elementos pendientes: %lld. Aún no se han podido procesar correctamente."
+          }
+        }
+      }
+    },
+    "These items were collected before this watch had a filter. They may not belong to the sender you requested.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Estos elementos se recogieron antes de configurar el filtro. Puede que no sean del remitente que pediste."
+          }
+        }
+      }
+    },
+    "Check again": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Volver a comprobar"
+          }
+        }
+      }
+    },
+    "Ignore these items": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignorar estos elementos"
+          }
+        }
+      }
+    },
+    "Technical details": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Detalles técnicos"
+          }
+        }
+      }
+    },
+    "Email filter": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filtro de correo"
+          }
+        }
+      }
+    },
+    "Ignore the waiting items for this watch?": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "¿Ignorar los elementos pendientes de esta vigilancia?"
+          }
+        }
+      }
+    },
+    "They will not be checked again. Your emails will not be deleted.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se volverán a comprobar. Tus correos no se borrarán."
+          }
+        }
+      }
+    },
+    "Ready to check your watches": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Listo para comprobar tus vigilancias"
+          }
+        }
+      }
+    },
+    "Setup needed": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Falta configurar"
+          }
+        }
+      }
+    },
+    "Alice uses a separate model to decide which updates deserve an alert. Your model is already configured if this says Ready.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice usa un modelo específico para decidir qué novedades merecen un aviso. Si aparece «Listo», ya está configurado."
+          }
+        }
+      }
+    },
+    "Advanced model settings": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Configuración avanzada del modelo"
+          }
+        }
+      }
+    },
+    "Server address": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección del servidor"
+          }
+        }
+      }
+    },
+    "Key variable on Hermes (optional)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Variable de la clave en Hermes (opcional)"
+          }
+        }
+      }
+    },
+    "For a ChatGPT connection already set up in Hermes, no API key is needed. Other providers use the name of a key stored on Hermes, never the key itself.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Si ChatGPT ya está conectado en Hermes, no necesitas una clave de API. Para otros proveedores, introduce el nombre de la variable guardada en Hermes, nunca la clave."
+          }
+        }
+      }
+    },
+    "Save settings": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Guardar configuración"
+          }
+        }
+      }
+    },
+    "Reduce alerts": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reducir avisos"
+          }
+        }
+      }
+    },
+    "Ignore": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ignorar"
+          }
+        }
+      }
+    },
+    "Exact subject": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Asunto exacto"
+          }
+        }
+      }
+    },
+    "Fewer alerts in category": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Menos avisos de una categoría"
+          }
+        }
+      }
+    },
+    "Address, subject or category": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección, asunto o categoría"
+          }
+        }
+      }
+    },
+    "Add preference": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir preferencia"
+          }
+        }
+      }
+    },
+    "Alice stopped this watch because it couldn’t process updates or reached an alert limit. Ask her in chat to review it before restarting.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Alice ha detenido esta vigilancia porque no pudo procesar las novedades o alcanzó un límite de avisos. Pídele en el chat que la revise antes de reactivarla."
+          }
+        }
+      }
+    },
+    "For example: “Watch emails from my insurer and tell me when a new one arrives.”": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Por ejemplo: «Vigila los correos de mi aseguradora y avísame cuando llegue uno nuevo». "
+          }
+        }
+      }
     }
   },
   "version": "1.0"

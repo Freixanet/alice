@@ -160,6 +160,15 @@ is unclear, Alice should inspect connected Gmail sender metadata or ask the user
 before creating, then inspect a dry run before activating. The Settings screen
 manages existing watchers; it does not have a creation form.
 
+The simplified native screen is named **Watches / Vigilancias**. It shows the
+watch list and creation guidance first. Tap a watch for start/pause, test results
+and pending-item recovery. Incomplete email watches say **Needs setup / Falta
+configurar** and cannot be started. A separate **Notification setup /
+Configuración de avisos** screen keeps model fields and alert preferences in
+collapsed advanced sections. Source validation errors and test results use plain
+language instead of HTTP errors, JSON or event IDs. Ignoring pending items still
+requires confirmation and does not delete emails.
+
 This host command creates exactly one watcher, without invoking the main model.
 Its query is restricted to a unique test subject. Keep the printed ID for retry
 or pause. Run this creation once; repeating it creates another watcher.

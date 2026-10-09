@@ -8,6 +8,15 @@ struct WatcherSnapshot: Decodable, Sendable {
         let status: String
         let reason: String?
         let pending: Int
+        struct Configuration: Decodable, Sendable {
+            let query: String?
+            let every_minutes: Int?
+        }
+        let config: Configuration?
+
+        var needsEmailFilter: Bool {
+            source == "email" && (config?.query?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+        }
     }
     struct Route: Codable, Sendable {
         var provider: String
@@ -55,11 +64,7 @@ extension DashboardClient {
         guard action == "dry_run" else { return "" }
         // Diagnostic data is displayed as text, never evaluated as markup or actions.
         let rows = object["results"] as? [[String: Any]] ?? []
-        return rows.map { row in
-            let id = row["event_id"] as? String ?? ""
-            if let error = row["error"] as? String { return "\(id): \(error)" }
-            return "\(id): \((row["notified"] as? Bool) == true ? "would notify" : "quiet or deferred")"
-        }.joined(separator: "\n")
+        return WatcherWords.preview(rows)
     }
 
     func watcherFeedback(_ kind: String, value: String, remove: Bool) async throws {
