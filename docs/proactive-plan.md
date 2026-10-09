@@ -12,21 +12,25 @@ Las compras están desactivadas y sus herramientas no se registran.
   `5f9b8bde37f746fbb3d24dab0eeb6d70`, con consulta de Barkibu y baseline nuevo.
   Un correo posterior fue procesado y su aviso visible en el iPhone confirmado
   por el usuario. El acceso del teléfono al host requiere Tailscale conectado.
-  Feed/GitHub, webhooks y detectores integrados tienen pruebas aisladas;
-  su uso real no se ha validado como Gmail.
+  Lecturas reales de RSS (BBC, 32 elementos) y GitHub (python/cpython, 100
+  elementos) verificadas con el adaptador del plugin, sin clasificar ni crear
+  watchers. Falta el recorrido de notificación completo de esas fuentes;
+  webhooks y detectores integrados sólo tienen pruebas aisladas.
 - **Fase 2:** tablero Tasks, estados del host, revisiones versionadas,
   comprobaciones, continuidad en la sesión original y autonomía están
   implementados. Petición de cambios, aceptación y finalización probadas en el
   iPhone; el fallo descubierto y la recuperación manual están documentados abajo.
-  Pendiente repetir el recorrido corregido sin intervención manual.
+  Una segunda Task verificó el recorrido corregido sin intervención manual.
 - **Fase 3, alcance autorizado:** un aviso marcado por lote con qué ocurrió,
   por qué importa y una respuesta de un toque; una sola rutina matinal, por
   defecto 08:00 Europe/Madrid, silenciosa si no hay novedades; agrupación y
   contador diario/semanal de llamadas de avisos y briefings. El clasificador
   económico y las respuestas normales del chat están fuera de ese contador.
   El redactor recibe sólo el lote actual, sin historial ni memorias anteriores;
-  los avisos ya entregados conservan su texto. Pendientes comprobaciones reales
-  del próximo aviso, briefing, agrupación, respuesta de un toque y contador.
+  los avisos ya entregados conservan su texto. Briefing real entregado por el
+  programador y contador verificado en el host; pendiente confirmación visual
+  del iPhone. Agrupación de eventos en la ventana y respuesta de un toque
+  tienen pruebas aisladas, pendiente comprobación real de esos recorridos.
 - **Push:** mecanismo existente Mac → Bark, con aviso genérico y apertura de
   Alice; el contenido se recupera del Hermes de cada usuario.
 - **Fuera del alcance acotado implementado:** responder desde la propia
@@ -51,13 +55,38 @@ comprobaciones. Aceptación y finalización reales verificadas por API; no se en
 la nota ni se utilizó un servicio externo. La nueva revisión anterior fue una
 recuperación manual del fallo, no una segunda revisión autónoma del modelo.
 
-Verificación más reciente del plugin: 710 pruebas; 708 pasan, una omitida,
-un timeout en `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes`.
-El mismo timeout se reprodujo aisladamente y en el commit anterior `99f3b7f`,
-sin cambiar su límite de 60 segundos ni aserciones. Las 17 pruebas específicas
-proactivas pasan, incluida la prevalidación real del adaptador Codex sin llamadas
-al modelo. No se han ejecutado pruebas de UI sobre los datos reales del teléfono
-ni pruebas de simulador en este Mac. Las APIs y ambos puertos del host responden.
+Segunda comprobación real, sin recuperación manual:
+`5ee7a30e1f234b91980c5ddd0bc70785` («Validación de Tasks — segunda revisión»).
+El usuario pidió máximo cuatro palabras; Alice volvió a `needs_review`, versión 5,
+con «Gracias, lo aprecio.» (tres palabras), `review_required=true` y tarjeta visible
+confirmada. Tras aceptación desde iPhone terminó en versión 7 con el mismo texto
+intacto y `review_required=false`. La comprobación escrita por el modelo decía
+cuatro palabras; no tomar sus comprobaciones declaradas como verificación automática.
+
+Verificación más reciente: suite completa de 713 pruebas en 20,1 segundos;
+708 pasan, una omitida y cuatro fallos del runner porque el sandbox de Codex
+rechaza `sandbox-exec` (`sandbox_apply: Operation not permitted`). Las cinco
+pruebas de ese módulo pasan al ejecutarlas fuera de esa restricción, sin cambios
+a las aserciones. No se repitió toda la suite después. La prueba original de
+memoria que antes agotaba 60 segundos pasa aisladamente en 1,7 segundos, intacta;
+el diagnóstico de arranque detectó que Hermes intenta completar dependencias de
+una actualización pendiente. No se modificaron Hermes ni sus dependencias.
+Las 18 pruebas proactivas/agrupación pasan, incluida una ráfaga de 50 eventos en
+un lote, briefing vacío sin llamadas y aislamiento de redacción. El ledger real
+registra una llamada principal para el aviso Barkibu `0972bfd750f14fa4848376ebde4b12a7`.
+No se han ejecutado pruebas de UI sobre datos reales ni simulador en este Mac.
+
+Briefing real adelantado con autorización del usuario a 01:44 Europe/Madrid
+(del 10 octubre en esa zona; 9 octubre en America/New_York). El cron existente
+lo generó automáticamente: entrega `131ce94248ce4dfea97a7f43b97f4923`, siete
+actualizaciones captadas desde el inicio (primer briefing) y ninguna Task abierta.
+Recibo `settled`; un único mensaje principal (23730) con `happened`, `matters`
+y `reply`, sin herramientas, y una llamada `gpt-6-luna` en el ledger. El API
+muestra para el día configurado en Madrid: proactive 1, briefing 1, total 2.
+Se restauraron inmediatamente 08:00 Europe/Madrid y enabled=true; no se borró
+el cursor ni `last_date`. La prueba cuenta como el briefing del día de Madrid,
+por lo que no vuelve a enviar otro a las 08:00 de ese mismo día. Pendiente
+confirmar la tarjeta, los valores y el horario en la pantalla del iPhone.
 
 Guías vigentes: [Watchers y Gmail](watchers-first-email.md),
 [Tasks y revisiones](tasks-review.md), [fase 3 y comprobaciones](watchers-phase3.md).
