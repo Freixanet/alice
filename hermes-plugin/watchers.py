@@ -253,12 +253,12 @@ class Store:
                 raise WatcherError("Source filter changed. Reset its baseline before polling.")
             seen = set(baseline["seen"])
             fresh = []
-            if record["source"] != "email" and seen and not any(ident in seen for ident in ids):
+            if record["source"] not in ("email", "builtin") and seen and not any(ident in seen for ident in ids):
                 # An unanchored page cannot prove its items arrived after the baseline.
                 return []
             for item in items:
                 if str(item["id"]) in seen:
-                    if record["source"] != "email":
+                    if record["source"] not in ("email", "builtin"):
                         break
                     continue
                 fresh.append(item)
@@ -273,7 +273,7 @@ class Store:
             if baseline is None:
                 return
             ids = [str(item["id"]) for item in items]
-            if (record["source"] != "email" and baseline["seen"]
+            if (record["source"] not in ("email", "builtin") and baseline["seen"]
                     and not any(ident in baseline["seen"] for ident in ids)):
                 return
             baseline["seen"] = list(dict.fromkeys(ids + baseline["seen"]))[:2000]

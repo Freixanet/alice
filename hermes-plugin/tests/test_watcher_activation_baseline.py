@@ -101,6 +101,15 @@ class ActivationBaselineTests(unittest.TestCase):
         self.assertNotIn('new',self.store.get(ident)['baseline']['seen'])
         self.assertEqual(self.store.source_events(ident,[new,old]),[new])
 
+    def test_builtin_future_trigger_does_not_need_previous_day_anchor(self):
+        ident=self.store.create('local','Birthday','builtin',{'kind':'birthday'},f.CODE,'Notify birthdays')['id']
+        self.activate(ident)
+        old={'id':'birthday:old:2026-10-09','body':'invoice overdue'}
+        self.store.source_events(ident,[old]);self.now+=86400
+        new={'id':'birthday:new:2026-10-10','body':'invoice overdue'}
+        self.assertEqual(self.store.source_events(ident,[new]),[new])
+        self.assertEqual(self.store.source_events(ident,[old]),[])
+
     def test_valid_gate_is_dry_and_records_proof(self):
         ident=self.create(); row=self.activate(ident)
         self.assertEqual(row['status'],'active')
