@@ -10,11 +10,13 @@ El código se obtuvo de GitHub después de comprobar que la carpeta local estaba
 vacía. Este documento sustituye la primera auditoría, que solo describía esa
 carpeta y no había comprobado el repositorio remoto.
 
-**Estado actual (9 octubre 2026):** fase 1 instalada desde `0e0490e`, build 92;
+**Estado actual (9 octubre 2026):** fase 1 validada desde `0e0490e`, build 92;
 correo real, notificación y apertura de Alice confirmados por el usuario. La ruta
 clasificadora sigue siendo explícita y nunca utiliza el modelo principal como fallback.
 
-Fase 2 implementada: Tasks con autoridad SQLite en el host, versiones estrictas,
+Fase 2: app instalada y abierta en el iPhone, build 93 (`2b8dc28`); plugin
+instalado desde `codex/proactive-watchers`, con recibo `INSTALLED_FROM` y backup.
+Tasks con autoridad SQLite en el host, versiones estrictas,
 una tarjeta vigente por tarea, resultados nativos de solo datos y decisiones desde
 iOS. `review_tasks` prepara y actualiza; solo la API autenticada permite aceptar o
 cambiar autonomía. El hook previo a herramientas consume una autorización exacta
@@ -44,7 +46,7 @@ Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
   y `/private/tmp/alice-phase2-plugin-final-tests.log`. Los 6 problemas de la antigua
   comparación previa a Watchers siguen incluidos; los otros pertenecen al código
   de recados/compras incorporado posteriormente, y ya fallan en `0e0490e`.
-- Pruebas específicas de Tasks/API/hook: 20, todas pasan (incluye validación de
+- Pruebas específicas de Tasks/API/hook: 21, todas pasan (incluye validación de
   campos añadida después de la suite completa). Aprueba versiones estrictas,
   mantiene perfil/sesión, consume una sola vez, falla cerrada, retira tarjetas,
   bloquea efectos desconocidos (incluidos scripts de Watchers) y no repite continuaciones ambiguas.
@@ -54,7 +56,8 @@ Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
   de enteros grandes, preservación de versión/sesión y contenido tratado como datos.
   XCTest iOS y UI no ejecutados: requieren simulador, no autorizado en este Mac.
 - `npm run slash:check`: 52 comandos coinciden entre web/iOS.
-- Compilación genérica para iPhone: pasa. Firma e instalación se registran en el
+- Compilación genérica para iPhone: pasa. Build firmado e instalado: 93, `2b8dc28`; APIs Tasks y Watchers reales devuelven
+  200 sin crear datos de prueba. Firma e instalación se registran en el
   recibo del plugin y la revisión/build de la app; revisión visual y una Task real
   con el modelo permanecen pendientes. No se hicieron llamadas al modelo ni
   modificaciones de Gmail/pagos como pruebas.

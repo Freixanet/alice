@@ -109,3 +109,9 @@ class ReviewTasksTests(unittest.TestCase):
         for action in ('create', 'activate', 'retry', 'dry_run'):
             self.assertEqual(g.check(self.temp.name, 'watchers', {'action':action, 'code':'send_email()'}, 'untracked', 'default')['action'], 'block')
         self.assertIsNone(g.check(self.temp.name, 'watchers', {'action':'list'}, 'untracked', 'default'))
+
+    def test_existing_local_goal_progress_needs_no_external_approval(self):
+        for mode in ('act', 'draft_only'):
+            self.store.configure(mode)
+            for action in ('create', 'update', 'step', 'decide', 'link_routine'):
+                self.assertIsNone(g.check(self.temp.name, 'goals', {'action':action}, 'session', 'default'))
