@@ -1,5 +1,18 @@
 # Auditoría: de seis a dieciocho casos fallidos
 
+## Corrección de seguridad posterior
+
+La explicación anterior de `70e7914` era demasiado amplia: varios cambios de
+pruebas retiraron garantías, no solo actualizaron fixtures. Las compras quedan
+desactivadas. Se restauran el vínculo a la pestaña original, invalidación por
+cambios de cookies de sesión, rechazo de formatos aún sin comprobar y cancelación
+por respuesta vacía de login con spies de Vault, reanudación y ejecución de pago.
+La segunda aprobación vuelve a rechazarse con 409; no se afirma idempotencia de
+cargos mediante un mero contador de reanudaciones. La opción publicada se compara
+con el quote verificado por identidad. «No lo tengo» para OTP conserva su conducta
+de recuperación hasta aclarar ese caso con el usuario.
+
+
 ## Origen demostrado
 
 Los doce casos adicionales se originaron en `283bbaa` (importación del plugin

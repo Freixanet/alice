@@ -47,6 +47,8 @@ class ErrandHookTests(unittest.TestCase):
                                       cards=lambda: [{"label": "Visa ···4242"}])
         self.flow = self.plugin._purchase_flow()
         for patch in (
+            # Enabled-flow contracts remain exercised only in isolated fixtures.
+            mock.patch.object(self.plugin._purchase_feature(), "ENABLED", True),
             mock.patch.object(self.plugin, "_hermes_root", return_value=self.home),
             mock.patch.object(self.errands, "_fetch", side_effect=OSError("offline")),
             mock.patch.object(self.plugin, "_cards_module", return_value=cards),

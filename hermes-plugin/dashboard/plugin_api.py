@@ -2712,10 +2712,6 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
         checkout = entry.get("checkout") or {}
         if checkout.get("id") == body.checkout_id and checkout.get("status") == "expired":
             raise HTTPException(status_code=409, detail="Este checkout ha caducado: prepáralo de nuevo.")
-        # The same answer sent twice (a timeout on the phone, a retry): it already stands.
-        already = {"allow": "approved", "deny": "denied"}[body.decision]
-        if checkout.get("id") == body.checkout_id and checkout.get("status") == already:
-            return module.public(entry)
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")

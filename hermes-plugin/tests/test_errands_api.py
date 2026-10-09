@@ -36,6 +36,10 @@ class ErrandRoutesTests(unittest.TestCase):
         cls.client = TestClient(app)
 
     def setUp(self):
+        # These tests exercise the enabled checkout contract in isolated test data.
+        patch = mock.patch.object(self.api, '_require_purchase_enabled')
+        patch.start()
+        self.addCleanup(patch.stop)
         self.home = Path(tempfile.mkdtemp())
         self.errands = self.api._errands_module()
         self.resumed = []
@@ -101,10 +105,8 @@ class ErrandRoutesTests(unittest.TestCase):
         # A second tap, or a stale card, changes nothing.
         again = self.client.post(self.url(f"/{entry['id']}/checkout"),
                                  json={"decision": "allow", "checkout_id": checkout_id})
-        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.status_code, 409)
         self.assertEqual(len(self.resumed), 1, "An idempotent retry must never resume or pay twice")
-        self.assertEqual(again.json()['errand']['checkout']['id'], checkout_id)
-        self.assertEqual(again.json()['errand']['checkout']['status'], 'approved')
 
     def test_an_approval_for_another_checkout_is_refused(self):
         entry = self.waiting()

@@ -1,5 +1,10 @@
 # Comprar con Alice
 
+**Desactivado temporalmente:** `purchase_feature.ENABLED = False`. No se registran
+las herramientas de compra/recados y se bloquean aprobaciones y reanudaciones HTTP.
+Watchers y Review Tasks siguen activos. Lo que sigue describe el flujo desactivado.
+No reactivar sin revisar las garantías y autorizar expresamente el cambio.
+
 La compra se divide entre el chat, donde se decide qué comprar, y un recado de
 Hermes, que prepara el pedido y espera la aprobación antes de pagar.
 

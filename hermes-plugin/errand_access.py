@@ -483,20 +483,8 @@ def answer(home, errand_id, request_id, value, *, account_action='login', inspec
                                     code_unavailable=True, resume_message=message, reason='')
             declined = message
         elif not value:
-            page_origin, context, _ = inspect(entry)
-            if (page_origin != pending['origin'] or context['context'] != pending['context']
-                    or not guest_available(entry, context)):
-                pending['guest_available'] = False
-                errands.update(home, errand_id, secure_request=pending)
-                raise ValueError('La página no ofrece ahora una compra como invitado. Continúa con el acceso seguro.')
-            # «Ahora no»: the person does not want to sign in here. The errand goes on as a guest if
-            # the shop allows it; stopping the whole purchase for a login nobody wanted was worse.
-            message = ('[sin acceso] La persona no quiere iniciar sesión ni crear cuenta en esta tienda. Sigue '
-                       'como invitado si la tienda lo permite (busca «comprar sin cuenta», «invitado», «guest»). '
-                       'Si la tienda exige cuenta, termina con «BLOQUEADO: la tienda exige iniciar sesión».')
-            result = errands.update(home, errand_id, status='working', secure_request=None, secure_answered=request_id,
-                                    login_declined=True, guest_attempted=True, resume_message=message, reason='')
-            declined = message
+            # An empty login answer cancels. It must never authorize guest checkout.
+            return errands.stop(home, errand_id)
         else:
             declined = None
             result = _answer_locked(home, errand_id, request_id, value, entry, pending, account_action, inspect, save, fill_code)
@@ -507,10 +495,9 @@ def answer(home, errand_id, request_id, value, *, account_action='login', inspec
 def _answer_locked(home, errand_id, request_id, value, entry, pending, account_action, inspect, save, fill_code):
     errands = module('errands')
     page_origin, context, command = inspect(entry)
-    # The same shop in the same browser context: the tab may have been reloaded or replaced
-    # while the person typed (the agent did not end its turn at once), and that is no reason to
-    # make them type it again.
-    if page_origin != pending['origin'] or context['context'] != pending['context']:
+    # Credentials are bound to the original origin, browser context AND tab.
+    if (page_origin != pending['origin'] or context['context'] != pending['context']
+            or context['target'] != pending['target']):
         raise ValueError('La página de acceso ha cambiado. Vuelve a solicitar el acceso.')
     if pending['kind'] == 'vault.save_login':
         if account_action not in ('login', 'create'):

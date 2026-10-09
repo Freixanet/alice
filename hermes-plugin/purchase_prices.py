@@ -39,8 +39,9 @@ def fingerprint(cookies, origin):
     every page and made the cart look like another session between the basket and the pay step."""
     host = urlsplit(origin).hostname
     cookies = [c for c in cookies if host == c.get('domain','').lstrip('.') or host.endswith('.' + c.get('domain','').lstrip('.'))]
-    names = sorted(c.get('name','') for c in cookies if re.search(r'sess|sid|cart|basket|customer|token', c.get('name',''), re.I))
-    return hashlib.sha256(json.dumps(names).encode()).hexdigest()
+    values = sorted((c.get('domain', ''), c.get('path', ''), c.get('name', ''), c.get('value', ''))
+                    for c in cookies if re.search(r'sess|sid|cart|basket|customer|token', c.get('name',''), re.I))
+    return hashlib.sha256(json.dumps(values).encode()).hexdigest()
 
 
 def _norm(text):
@@ -646,7 +647,7 @@ def _adopt(home, session, args, raw, now):
             flow._write(path, sets)
             best = next(o for o in found['options'] if o['recommended'])
             return {'ok': True, 'set': found['key'], 'key': found['key'], 'alias': alias,
-                    'options': [{'id':o['id'],'title':o['title'],'price':o['price']} for o in found['options']],
+                    'options': [{k: o[k] for k in ('id', 'title', 'price', 'quote_ref', 'url', 'variant')} for o in found['options']],
                     'next': ('La persona ya ve las tarjetas (las enseñó el plugin al comprobar). La marcada «Recomendada» es «'
                              + f"{best['title']} · {best['variant']} · {best['price']}".replace(' ·  · ', ' · ')
                              + '»; recomienda esa y ninguna otra, en una o dos líneas, y no prepares nada hasta que elija.')}
@@ -665,20 +666,21 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
         raw = [{'quote_ref': q['id']} for q in quotes]
     if not raw:
         return {'ok': False, 'error': 'Busca y comprueba los formatos antes de mostrarlos (purchase_discover, purchase_verify).'}
-    adopted = _adopt(home, session, args, raw, now)
-    if adopted:
-        return adopted
     try:
         search, shown_quotes = _quotes_of(data, session, search_id)
         if not search:
             raise ValueError('Falta el registro de formatos encontrados.')
-        # Every verified format of the search is shown, the ones the model left out included; an
-        # unchecked one is said as such, never a reason to show nothing.
+        # No selectable options while any format remains unchecked.
         given = {o['quote_ref'] for o in raw}
-        raw = raw + [{'quote_ref': q['id']} for q in shown_quotes if q['id'] not in given
-                     and q['candidate_id'] not in {data['quotes'][r]['candidate_id'] for r in given if r in data['quotes']}]
         unchecked = [c['title'] for c in search['candidates'] if c['id'] not in {q['candidate_id'] for q in shown_quotes}
                      and c['id'] not in search['rejected'] and c['id'] not in search.get('failed', {})]
+        if unchecked:
+            raise ValueError('Faltan formatos por comprobar: ' + '; '.join(unchecked))
+        adopted = _adopt(home, session, args, raw, now)
+        if adopted:
+            return adopted
+        raw = raw + [{'quote_ref': q['id']} for q in shown_quotes if q['id'] not in given
+                     and q['candidate_id'] not in {data['quotes'][r]['candidate_id'] for r in given if r in data['quotes']}]
         options = []
         candidates = set()
         for row in raw:
@@ -724,14 +726,11 @@ def present(home, session, args, *, currency="", picture=None, request="", now=N
                     option['id'] = original_key + '-' + option['id'].rsplit('-',1)[1]
                 found['key'] = original_key
                 result['set'] = original_key
-                result['options'] = [{'id':o['id'],'title':o['title'],'price':o['price']} for o in found['options']]
+                result['options'] = [{k: o[k] for k in ('id', 'title', 'price', 'quote_ref', 'url', 'variant')} for o in found['options']]
                 found['search_id'] = search['id']
                 found['phase'] = 'verified_options'
                 flow._write(path, sets)
             result['key'] = result['set']
-            if unchecked:
-                result['unchecked'] = unchecked
-                result['next'] = result.get('next', '') + ' Sin comprobar (dilo en una línea): ' + '; '.join(unchecked) + '.'
         return result
     except (ValueError, KeyError, TypeError) as exc:
         return {'ok':False,'error':str(exc)}
@@ -805,11 +804,11 @@ def _cart_verdict(home, errand_id, entry, offer, page_origin, context, command, 
     old_price = module('money').parse(offer['price'], offer['currency'])
     try:
         cookies = command('Storage.getCookies',{'browserContextId':context['context']}).get('cookies',[])
-    except Exception:  # noqa: BLE001 — the session cookie is a hint, the context is the binding
-        cookies = []
+    except Exception:  # noqa: BLE001 — unreadable session cannot authorize a payment
+        cookies = None
     evidence = {'origin':page_origin,'context':context['context'],'recipe':recipe,
         'qty':offer.get('qty',1),'price_cents':amount[0],'currency':amount[1], 'at':now or time.time(),
-        'session':fingerprint(cookies,page_origin)}
+        'session':fingerprint(cookies,page_origin) if cookies is not None else None}
     if old_price and amount[0] * 2 < old_price[0]:
         # Less than half the checked price is a misreading, not a member discount: HSN's «−0,50 €»
         # dosing-scoop line was once taken for a 27,98 € tub and adopted. Read the cart again.
@@ -873,7 +872,13 @@ def fresh_cart(home, entry, *, inspect=None, now=None):
     if not evidence or (now or time.time())-float(evidence.get('at') or 0) > CART_TTL:
         return False
     access = module('errand_access')
-    _page_origin, context, _command = (inspect or access.target)(entry)
+    _page_origin, context, command = (inspect or access.target)(entry)
+    try:
+        cookies = command('Storage.getCookies', {'browserContextId': context['context']}).get('cookies', [])
+        if fingerprint(cookies, evidence['origin']) != evidence.get('session'):
+            return False
+    except Exception:
+        return False
     offer = entry.get('offer') or {}
     return (context['context']==evidence['context']
             and evidence['qty']==offer.get('qty',1)
