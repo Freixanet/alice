@@ -230,9 +230,21 @@ class NotesToolsTests(unittest.TestCase):
                 + [t[0] for t in self.plugin.CALENDAR_TOOLS]
                 + [t[0] for t in self.plugin.WATCH_TOOLS]
                 + [t[0] for t in self.plugin.DOCUMENT_TOOLS]
-                + ["errand_start", "checkout_request", "card_request", "purchase_discover", "purchase_verify", "purchase_check_cart", "login_request", "login_fill", "purchase_options"]
+                + ["errand_start", "checkout_request", "card_request", "purchase_discover", "purchase_verify", "purchase_check_cart", "login_request", "login_fill", "purchase_options", "purchase_browser", "purchase_outcome", "product_list", "catalog_search", "catalog_product", "ask_person", "watchers", "review_tasks", "review_read"]
             ),
         )
+
+    def test_manifest_tools_have_registered_handlers(self):
+        try:
+            import hermes_yaml as yaml
+        except ImportError:
+            import yaml
+        manifest = yaml.safe_load((PLUGIN_INIT.parent / 'plugin.yaml').read_text())
+        ctx = mock.Mock()
+        with mock.patch.object(self.plugin, '_start_feed'):
+            self.plugin.register(ctx)
+        registered = {call.kwargs['name'] for call in ctx.register_tool.call_args_list}
+        self.assertFalse(set(manifest['provides_tools']) - registered)
 
     def test_each_handler_passes_its_arguments_through(self):
         """The registered handler is what the registry calls: ``handler(args)``."""

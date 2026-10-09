@@ -445,10 +445,13 @@ def _guard_errand_access(tool_name=None, args=None, session_id="", **_):
             return {"action": "block", "message": "No se pudo comprobar el origen del acceso. No lo rellenes."}
     if str(tool_name or "").startswith("browser_") and (entry or {}).get("offer") and (entry or {}).get("secure_answered"):
         if not errands.context_file(entry["id"], _hermes_root()).exists():
-            # The page that held the typed secret is gone with its context: nothing to shield, and
-            # blocking every browser step here left the errand unable to make a new one.
-            errands.update(_hermes_root(), entry["id"], secure_answered=None, cart_evidence=None)
-            return None
+            # A missing record does not prove the old page (and its secrets) is gone.
+            # Only the isolated browser_exec preamble may create a fresh context.
+            # Retain secure_answered so another read cannot bypass this check.
+            errands.update(_hermes_root(), entry["id"], cart_evidence=None)
+            if tool_name == 'browser_exec':
+                return None
+            return {"action":"block", "message":"El contexto seguro del recado no está disponible. Usa browser_exec para recuperar su contexto propio antes de leer la página."}
         try:
             _module("errand_access.py", "alice_errand_access").protect_browser_secrets(entry)
         except Exception:

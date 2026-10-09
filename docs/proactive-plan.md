@@ -38,6 +38,17 @@ de resultados como datos y comprobación de autorizaciones en el host; licencia 
 copyright conservados en `THIRD_PARTY_NOTICES`. No se usó código Comma/AFK.
 Fase 3 no iniciada. Uso: [Tasks y revisiones](tasks-review.md).
 
+## Corrección de la comparación de fallos
+
+La comparación con `0e0490e` ocultaba la diferencia frente a `684c4da`: los doce
+casos adicionales nacieron en `283bbaa` y entraron por el merge de recuperación
+`4befbc1`, durante fase 1. Se reprodujo el antes/después de ambos commits.
+Corregidos el camino de lectura sin protección al perder el contexto y las
+pruebas desactualizadas, la suite vuelve a los seis originales: 668 pruebas,
+4 fallos + 2 errores y 19 omitidas. El módulo de recados pasa 84 pruebas.
+Detalle por caso y evidencias: [auditoría de regresiones](watchers-regression-audit.md).
+Los resultados de 18 casos que siguen abajo son históricos, anteriores al arreglo.
+
 ## Verificación de fase 2
 
 - Suite completa del commit instalado `0e0490e`: 643 pruebas, 13 fallos y 5 errores,

@@ -149,7 +149,7 @@ class BusinessIsolationTests(unittest.TestCase):
         # And the same order is never paid twice (purchases.py), checked before the fill is routed.
         hooks = [c.args[1] for c in ctx.register_hook.call_args_list]
         self.assertLess(hooks.index(self.plugin._guard_repeat_payment), hooks.index(self.plugin._route_card_fill))
-        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._payment_error_note)
+        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._transform_tool_result)
         # And the answers to ask_person close their questions and release a parked goal.
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._absorb_answers)
         # No goal is opened on a chat any more: errands run apart (errands.py).
@@ -157,8 +157,18 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_hook.assert_any_call("post_llm_call", self.plugin._repeat_guard)
         # And nothing is paid without the approved checkout, checked before the repeat guard.
         self.assertLess(hooks.index(self.plugin._guard_errand), hooks.index(self.plugin._guard_repeat_payment))
-        ctx.register_hook.assert_any_call("transform_tool_result", self.plugin._skill_staged_note)
-        self.assertEqual(ctx.register_hook.call_count, 21)
+        transforms = [c.args[1] for c in ctx.register_hook.call_args_list if c.args[0] == 'transform_tool_result']
+        self.assertEqual(transforms, [self.plugin._transform_tool_result], "Hermes uses only the first returned rewrite")
+        ctx.register_hook.assert_any_call('pre_tool_call', self.plugin._guard_review_task)
+        subscriptions = [(c.args[0], c.args[1]) for c in ctx.register_hook.call_args_list]
+        self.assertEqual(len(subscriptions), len(set(subscriptions)), "No duplicate hook registration")
+        rewrites = ('_filter_errand_access', '_payment_error_note', '_errand_context_lost', '_feed_sources', '_skill_staged_note')
+        with mock.patch.multiple(self.plugin, **{name: mock.DEFAULT for name in rewrites}) as handlers:
+            for index, name in enumerate(rewrites):
+                handlers[name].return_value = f'rewrite-{index}'
+            self.assertEqual(self.plugin._transform_tool_result(result='original'), 'rewrite-4')
+            for index, name in enumerate(rewrites):
+                self.assertEqual(handlers[name].call_args.kwargs['result'], 'original' if index == 0 else f'rewrite-{index-1}')
         ctx.register_hook.assert_any_call("pre_llm_call", self.plugin._errand_turn)
         ctx.register_hook.assert_any_call("pre_tool_call", self.plugin._guard_chat_errand)
         ctx.register_system_prompt_section.assert_any_call("alice.equipos", self.plugin.team_prompt)
@@ -182,7 +192,9 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.dudas", self.plugin.doubts_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.compras", self.plugin.purchases_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.preguntas", self.plugin.ask_prompt)
-        self.assertEqual(ctx.register_system_prompt_section.call_count, 11)
+        sections = [c.args[0] for c in ctx.register_system_prompt_section.call_args_list]
+        self.assertEqual(set(sections), {'alice.equipos', 'alice.debug', 'alice.resolver', 'alice.canal', 'alice.tasks', 'alice.claves', 'alice.recados', 'alice.dudas', 'alice.tarjetas', 'alice.compras', 'alice.preguntas', 'alice.objetivos'})
+        self.assertEqual(len(sections), len(set(sections)))
 
 
 if __name__ == "__main__":

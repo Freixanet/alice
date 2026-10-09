@@ -110,6 +110,9 @@ class ErrandHookTests(unittest.TestCase):
     def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
         entry = self.errand(offer={'url':'https://example.com/product'})
         self.errands.update(self.home,entry['id'],secure_answered='request-done')
+        path = self.errands.context_file(entry['id'], self.home)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'context':'fixture-context', 'target':'fixture-tab'}))
         access = self.plugin._module('errand_access.py','alice_errand_access')
         with mock.patch.object(access,'protect_browser_secrets') as protect:
             for name in ('browser_exec','browser_get_state','browser_screenshot'):
@@ -119,6 +122,23 @@ class ErrandHookTests(unittest.TestCase):
             result = self.plugin._guard_errand_access('browser_get_state',{},session_id=entry['session_id'])
             self.assertEqual(result['action'],'block')
             self.assertNotIn('private failure',result['message'])
+
+    def test_missing_secure_context_blocks_reads_until_isolated_recovery(self):
+        entry = self.errand(offer={'url':'https://example.com/product'})
+        self.errands.update(self.home, entry['id'], secure_answered='request-done', cart_evidence={'stale':True})
+        for name in ('browser_get_state', 'browser_screenshot', 'browser_get_state'):
+            self.assertEqual(self.plugin._guard_errand_access(name, {}, session_id=entry['session_id'])['action'], 'block')
+        saved = self.errands.get(self.home, entry['id'])
+        self.assertEqual(saved['secure_answered'], 'request-done')
+        self.assertIsNone(saved['cart_evidence'])
+        self.assertIsNone(self.plugin._guard_errand_access('browser_exec', {}, session_id=entry['session_id']))
+        path = self.errands.context_file(entry['id'], self.home)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'context':'new-context', 'target':'new-tab'}))
+        access = self.plugin._module('errand_access.py','alice_errand_access')
+        with mock.patch.object(access, 'protect_browser_secrets') as protect:
+            self.assertIsNone(self.plugin._guard_errand_access('browser_screenshot', {}, session_id=entry['session_id']))
+            protect.assert_called_once()
 
     def shown(self, session="chat-9"):
         """Two verified options shown in `session`; their ids."""
@@ -436,4 +456,3 @@ class PaymentCheckTests(unittest.TestCase):
                                               "cron.jobs": jobs}):
             plugin._schedule_payment_check({"id": "abc", "shop": "hsnstore.com"})
         self.assertEqual(made, [])
-

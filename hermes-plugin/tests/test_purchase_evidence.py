@@ -68,11 +68,15 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(all(p.closed for p in Shop.instances))
     def test_all_found_formats_must_be_accounted_for(self):
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
-        self.assertFalse(result['ok']); self.assertIn('80 cápsulas',result['error'])
+        self.assertTrue(result['ok'])
+        self.assertEqual(result['unchecked'], [c['title'] for c in self.search['candidates'][1:]])
+        self.assertIn('Sin comprobar',result['next'])
+        self.assertEqual(len(result['options']), 1, 'Unchecked formats must never become verified offers')
         for candidate in self.search['candidates'][1:]:
             prices.verify(self.home,'chat',{'search_id':self.search['id'],'candidate_id':candidate['id'],'reject_reason':'Sin stock','recipe':{'unavailable':'#unavailable'}},factory=Shop)
         result = prices.present(self.home,'chat',self.options([self.quote()]),factory=Shop)
         self.assertTrue(result['ok'])
+        self.assertNotIn('unchecked', result)
     def test_a_format_the_service_could_not_check_does_not_lock_the_others(self):
         original = Shop.read
         def flaky(shop, selector):
@@ -173,14 +177,38 @@ class AccessTests(unittest.TestCase):
         self.assertIn('create',self.resumed[0][1])
     def test_cancel_preserves_offer_without_any_payment_or_vault_write(self):
         p = self.pending()
-        out = access.answer(self.home,self.entry['id'],p['request_id'],'',inspect=self.inspect,save=self.save,resume=self.resume)
+        # Cancel uses the stop contract. Empty login answers now mean guest checkout.
+        with mock.patch.object(errands, '_goal_manager'), mock.patch.object(errands, 'release_context'):
+            out = errands.stop(self.home, self.entry['id'])
+        self.assertIsNone(out['secure_request'])
         self.assertEqual(out['status'],'stopped'); self.assertEqual(out['offer']['url'],'https://example.com/p')
         self.assertFalse(self.saved); self.assertFalse(self.resumed)
     def test_changed_origin_or_context_cannot_receive_access(self):
-        p = self.pending(); self.context['target'] = 'different'
+        p = self.pending(); self.context['context'] = 'foreign-context'
         with self.assertRaises(ValueError):self.respond(p)
         self.assertFalse(self.saved)
         with self.assertRaises(ValueError):access.request(self.home,self.entry['id'],inspect=lambda e:('https://other.example',self.context,None))
+    def test_replaced_tab_in_same_owned_context_preserves_the_chosen_login(self):
+        p = self.pending()
+        self.context['target'] = 'replacement-tab'
+        self.respond(p)
+        self.assertEqual(len(self.saved), 1)
+        self.assertEqual(len(self.resumed), 1)
+
+    def test_guest_decline_requires_a_verified_guest_route(self):
+        p = self.pending()
+        with mock.patch.object(access, 'guest_available', return_value=False):
+            with self.assertRaises(ValueError):
+                access.answer(self.home, self.entry['id'], p['request_id'], '', inspect=self.inspect, save=self.save, resume=self.resume)
+        self.assertFalse(self.saved)
+        self.assertFalse(self.resumed)
+        with mock.patch.object(access, 'guest_available', return_value=True):
+            out = access.answer(self.home, self.entry['id'], p['request_id'], '', inspect=self.inspect, save=self.save, resume=self.resume)
+        self.assertEqual(out['status'], 'working')
+        self.assertTrue(out['login_declined'])
+        self.assertFalse(self.saved)
+        self.assertEqual(len(self.resumed), 1)
+
     def test_otp_is_filled_directly_without_transcript_value(self):
         p = self.pending('vault.code'); codes=[]
         access.answer(self.home,self.entry['id'],p['request_id'],'987654',inspect=self.inspect,
@@ -239,7 +267,7 @@ class AccessTests(unittest.TestCase):
 
     def test_visible_empty_login_recovers_a_prose_only_agent_turn(self):
         descriptors = [{'index':0,'name':'password','type':'password','autocomplete':'current-password'}]
-        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else True
+        evaluate = lambda ctx,script: json.dumps(descriptors) if 'flatMap' in script else (False if script == access.GUEST_JS else True)
         pending = access.detect_pending(self.home,self.entry['id'],inspect=self.inspect,evaluate=evaluate)
         self.assertEqual(pending['kind'],'vault.save_login')
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'needs_login')
@@ -247,7 +275,7 @@ class AccessTests(unittest.TestCase):
 
     def test_a_login_already_given_is_not_asked_again(self):
         p = self.pending(); self.respond(p, account_action='create')
-        with self.assertRaisesRegex(ValueError, 'no se lo pidas otra vez'):
+        with self.assertRaisesRegex(ValueError, 'No vuelvas a pedir el acceso'):
             self.pending()
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
         self.assertEqual(self.pending('vault.code')['kind'],'vault.code')
@@ -335,7 +363,10 @@ class CartRevalidationTests(unittest.TestCase):
         self.assertTrue(self.check()['ok'])
         self.assertEqual(errands.get(self.home,self.entry['id'])['status'],'working')
         self.cookies.append({'domain':'example.com','name':'session','value':'fictional-new-session'})
+        self.assertTrue(prices.fresh_cart(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect))
+        self.context['context'] = 'foreign-context'
         self.assertFalse(prices.fresh_cart(self.home,errands.get(self.home,self.entry['id']),inspect=self.inspect))
+        self.context['context'] = 'context-test'
         self.assertTrue(self.check()['ok'])
     def test_real_price_change_exposes_both_amounts(self):
         self.amount='39,99 €'

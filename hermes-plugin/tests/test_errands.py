@@ -801,11 +801,15 @@ class CirclingTests(Base):
     def test_the_engine_stops_a_run_going_round_and_says_why(self):
         entry = self.errand()
         self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout")
-        gateway = FakeGateway([[{"status": "running"}]])
+        gateway = FakeGateway([[{"status": "running"}], [{"status": "running"}]])
+        def advance(_):
+            current = errands.get(self.home, entry['id'])
+            if current.get('circle_from'):
+                self.steps(entry, errands.CIRCLE_STEPS, "https://shop.es/checkout", start=current['circle_from'] + 1)
         engine = errands.Engine(self.home, entry["id"], gateway=gateway, judge=lambda s, r: {"status": "done"},
-                                sleep=lambda s: None)
+                                sleep=advance, page_signature=lambda e:'same-page-content')
         self.assertEqual(engine.run(), "stuck")
-        self.assertEqual(gateway.stopped, ["run_1"])
+        self.assertEqual(gateway.stopped, ["run_1", "run_2"])
         self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
 
 
@@ -877,6 +881,13 @@ class ExpiryTests(Base):
 
 
 class ContextTests(Base):
+    def setUp(self):
+        super().setUp()
+        original = errands.context_file
+        patch = mock.patch.object(errands, 'context_file', side_effect=lambda ident, home=None: original(ident, self.home))
+        patch.start()
+        self.addCleanup(patch.stop)
+
     def test_the_preamble_is_valid_code_naming_its_own_file(self):
         code = errands.context_preamble("abc123def0")
         compile(code, "<preamble>", "exec")
@@ -892,7 +903,9 @@ class ContextTests(Base):
         def cdp(method, **params):
             calls.append(method)
             if method == "Target.getTargets":
-                return {"targetInfos": [{"targetId": t} for t in state["targets"]]}
+                return {"targetInfos": [{"targetId": t, "browserContextId":"ctx1"} for t in state["targets"]]}
+            if method == "Target.getTargetInfo":
+                return {"targetInfo": {"targetId":params['targetId'], "browserContextId":"ctx1"}}
             if method == "Target.getBrowserContexts":
                 return {"browserContextIds": state["contexts"]}
             if method == "Target.createBrowserContext":
@@ -912,6 +925,22 @@ class ContextTests(Base):
         exec(code, {"cdp": cdp, "switch_tab": switched.append, "capture_screenshot": lambda: "fixture.png"})
         self.assertEqual(switched, ["tab1", "tab1"], "Every call must restore the errand's own tab")
         self.assertEqual(calls.count("Target.createBrowserContext"), 1)
+
+    def test_a_saved_tab_from_another_context_is_rejected(self):
+        errand_id = 'fixture-owned-context'
+        path = errands.context_file(errand_id)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({'context':'owned-context', 'target':'foreign-tab', 'daemon':'0'}))
+        def cdp(method, **params):
+            if method == 'Target.getTargets': return {'targetInfos':[{'targetId':'foreign-tab'}]}
+            if method == 'Target.getTargetInfo': return {'targetInfo':{'browserContextId':'foreign-context'}}
+            if method == 'Target.getBrowserContexts': return {'browserContextIds':['owned-context']}
+            return {}
+        switched = []
+        code = errands.context_preamble(errand_id)
+        with self.assertRaises(RuntimeError):
+            exec(code, {'cdp':cdp, 'switch_tab':switched.append})
+        self.assertFalse(switched)
 
     def test_a_failure_to_isolate_never_runs_in_someone_elses_context(self):
         def broken(method, **params):
