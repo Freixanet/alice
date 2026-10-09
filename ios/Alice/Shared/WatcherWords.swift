@@ -14,6 +14,9 @@ enum WatcherWords {
     static func failure(_ error: Error) -> String {
         if let failure = error as? DashboardClient.Failure, case let .http(status, detail) = failure {
             let text = (detail ?? "").lowercased()
+            if text.contains("activation validation failed:") {
+                return activationReason(detail ?? "")
+            }
             if text.contains("gmail search query") { return missingFilter }
             if text.contains("non-empty watcher script") {
                 return String(localized: "This watch has no alert rule yet. Ask Alice in chat to finish setting it up.")
@@ -32,6 +35,12 @@ enum WatcherWords {
             }
         }
         return PlainWords.describe(error)
+    }
+
+    static func activationReason(_ detail: String) -> String {
+        let prefix = "Activation validation failed: "
+        let reason = detail.components(separatedBy: prefix).last ?? detail
+        return String(localized: "This watch hasn’t started because its test failed.") + " " + reason
     }
 
     static func preview(_ rows: [[String: Any]]) -> String {

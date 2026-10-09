@@ -271,3 +271,26 @@ Alice local notifications can catch up only when iOS runs the app/background
 refresh; they do not guarantee prompt delivery when suspended or force-quit.
 A dedicated Alice APNs/content-free relay remains a possible future step, not
 something implemented or required for this existing-mechanism option.
+
+## Activation validation and starting point
+
+A watch starts paused. Activation now runs its actual script in the sandbox on
+one matching source item. A dry-only alert probe must execute `classify`,
+`notify` and `ack`; a second dry run uses the explicitly configured cheap route
+and must finish with an ack or notification. Neither run sends a message or
+acks a real source item. No main-model fallback is permitted. Missing samples,
+shadowed capabilities, classifier errors and incomplete processing refuse
+activation; Settings → Watches retains the reason after reopening the screen.
+A new source with no matching item needs a matching test item before activation.
+
+The first live poll stores the newest item and observed IDs as its baseline. It
+classifies and acknowledges none of that historical snapshot. Later Gmail polls
+use `after:<epoch>` against Gmail's server arrival time, rather than the sender's
+Date header. Ordered feeds stop at their first known item; a page without its
+previous anchor is ignored rather than treating unproven historical IDs as new.
+Changing a source filter requires deliberately resetting its baseline.
+
+For the Barkibu repair, preserve watcher `5f9b8bde37f746fbb3d24dab0eeb6d70`,
+set its query to `in:anywhere {from:barkibu barkibu}`, and capture a new baseline
+before resuming. Historical journal entries remain intact; baseline items are
+not acknowledged or replayed as notifications.

@@ -35,9 +35,11 @@ def tick(home, *, store=None, sources=None, engine=None, delivery=None, force=Fa
                 engine.run_event(ident, event["id"])
             if watcher["next_poll"] <= store.clock():
                 try:
-                    for item in sources.items(watcher, store.clock()):
+                    items = sources.items(watcher, store.clock())
+                    for item in store.source_events(ident, items):
                         store.ingest(ident, item)
                         engine.run_event(ident, item["id"])
+                    store.source_poll_complete(ident, items)
                 except Exception as exc:
                     with store.transaction():
                         current = store.get(ident)

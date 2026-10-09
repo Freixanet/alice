@@ -144,7 +144,11 @@ class Sources:
         if source == "email":
             validate(source, config)
             items = []
-            for row in self.gmail(["search", config["query"], "--max", "20"]):
+            query = config["query"]
+            if watcher.get("baseline") is not None:
+                # Gmail after: epoch uses internal arrival time, unlike the sender-controlled Date header.
+                query = "(" + query + ") after:" + str(int(watcher["baseline"]["at"]) + 1)
+            for row in self.gmail(["search", query, "--max", "20"]):
                 try:
                     full = self.gmail(["get", str(row["id"])])
                     items.append({**full, "sender": full.get("from", "")})

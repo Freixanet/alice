@@ -62,10 +62,17 @@ def validate_code(code):
     reserved = CAPABILITIES | {"state", "source", "event", "config", "__builtins__"}
     for node in ast.walk(tree):
         if ((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in reserved)
+                or (isinstance(node, ast.arg) and node.arg in reserved)
+                or (isinstance(node, ast.ExceptHandler) and node.name in reserved)
                 or (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in reserved)):
             raise RunnerError("Do not redefine watcher capabilities such as classify, notify or ack.")
+        if ((isinstance(node, (ast.MatchAs, ast.MatchStar)) and node.name in reserved)
+                or (isinstance(node, ast.MatchMapping) and node.rest in reserved)):
+            raise RunnerError("Do not shadow watcher capabilities in pattern bindings.")
         if isinstance(node, (ast.Import, ast.ImportFrom, ast.ClassDef, ast.Global, ast.Nonlocal)):
             raise RunnerError("Imports, classes and global/nonlocal declarations are not watcher capabilities.")
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            raise RunnerError("Do not replace watcher capability methods.")
         if isinstance(node, ast.Attribute) and node.attr not in {"get", "put", "read", "lower", "casefold", "strip", "startswith", "endswith", "split", "replace", "items", "keys", "values", "append", "pop", "join", "count"}:
             raise RunnerError("Private runtime attributes are not watcher capabilities.")
         if isinstance(node, ast.Name) and node.id.startswith("_"):

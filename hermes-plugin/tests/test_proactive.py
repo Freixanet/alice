@@ -176,7 +176,7 @@ class MorningMigrationTests(unittest.TestCase):
 
 class GlobalBatchTests(unittest.TestCase):
     def test_two_watchers_one_owner_batch_and_delete_preserves_other_watch(self):
-        from test_watchers import ROUTE, Script, CODE
+        from test_watchers import ROUTE, Script, CODE, GateCheap
         with tempfile.TemporaryDirectory() as home:
             store = w.Store(home, clock=lambda: 100000.)
             try:
@@ -184,7 +184,7 @@ class GlobalBatchTests(unittest.TestCase):
                 ids=[]
                 for name in ('A','B'):
                     row=store.create('local', name, 'feed', {'url':'https://feed.invalid/items','every_minutes':1}, CODE, 'Notify me')
-                    store.activate(row['id'], runner=Script()); ids.append(row['id'])
+                    store.activate(row['id'], runner=Script(), classifier=GateCheap(), sample={'id':'sample','body':'invoice overdue'}); ids.append(row['id'])
                 a=store.accepted_notify(store.get(ids[0]), {'id':'a'}, 'First', 'a', {})
                 b=store.accepted_notify(store.get(ids[1]), {'id':'b'}, 'Second', 'b', {})
                 self.assertEqual(a,b)

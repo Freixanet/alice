@@ -79,6 +79,7 @@ instead of treating a fixture version as a universal compatibility certificate.
 | Surface | Implemented / qualification |
 | --- | --- |
 | iOS | Settings → Watchers, cheap-route setup, pause/retry/discard, dry run and feedback; generic device build passes, physical interaction pending |
+| Activation / baseline | Actual-code alert-path probe plus explicit cheap-route dry run; rejection reason persists in Settings. First poll skips history; Gmail uses server arrival cutoff. Fixture and real Seatbelt checks pass; see [setup](watchers-first-email.md#activation-validation-and-starting-point) |
 | Host runner | macOS Seatbelt only; other platforms refuse activation; real sandbox tests pass |
 | Classifier | Explicit per-host/user OpenAI-compatible route with JSON-schema output; no auxiliary-client fallback; fake transport/error tests pass |
 | Sources | Existing Gmail skill, public HTTPS RSS/JSON and GitHub; isolated fixtures, live account checks pending |

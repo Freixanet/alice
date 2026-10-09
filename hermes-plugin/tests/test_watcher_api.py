@@ -37,6 +37,21 @@ class WatcherAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Configure your cheap classifier", response.text)
 
+    def test_activation_failure_reason_survives_settings_reload(self):
+        from test_watchers import ROUTE, Script, GateCheap
+        module=self.api._watcher_module()
+        store=module.Store(Path(self.temp.name)); self.addCleanup(store.close)
+        store.configure('local', ROUTE)
+        ident=store.create('local','Broken','feed',{'url':'https://feed.invalid/items'},'pass','Notify me')['id']
+        with mock.patch.object(module.sibling('watcher_runner.py'),'Runner',return_value=Script()), \
+             mock.patch.object(module.sibling('watcher_classify.py'),'Classifier',return_value=GateCheap()), \
+             mock.patch.object(module.sibling('watcher_sources.py').Sources,'items',return_value=[{'id':'sample','body':'invoice overdue'}]):
+            response=self.client.post('/api/plugins/alice/watchers/'+ident+'/actions',json={'action':'activate'})
+        self.assertEqual(response.status_code,400)
+        row=self.client.get('/api/plugins/alice/watchers').json()['watchers'][0]
+        self.assertEqual(row['status'],'paused')
+        self.assertIn('classify',row['activation_error'])
+
     def test_unscoped_webhook_and_secret_config_are_rejected(self):
         root = "/api/plugins/alice/watchers"
         response = self.client.post(root + "/inbound?watcher=unknown&secret=x", json={"id": "e", "body": "test"})

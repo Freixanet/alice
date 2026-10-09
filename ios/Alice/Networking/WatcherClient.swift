@@ -7,6 +7,7 @@ struct WatcherSnapshot: Decodable, Sendable {
         let source: String
         let status: String
         let reason: String?
+        let activation_error: String?
         let pending: Int
         struct Configuration: Decodable, Sendable {
             let query: String?

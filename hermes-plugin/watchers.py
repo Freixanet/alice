@@ -148,26 +148,136 @@ class Store:
                         f"{record['name']}: {status} ({reason}). {detail} Retry to retain pending events, or discard them in Watchers."))
         self.save(record)
 
-    def activate(self, ident, owner="local", runner=None):
+    def activate(self, ident, owner="local", runner=None, *, classifier=None, sample=None):
         runner = runner or sibling("watcher_runner.py").Runner()
-        with self.transaction():
-            record = self.get(ident, owner)
+        record = self.get(ident, owner)
+        try:
             sibling("watcher_sources.py").validate(record["source"], record["config"])
-            sibling("watcher_classify.py").validate_route(self.settings(owner)["route"])
+            checked_route = sibling("watcher_classify.py").validate_route(self.settings(owner)["route"])
             if not runner.available():
                 raise WatcherError("Set up the macOS watcher sandbox before activating. Unconfined execution is disabled.")
             code = sibling("watcher_runner.py").load_code(record)
             if not code.strip():
                 raise WatcherError("Provide a non-empty watcher script before activation.")
-            runner.run("pass", {}, {}, lambda *_: None)
-            if record["status"] != "active":
+            if sample is None:
+                candidates = sibling("watcher_sources.py").Sources(self.home).items(record, self.clock())
+                if not candidates:
+                    raise WatcherError("No sample event available. Send a matching email or wait for a source update, then test this watch again.")
+                sample = candidates[0]
+            reached = set()
+            class Probe:
+                def run(_, code, event, config, call):
+                    def tracked(name, args):
+                        reached.add(name)
+                        return call(name, args)
+                    return runner.run(code, event, config, tracked)
+            class AlertProbe:
+                # Test fixture answers exercise the alert branch only. They never
+                # classify real events or reach durable notify/ack in this dry run.
+                def classify(_, state, questions):
+                    sibling("watcher_classify.py").questions_schema(questions)
+                    answers = {}
+                    for name, question in questions.items():
+                        kind = question["type"]
+                        if kind == "yes_no":
+                            answers[name] = {"probability": 1, "quiet": False}
+                        else:
+                            options = question.get("options", question.get("levels"))
+                            key = "notify" if "notify" in options else next(key for key in options if key not in ("none", "quiet"))
+                            answers[name] = {"key" if kind == "choice" else "value": key, "confidence": 1}
+                            if kind == "choice":
+                                answers[name]["probabilities"] = {option: int(option == key) for option in options}
+                    return answers
+            probe = Engine(self, classifier=AlertProbe(), runner=Probe()).run_event(
+                ident, sample["id"], dry=True, payload=sample, checkpoint={})
+            if "classify" not in reached:
+                raise WatcherError("The sample did not reach classify. Ask Alice to correct the alert rule.")
+            if probe.get("error"):
+                raise WatcherError(probe["error"])
+            if not (probe.get("acked") or probe.get("notified")):
+                raise WatcherError("No sample event was fully processed (acked or notified). Ask Alice to correct the alert rule.")
+            missing = {"classify", "notify", "ack"} - reached
+            if missing:
+                raise WatcherError("The alert sample did not reach " + ", ".join(sorted(missing)) + ". Ask Alice to correct the alert rule.")
+            proof = Engine(self, classifier=classifier, runner=Probe()).run_event(
+                ident, sample["id"], dry=True, payload=sample, checkpoint={})
+            if proof.get("error"):
+                raise WatcherError(proof["error"])
+            if "classify" not in reached:
+                raise WatcherError("The sample did not reach classify. Ask Alice to correct the alert rule.")
+            if not (proof.get("acked") or proof.get("notified")):
+                raise WatcherError("No sample event was fully processed (acked or notified). Ask Alice to correct the alert rule.")
+        except Exception as exc:
+            message = "Activation validation failed: " + str(exc)[:700]
+            with self.transaction():
+                current = self.get(ident, owner)
+                current.update(status="paused", reason="validation", activation_error=message)
+                self.save(current)
+            if isinstance(exc, sibling("watcher_classify.py").ClassifierError):
+                raise sibling("watcher_classify.py").ClassifierError(message) from exc
+            raise WatcherError(message) from exc
+        with self.transaction():
+            current = self.get(ident, owner)
+            sibling("watcher_runner.py").load_code(current)
+            if (any(current[key] != record[key] for key in ("code_sha256", "config", "status_version"))
+                    or sibling("watcher_classify.py").validate_route(self.settings(owner)["route"]) != checked_route):
+                raise WatcherError("Watcher changed during validation; test it again.")
+            if current["status"] != "active":
                 active = sum(row["status"] == "active" for row in self.listing(owner))
                 if active >= 20:
-                    self.terminal(record, "paused", "quota", "Only 20 active watchers are allowed per user.")
+                    self.terminal(current, "paused", "quota", "Only 20 active watchers are allowed per user.")
                     return self.get(ident)
-            record.update(status="active", reason=None, next_poll=0, limited_since=None)
+            current.update(status="active", reason=None, next_poll=0, limited_since=None, activation_error=None,
+                           activation_validation={"at": self.clock(), "event_id": sample["id"],
+                           "code_sha256": record["code_sha256"], "config": record["config"],
+                           "capabilities": sorted(reached), "acked": proof["acked"], "notified": proof["notified"]})
+            self.save(current)
+        return current
+
+    def source_events(self, ident, items):
+        """First poll records a baseline; only subsequent new items can be ingested.
+
+        Ordered feeds stop at the first previously observed item. Gmail additionally
+        filters by server arrival time, so resurfacing old mail cannot become new.
+        """
+        with self.transaction():
+            record = self.get(ident)
+            baseline = record.get("baseline")
+            ids = [str(item["id"]) for item in items]
+            if baseline is None:
+                record["baseline"] = {"at": self.clock(), "newest_id": ids[0] if ids else None,
+                                      "seen": ids, "config": record["config"]}
+                self.save(record)
+                return []
+            if baseline.get("config") != record["config"]:
+                raise WatcherError("Source filter changed. Reset its baseline before polling.")
+            seen = set(baseline["seen"])
+            fresh = []
+            if record["source"] != "email" and seen and not any(ident in seen for ident in ids):
+                # An unanchored page cannot prove its items arrived after the baseline.
+                return []
+            for item in items:
+                if str(item["id"]) in seen:
+                    if record["source"] != "email":
+                        break
+                    continue
+                fresh.append(item)
+            return fresh
+
+    def source_poll_complete(self, ident, items):
+        # Advance only after every fresh item reached the durable events journal.
+        # A disk/quota error must leave the previous anchor retryable.
+        with self.transaction():
+            record = self.get(ident)
+            baseline = record.get("baseline")
+            if baseline is None:
+                return
+            ids = [str(item["id"]) for item in items]
+            if (record["source"] != "email" and baseline["seen"]
+                    and not any(ident in baseline["seen"] for ident in ids)):
+                return
+            baseline["seen"] = list(dict.fromkeys(ids + baseline["seen"]))[:2000]
             self.save(record)
-        return record
 
     def pause(self, ident, owner="local"):
         with self.transaction():
@@ -391,6 +501,9 @@ class Engine:
                             raise WatcherError("Notify requires a successful non-quiet classification.")
                         if muted(event, store.settings(record["owner"])["feedback"]):
                             raise WatcherError("Candidate was muted before delivery.")
+                        if (not isinstance(args[0], str) or not 1 <= len(args[0]) <= 2000
+                                or not isinstance(args[1], str) or not 1 <= len(args[1]) <= 300):
+                            raise WatcherError("Notify needs a bounded message and dedup key.")
                         if dry:
                             bounded(args)
                             simulated.append({"message": args[0], "event": event, "classification": decision})

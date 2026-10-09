@@ -192,6 +192,9 @@ private struct WatcherDetailScreen: View {
                     Text(watcher.source == "email" ? String(localized: "Alice checks your matching emails and follows the alert rule you agreed in chat.") : String(localized: "Alice checks this source and follows the alert rule you agreed in chat."))
                         .foregroundStyle(.secondary)
                 }
+                if let reason = watcher.activation_error {
+                    Text(WatcherWords.activationReason(reason)).foregroundStyle(.red)
+                }
                 if watcher.status == "failed" || (watcher.status == "paused" && watcher.reason != "user") {
                     Text("Alice stopped this watch because it couldn’t process updates or reached an alert limit. Ask her in chat to review it before restarting.")
                         .foregroundStyle(.secondary)

@@ -43,6 +43,14 @@ class Cheap:
         return {"action": {"key": key, "confidence": 1, "probabilities": {"notify": int(key == "notify"), "quiet": int(key == "quiet"), "defer": 0}}}
 
 
+class GateCheap:
+    """Isolated activation classifier; event-processing counters stay independent."""
+    def classify(self, state, questions):
+        return {name: {"key": "notify", "confidence": 1,
+                       "probabilities": {key: int(key == "notify") for key in spec["options"]}}
+                for name, spec in questions.items()}
+
+
 class Main:
     def __init__(self):
         self.calls, self.messages, self.receipts = 0, [], {}
@@ -73,12 +81,19 @@ class WatcherTests(unittest.TestCase):
         self.store.configure("local", ROUTE)
         self.runner, self.cheap, self.main = Script(), Cheap(), Main()
         self.engine = w.Engine(self.store, self.cheap, self.runner)
+        activate = self.store.activate
+        def activate_fixture(ident, owner="local", runner=None, **kwargs):
+            kwargs.setdefault("classifier", GateCheap())
+            kwargs.setdefault("sample", {"id":"activation-sample", "body":"invoice overdue"})
+            return activate(ident, owner, runner, **kwargs)
+        self.store.activate = activate_fixture
         self.ident = self.create()
 
     def create(self, owner="local", active=True, code=CODE):
         row = self.store.create(owner, "Invoice", "feed", {"url": "https://feed.invalid/items", "every_minutes": 1}, code, "Tell me if the invoice needs attention")
         if active:
             self.store.activate(row["id"], owner, self.runner)
+            self.store.source_events(row["id"], [])  # Existing scenarios start after the empty initial poll.
         return row["id"]
 
     def tick(self, rows, force=True):
@@ -245,7 +260,7 @@ class WatcherTests(unittest.TestCase):
 
     def test_rate_limit_six_batches(self):
         for i in range(7):
-            self.tick([self.event(str(i))])
+            self.tick([self.event(str(i)), self.event(str(max(0, i - 1)))])
             self.now += 61
         self.assertEqual(self.main.calls, 6)
         self.assertEqual(len(self.store.pending(self.ident)), 1)
