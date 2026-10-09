@@ -55,7 +55,15 @@ def validate_code(code):
     if not isinstance(code, str) or len(code.encode()) > 32768:
         raise RunnerError("Watcher code exceeds 32 KB.")
     tree = ast.parse(code)
+    executable_statements = [node for node in tree.body if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                             and not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant))]
+    if tree.body and not executable_statements:
+        raise RunnerError("Execute watcher logic at top level; defining run alone does not execute it.")
+    reserved = CAPABILITIES | {"state", "source", "event", "config", "__builtins__"}
     for node in ast.walk(tree):
+        if ((isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in reserved)
+                or (isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)) and node.id in reserved)):
+            raise RunnerError("Do not redefine watcher capabilities such as classify, notify or ack.")
         if isinstance(node, (ast.Import, ast.ImportFrom, ast.ClassDef, ast.Global, ast.Nonlocal)):
             raise RunnerError("Imports, classes and global/nonlocal declarations are not watcher capabilities.")
         if isinstance(node, ast.Attribute) and node.attr not in {"get", "put", "read", "lower", "casefold", "strip", "startswith", "endswith", "split", "replace", "items", "keys", "values", "append", "pop", "join", "count"}:

@@ -27,4 +27,6 @@ Settings → Watches shows separate proactive and briefing counts for today and 
 
 ## Recovery
 
+Watcher scripts execute at top level; a standalone `def run(...)` is not an entry point. Validation rejects dormant function-only scripts and rebinding broker capabilities (`classify`, `notify`, `ack`, etc.). Matching-email notifications can use the `EMAIL_MATCH_CODE` template: it classifies bounded header metadata through the explicit cheap route, then notifies and acknowledges only after a successful decision. An empty email body is not itself a source error. Failed classification still retains the event and never invokes the main model.
+
 Disable the morning toggle to stop this briefing; watches continue. The installer saves the previous plugin under `~/.hermes/backups` and records its source commit in `INSTALLED_FROM`. Legacy morning jobs remain paused, not deleted. Keep the watcher journal and its morning cursor/call ledger when rolling back; never erase app data to reinstall.

@@ -12,6 +12,19 @@ spec.loader.exec_module(r)
 
 
 class RunnerTests(unittest.TestCase):
+    @unittest.skipUnless(r.Runner().available(), "macOS Seatbelt required")
+    def test_matching_email_template_executes_classifier_notify_ack(self):
+        from test_watchers import w
+        calls = []
+        def broker(name, args):
+            calls.append(name)
+            if name == 'classify':
+                return {'action': {'key':'notify', 'confidence':1, 'probabilities':{'notify':1,'quiet':0}}}
+            return True
+        r.Runner().run(w.sibling('watcher_builtins.py').EMAIL_MATCH_CODE,
+                       {'id':'email','from':'sender@example.com','subject':'Forwarded insurance','body':''}, {}, broker)
+        self.assertEqual(calls, ['classify','notify','ack'])
+
     def test_language_rejects_ambient_tools_and_introspection(self):
         for code in ("import os", "x = event.__class__", "x = event.gi_frame", "x = state.__dict__"):
             with self.assertRaises(r.RunnerError):
