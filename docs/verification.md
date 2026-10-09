@@ -204,3 +204,20 @@ and permission to launch it are required; this is not a routine unit test.
 - Browser: `python scripts/verify-purchase-complete.py` uses an intercepted fictional shop in a temporary Chrome context on a random port; it refuses port 9222. `--agent` adds the actual GPT-6 Luna provider. Only the inference access token is read, without refreshing/writing it; the agent has no personal gateway, terminal, messaging, vault or shop tools. Test credentials remain in its temporary vault.
 - Native: generic-device build-for-testing locally; run the iOS Performance workflow with `purchase_review=true` for unit tests and light/dark/large-text simulator screenshots. Review the resulting screenshots, rather than treating compilation as visual approval.
 - Delivery: back up the installed plugin, restart gateway then dashboard, verify health, and install a higher device build. A successful fixture never proves a real order or charge.
+
+### Chat recovery without waiting for the model catalogue
+
+```bash
+swiftc -swift-version 6 ios/Alice/Networking/ChatRecovery.swift \
+  scripts/check-chat-recovery.swift -o /tmp/alice-chat-recovery-check
+/tmp/alice-chat-recovery-check
+```
+
+Host-only regression: a suspended gateway/catalogue request does not delay the
+chat-history read; the read happens once, and both branches complete. The same
+case is in `ChatRecoveryTests`. This does not prove connectivity from an iPhone.
+On 2026-10-09 a read-only live check confirmed the Barkibu delivery's two rows in
+`session.resume`, while the physical iPhone's cached Alice session lacked them.
+Opening canonical chats now requests history, and launch/foreground recovery
+loads the dashboard/chat independently of the gateway catalogue. Diagnostics
+record refresh completion and row count without logging message bodies.

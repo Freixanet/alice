@@ -7034,6 +7034,7 @@ final class AppStore {
             !isTask && (clearingBotChats.contains(profile) || botChatClearedAt[profile] != clearedAtStart)
         }
         if isTask && conversations[index].hermesSessionID == nil { return }
+        DiagnosticsLog.write("chat.refresh.start conversation=\(conversationID)")
         guard let source = await botChatSource() else {
             botChatFailure[conversationID] =
                 "Connect the Hermes dashboard to see this bot's own chat."
@@ -7127,10 +7128,12 @@ final class AppStore {
             ), for: conversationID)
             if botChatFailure[conversationID] != nil { botChatFailure[conversationID] = nil }
             if transcriptChanged { persistConversations() }
+            DiagnosticsLog.write("chat.refresh.loaded conversation=\(conversationID) rows=\(resumed.rows.count) changed=\(transcriptChanged)")
             if !isTask { await refreshQuietRoutineRuns(profile: profile) }
         } catch {
             // The chat it asked for was deleted under it: not a failure of the new one.
             if clearedMeanwhile() { return }
+            DiagnosticsLog.write("chat.refresh.failed conversation=\(conversationID) reason=\(error.localizedDescription)")
             // Keep what is on screen. The reason is recorded so the chat can
             // say the transcript may be behind, rather than pretending it is
             // complete or blanking it.

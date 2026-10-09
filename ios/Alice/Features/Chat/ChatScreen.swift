@@ -264,7 +264,7 @@ private struct ChatScreenContent: View, Equatable {
         // on the bot and would not fire again for a second home chat.
         .task(id: store.activeID) {
             guard let id = store.activeID else { return }
-            if store.shownConversation?.isAgentTask == true {
+            if store.shownConversation?.isAgentSessionChat == true {
                 await store.refreshBotChat(id)
             } else if bot == nil {
                 await store.prepareHomeChatIfNeeded(conversationID: id)

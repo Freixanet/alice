@@ -92,22 +92,20 @@ struct AliceApp: App {
                     store.seedLongBotChatForUITests()
                     if ProcessInfo.processInfo.arguments.contains("-feedSamples") { store.showingFeed = true }
                     #endif
-                    await store.restoreConnection()
-                    await store.restoreDashboard()
+                    await ChatRecovery.run(gateway: {
+                        await store.restoreConnection()
+                    }, chat: {
+                        await store.restoreDashboard()
+                        await store.refreshVisibleBotChats()
+                        store.startWatchingLiveEvents()
+                    })
                     // Notes brought up to date alongside, so the page opens on them.
                     Task { try? await store.refreshNotes() }
-                    // Hydrate canonical Bot Chat session ids before the watcher
-                    // starts. Existing installs may predate remote Bot Chat and
-                    // therefore have cached bot conversations with no server id;
-                    // without this, a real pushed event cannot be attributed to
-                    // its conversation until that bot is opened manually.
-                    await store.refreshVisibleBotChats()
                     // Hermes' copy of the calendar, current while connected.
                     Task { await store.syncCalendarIfConnected() }
                     // What is next on the phone's calendar, for the home.
                     Task { await store.refreshCommitments() }
                     await notifier.refreshPermission()
-                    store.startWatchingLiveEvents()
                     // Prime the watermarks without announcing the installation's
                     // existing state as news; the first digest only records.
                     await notifier.post(store.syncEvents())
@@ -164,21 +162,19 @@ struct AliceApp: App {
                         // A Mac can go offline while Alice is suspended; probing
                         // both saved surfaces here keeps the drawer's connection
                         // label from reporting yesterday's state.
-                        await store.restoreConnection()
-                        await store.restoreDashboard()
+                        await ChatRecovery.run(gateway: {
+                            await store.restoreConnection()
+                        }, chat: {
+                            await store.restoreDashboard()
+                            await store.refreshVisibleBotChats()
+                            store.startWatchingLiveEvents()
+                        })
                         Task { try? await store.refreshNotes() }
-                        // Re-resolve the canonical tips before listening again:
-                        // compression can advance a bot to a new session while
-                        // Alice is suspended, and events must route by that live id.
-                        await store.refreshVisibleBotChats()
                         Task { await store.syncCalendarIfConnected() }
                         Task { await store.syncHealthIfConnected() }
                         Task { await store.refreshCommitments() }
                         // Places an agent was asked to watch ("when I arrive…").
                         Task { await PlaceWatcher.shared.sync() }
-                        // The socket does not survive suspension; this is where
-                        // it comes back, and it is idempotent.
-                        store.startWatchingLiveEvents()
                         await notifier.post(store.syncEvents())
                         await store.pushDiagnostics()
                         drainPendingRoute()
