@@ -123,3 +123,13 @@ learns locally; Recent sorts by publication date and Saved keeps bookmarks.
 Pull to refresh. Reset learning in preferences keeps saved articles.
 Some articles require a publisher subscription; headlines retain their original
 language. The first catalogue is limited to the listed publishers.
+
+## Optional Watchers
+
+The updated app adds **Settings → Watchers** after dashboard connection. Install
+both the updated Alice plugin and app to use it. Choose an explicit cheap
+structured-output model before activation; keys stay on your Hermes host. Then
+ask Alice in chat to create a watch and check its dry run before activation.
+A cheap-model error keeps the event pending and never switches to your main
+model. Use Retry or Discard for retained events. Execution currently requires a
+macOS Hermes host; see the [plugin setup and limits](../hermes-plugin/README.md#watchers-phase-1).

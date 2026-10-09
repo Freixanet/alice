@@ -185,3 +185,47 @@ Then restart the dashboard (on macOS with the launchd service:
 - The tab is `dashboard/src/index.js`, bundled into `dashboard/dist/index.js` by
   `build.sh` (see the script for the one-time `qrcode` install). Commit the rebuilt
   bundle and `dist/THIRD_PARTY_LICENSES.txt` together.
+
+## Watchers (phase 1)
+
+After installing the updated plugin and iOS app, open **Settings → Watchers**.
+Set an explicitly selected cheap model, its OpenAI-compatible API base URL and
+optionally the name of an existing API-key variable on the Hermes host. Supply
+only the variable name on iPhone, never the secret. The provider must support
+strict JSON-schema structured output. No configured route means activation is
+blocked with setup instructions; errors get two attempts on that same route,
+then `classifier_error`, retaining the event without ack, notify or main fallback.
+
+Ask Alice in chat to watch Gmail, an HTTPS RSS/JSON feed or a GitHub repository.
+The `watchers` tool creates a requested Python script paused, tries the last 20
+items in dry run and activates it. Dry run may call the cheap model, but does not
+send messages or change checkpoints/dedup. The Settings screen also lets you
+pause, retry, discard pending events and filter exact sender/topic or reduce a
+category (a stable one-in-four sample). New events are grouped for one minute.
+
+Execution currently requires macOS Seatbelt and Hermes' existing cron API.
+Other operating systems fail closed. The runner has no filesystem, direct network,
+process-spawning or other agent tools. Brokered HTTP GET is restricted to its
+source API and public HTTPS addresses. Gmail requires Hermes' already connected
+Google Workspace skill; existing page watches remain a separate feature.
+
+Local state lives in `<Hermes home>/.alice/watchers/journal.sqlite`. The durable
+Alice inbox accepts notifications before event ack; a dispatcher hands frozen
+batches to the main-profile `cron.bot_chat_delivery.defer` under immutable IDs.
+Failed delivery retains the batch and adds a visible notice. Limits: 20 active
+watchers per user, 32 pending per watcher, 15-minute pending deadline, three
+checkpoint reloads/hour, six notification batches/10 minutes and budget pause
+after one hour at the limit. Failed pending events require retry or discard.
+
+Birthday and follow-up watches use explicit dates/timers. Leave-now requires a
+fresh connected calendar with a physical location and supplied travel minutes.
+It does not infer location or travel time. Optional Bark pushes stay generic.
+
+The protected actions API can rotate/revoke a watcher-specific webhook token.
+Rotation returns a one-time URL and `Authorization: Bearer <secret>` requirement.
+POST bounded JSON with a string `id` and `body`; the endpoint enqueues only, and
+the token authorizes exactly that watcher and inbound path. Treat its URL as a
+secret. Normal dashboard credentials protect all management routes.
+
+See [implementation evidence and remaining checks](../docs/proactive-plan.md).
+Review Tasks and the phase 3 routine/chat presentation are still pending.

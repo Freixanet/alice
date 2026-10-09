@@ -288,3 +288,20 @@ class ErrandNotifierTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
+
+
+class WatcherNoticeTests(unittest.TestCase):
+    def test_one_generic_push_per_terminal_notice(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            state, sent = {}, []
+            n.poll_watcher_notices(state, home, lambda *args: sent.append(args), now=100)
+            path = home / '.alice/watchers/journal.sqlite'
+            path.parent.mkdir(parents=True)
+            with sqlite3.connect(path) as conn:
+                conn.execute('CREATE TABLE notices(id TEXT,owner TEXT,watcher TEXT,created REAL,message TEXT)')
+                conn.execute("INSERT INTO notices VALUES('n','local','w',100,'PRIVATE SOURCE DETAILS')")
+            n.poll_watcher_notices(state, home, lambda *args: sent.append(args), now=101)
+            n.poll_watcher_notices(state, home, lambda *args: sent.append(args), now=102)
+            self.assertEqual(len(sent), 1)
+            self.assertNotIn('PRIVATE', str(sent))

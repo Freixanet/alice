@@ -195,6 +195,7 @@ final class AppStore {
     }
     @ObservationIgnored private var quietRunsLoaded = false
     private let dashboard = DashboardClient()
+    var watcherClient: WatcherClient { WatcherClient(dashboard: dashboard) }
     private let defaults: UserDefaults
     /// Where conversations are kept (`FileConversationStorage`), apart from
     /// the small settings in `defaults`.

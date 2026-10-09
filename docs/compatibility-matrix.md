@@ -73,3 +73,19 @@ Native dictation and read-aloud use the iOS speech interfaces. They do not imply
 support for a Hermes realtime-voice service: the checked static manifest marks
 `audio_api` and `realtime_voice` false. Review new advertised features individually
 instead of treating a fixture version as a universal compatibility certificate.
+
+## Watchers phase 1
+
+| Surface | Implemented / qualification |
+| --- | --- |
+| iOS | Settings → Watchers, cheap-route setup, pause/retry/discard, dry run and feedback; generic device build passes, physical interaction pending |
+| Host runner | macOS Seatbelt only; other platforms refuse activation; real sandbox tests pass |
+| Classifier | Explicit per-host/user OpenAI-compatible route with JSON-schema output; no auxiliary-client fallback; fake transport/error tests pass |
+| Sources | Existing Gmail skill, public HTTPS RSS/JSON and GitHub; isolated fixtures, live account checks pending |
+| Delivery | Durable local inbox then main-profile Hermes Bot Chat defer; inspected Hermes commit `6b2fe92`, live delivery pending |
+| Push | Existing optional Mac/Bark notifier, generic notices; notifier tests pass, physical delivery pending |
+| Review Tasks / phase 3 | Pending; existing Goals and chat are unchanged |
+
+The full plugin regression run is not green in the installed Hermes environment;
+see the exact outcomes in [proactive-plan](proactive-plan.md). No universal Hermes
+or platform compatibility is claimed by the Watchers fixtures.

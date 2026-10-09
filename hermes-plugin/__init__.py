@@ -2097,3 +2097,8 @@ def register(ctx) -> None:
     _register_debug_tools(ctx)
     _register_calendar_tools(ctx)
     _register_work_tools(ctx)
+    watcher_tools = _module("watcher_tools.py", "alice_watcher_tools")
+    ctx.register_tool(
+        name="watchers", toolset="alice_watch", schema=watcher_tools.SCHEMA,
+        handler=_tool(lambda args: watcher_tools.run(_hermes_root(), args)),
+        check_fn=_always, description=watcher_tools.SCHEMA["description"], emoji="👀")

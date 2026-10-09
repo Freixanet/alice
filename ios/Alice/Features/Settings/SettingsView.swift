@@ -57,6 +57,9 @@ struct SettingsView: View {
                     NavigationLink { AgentWorkScreen() } label: {
                         Label("Agent work", systemImage: "square.stack.3d.up")
                     }
+                    NavigationLink { WatchersScreen() } label: {
+                        Label("Watchers", systemImage: "eye")
+                    }
                 }
             }
 

@@ -1,4 +1,4 @@
-# Watchers, Review Tasks y mensajes proactivos — paso 0
+# Watchers, Review Tasks y mensajes proactivos — estado de implementación
 
 ## Resultado de la auditoría
 
@@ -10,8 +10,10 @@ El código se obtuvo de GitHub después de comprobar que la carpeta local estaba
 vacía. Este documento sustituye la primera auditoría, que solo describía esa
 carpeta y no había comprobado el repositorio remoto.
 
-**Estado: auditoría realizada; implementación detenida por una incompatibilidad
-con el contrato de clasificación.** No se han iniciado las fases 1–3.
+**Estado: fase 1 implementada y verificada con pruebas aisladas; sin desplegar.**
+El usuario aprobó una ruta económica explícita por usuario, sin fallback al
+principal. Sin ruta configurada no se activan watchers; errores y timeouts
+conservan el evento sin ack, notify ni llamada al principal. Fases 2–3 pendientes.
 
 ## Cómo se conecta iOS con Hermes
 
@@ -86,7 +88,7 @@ encargo. El nuevo runner deberá estar aislado, limitar recursos y delegar las
 capacidades permitidas a un broker. No basta con SHA-256, timeout o quitar
 variables de entorno para impedir acceso a archivos o red.
 
-## Incompatibilidad que obliga a detenerse
+## Contrato de clasificación y ajuste aprobado
 
 El contrato pide clasificar con el modelo configurado más barato, y que un
 error del clasificador no provoque una llamada al modelo principal.
@@ -127,15 +129,14 @@ contrato actual de Alice no ofrece una comparación completa por usuario.
 3. Ante falta de ruta, autenticación o cuota, conservar eventos y mostrar el error;
    mantener las dos tentativas del escenario requerido dentro de la misma ruta.
 
-La primera propuesta ajusta la exigencia de «el más barato» cuando no hay datos
-comparables. Conforme al paso 0 del encargo, se informa y se detiene aquí antes de
-implementar una interpretación diferente. No se han ejecutado modelos, cambiado
-configuraciones de Hermes ni instalado/reiniciado servicios del usuario.
+El usuario aprobó la ruta económica explícita por usuario y el comportamiento
+classifier_error sin fallback. Se implementa HTTP directo con modelo fijo, sin
+llamar al cliente auxiliar. No se han ejecutado modelos, cambiado configuraciones
+reales de Hermes ni instalado/reiniciado servicios del usuario.
 
 ## Archivos previstos por fase
 
-Estas son las rutas concretas propuestas, pendientes de resolver la incompatibilidad.
-Los archivos nuevos enumerados aquí todavía no existen.
+La fase 1 está implementada. Las fases 2–3 siguen propuestas, sin implementar.
 
 ### Fase 1 — Watchers
 
@@ -154,12 +155,10 @@ Añadir:
 - `hermes-plugin/tests/test_watchers.py`: los seis escenarios requeridos.
 - `hermes-plugin/tests/test_watcher_runner.py`: aislamiento, hash, capacidades,
   timeout, límites de salida y dry run sin acciones reales.
-- `hermes-plugin/tests/test_watcher_classify.py`: respuestas malformadas,
-  incertidumbre, opciones quiet/none y ausencia de fallback.
-- `hermes-plugin/tests/test_watcher_sources.py`: fuentes falsas, paginación,
-  redirecciones y límites de origen para HTTP.
+- Las pruebas de clasificación y fuentes se agrupan en `test_watchers.py`;
+  autenticación y contratos API en `test_watcher_api.py`.
 - `ios/Alice/Networking/WatcherClient.swift`: acceso autenticado a estado y dry run.
-- `ios/AliceTests/WatcherClientTests.swift`: fixtures de errores y contratos.
+- `ios/Alice/Features/Settings/WatchersScreen.swift`: configuración, controles y feedback.
 
 Modificar:
 
@@ -225,21 +224,64 @@ y la documentación
 indicada en fase 1. Mantener el cuerpo de Bark genérico y recuperar contenido
 solo del host Hermes.
 
-## Evidencia y pendientes
+## Evidencia y pendientes de fase 1
 
-**Comprobado:** remoto y rama de Alice descargados; identidad y commit base;
-lectura de `AGENTS.md`, arquitectura, seguridad, verificación, compatibilidad,
-transportes iOS, plugin Python, cron, notificador y selección auxiliar del
-Hermes instalado. No se consultó ni copió AFK-surf/Comma.
+- Watchers: 30 pruebas aisladas, todas pasan. Incluyen los seis escenarios del
+  encargo, ausencia de fallback aunque falle la ruta económica, timeout, hash,
+  sandbox real macOS, scopes del webhook, quotas, presupuesto y avisos terminales.
+- `npm run slash:check`: 52 comandos coinciden entre web e iOS.
+- Notificador: 23 pruebas, todas pasan; ningún payload privado se incluye en Bark.
+- iOS: `xcodegen generate --spec ios/project.yml` y build Debug genérico de
+  dispositivo con `CODE_SIGNING_ALLOWED=NO`, resultado 0. No se instaló en iPhone.
+- Regresión plugin completa: 565 pruebas, 4 fallos, 2 errores, 19 omitidas.
+  Dos resultados fallidos se relacionan con `hermes_yaml` ausente; confirmado
+  por un import directo en el virtualenv instalado. Otros tres fallos corresponden
+  a Goals/SessionDB y un error a timeout del test memory_review (60 segundos).
+  No se ha probado su reproducción en una copia de la base; no se declara la
+  regresión completa como superada ni se modifica Hermes para ocultarla.
+- No se hicieron llamadas a modelos, credenciales reales, Gmail, RSS, GitHub,
+  push real ni instalación/reinicio de servicios. La compatibilidad real con el
+  contrato `cron.bot_chat_delivery.defer` inspeccionado requiere validación
+  posterior en un host sano. No se ejecutaron unit/UI iOS: este Mac prohíbe
+  simuladores. La compilación no acredita comportamiento visual en un teléfono.
 
-**No comprobable en esta auditoría:** entrega real de push, comportamiento de
-modelos, credenciales/cuotas, confinamiento de un runner aún no construido y
-aceptación durable de notify. No se ejecutaron pruebas de fases inexistentes.
-Este Mac no dispone de simulador iOS y `AGENTS.md` prohíbe instalarlo o ejecutar
-`scripts/verify-ios.sh` aquí. Para cambios iOS, realizar build de dispositivo y
-reportar unit/UI como pendientes hasta ejecutarlos en otro entorno.
+Comandos de verificación:
 
-**Riesgo restante:** reutilizar clasificación auxiliar puede gastar el modelo
-principal, y elegir «el más barato» sin precios verificables sería una promesa
-incorrecta. Ninguna fase está terminada; se necesita resolver el contrato de
-clasificación antes de implementarlas y validar cada una con sus pruebas y commit.
+```sh
+PYTHONDONTWRITEBYTECODE=1 ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests -p 'test_watcher*.py'
+PYTHONDONTWRITEBYTECODE=1 ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s mac/notifier
+PYTHONDONTWRITEBYTECODE=1 ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
+npm run slash:check
+xcodegen generate --spec ios/project.yml
+xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath /private/tmp/alice-watchers-device-build CODE_SIGNING_ALLOWED=NO -quiet build
+```
+
+## Funcionamiento y límites de esta entrega
+
+La entrada se conserva en SQLite local. `notify` acepta primero en el inbox
+transaccional del adaptador de Alice; ese recibo permite ack del evento. Después
+se congela un lote de un minuto y se entrega a `Hermes.defer` con ID inmutable.
+Esto evita perder avisos entre ack y entrega y permite agrupar 50 eventos. No
+significa que el principal ya haya generado su mensaje cuando se confirma ack.
+Si Hermes no acepta, el lote permanece y se muestra un fallo, sin inventar otra
+identidad de entrega. Una aceptación ambigua no se convierte en una nueva llamada.
+
+El runner confinado usa Seatbelt macOS, timeout, límites de salida/CPU y vigilancia
+de memoria. En otros hosts se rechaza la activación: falta implementar y verificar
+un sandbox equivalente. Correo requiere la skill Gmail ya conectada; RSS/JSON
+y GitHub son lecturas HTTPS públicas sin redirecciones ni destinos privados.
+El webhook solo encola y exige secreto rotatable más Bearer con scope exacto.
+
+La versión nueva añade feedback (remitente/tema y menos de una categoría) y
+detectores leave-now, cumpleaños y seguimiento. Se revisaron `judge.ts`,
+`rules.ts` y esos detectores MIT de `mg272011/Dash-opensource`; licencia en
+`THIRD_PARTY_NOTICES`. No se incorpora su backend ni código de Comma.
+
+Archivos auxiliares: `watcher_common.py`, `watcher_builtins.py`,
+`watcher_service.py`, `watcher_tools.py`. AppStore solo añade el acceso al cliente.
+Los cumpleaños y seguimientos usan datos explícitos; leave-now requiere calendario
+fresco, dirección física y minutos de viaje proporcionados, sin adivinar ETA.
+
+Fases 2–3 pendientes: tablero Tasks/Needs Review, aprobación versionada, rutinas
+proactivas y presentación enriquecida en chat. Esta fase entrega avisos agrupados
+al chat existente, sin afirmar que esas fases estén implementadas.

@@ -113,6 +113,29 @@ def _provider_class():
     return PairingCodeProvider
 
 
+def _watcher_provider_class():
+    from hermes_cli.dashboard_auth import TokenPrincipal
+
+    class WatcherProvider(_provider_class()):
+        name = "alice-watcher"
+        display_name = "Alice watcher webhook"
+
+        def verify_token(self, *, token: str):
+            root = _hermes_root()
+            if not (root / ".alice/watchers/journal.sqlite").is_file():
+                return None
+            store = _watcher_module().Store(root)
+            try:
+                ident = store.webhook_owner(token)
+                if ident:
+                    return TokenPrincipal(principal=ident, provider=self.name, scopes=("alice-watcher-inbound",))
+                return None
+            finally:
+                store.close()
+
+    return WatcherProvider
+
+
 def _register_claim_auth() -> None:
     try:
         from hermes_cli.dashboard_auth.registry import register_global_provider
@@ -120,6 +143,8 @@ def _register_claim_auth() -> None:
 
         register_global_provider(_provider_class()())
         register_token_route(CLAIM_PATH)
+        register_global_provider(_watcher_provider_class()())
+        register_token_route(f"{PLUGIN_PREFIX}/watchers/inbound")
     except Exception as exc:  # noqa: BLE001 — a Hermes without the seam keeps the rest working
         _log.warning("alice: pairing claims are unavailable (token auth seam missing: %s)", exc)
 
@@ -2858,3 +2883,127 @@ async def errands_icon(errand_id: str) -> Response:
         raise HTTPException(status_code=404, detail="No logo found for this shop")
     data, mime = found
     return Response(content=data, media_type=mime, headers={"Cache-Control": "private, max-age=86400"})
+
+# ── Durable, private-host watchers ─────────────────────────────────────────────
+
+def _watcher_module():
+    return _sibling("watchers.py", "alice_watchers")
+
+
+def _watcher_call(work):
+    store = _watcher_module().Store(_hermes_root())
+    try:
+        return JSONResponse(work(store), headers=_NO_STORE)
+    except (ValueError, RuntimeError, KeyError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400, headers=_NO_STORE)
+    finally:
+        store.close()
+
+
+@router.get("/watchers")
+async def watcher_listing() -> JSONResponse:
+    def read(store):
+        settings = store.settings()
+        notices = [dict(r) for r in store.db.execute("SELECT id,message FROM notices WHERE owner='local' ORDER BY created DESC LIMIT 50")]
+        return {"watchers": store.listing(), "route": settings["route"], "setup_required": settings["route"] is None,
+                "feedback": settings["feedback"], "notices": notices}
+    return await asyncio.to_thread(lambda: _watcher_call(read))
+
+
+class _WatcherRoute(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=200)
+    base_url: str = Field(min_length=1, max_length=1000)
+    api_key_env: str = Field(default="", max_length=128)
+
+
+@router.put("/watchers/route")
+async def watcher_route(body: _WatcherRoute) -> JSONResponse:
+    return await asyncio.to_thread(lambda: _watcher_call(lambda store: {"route": store.configure("local", body.model_dump())}))
+
+
+class _WatcherCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=120)
+    source: str
+    config: Dict[str, Any] = Field(default_factory=dict)
+    code: str = Field(default="", max_length=32768)
+    created_by_request: str = Field(min_length=1, max_length=2000)
+
+
+@router.post("/watchers")
+async def watcher_create(body: _WatcherCreate) -> JSONResponse:
+    def create(store):
+        code = body.code
+        if body.source == "builtin" and not code:
+            code = _sibling("watcher_builtins.py", "alice_watcher_builtins").TRIAGE_CODE
+        return {"watcher": store.create("local", body.name, body.source, body.config, code, body.created_by_request)}
+    return await asyncio.to_thread(lambda: _watcher_call(create))
+
+
+class _WatcherAction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: str
+
+
+@router.post("/watchers/{watcher_id}/actions")
+async def watcher_action(watcher_id: str, body: _WatcherAction) -> JSONResponse:
+    def act(store):
+        store.get(watcher_id, "local")
+        if body.action == "dry_run":
+            return {"results": _watcher_module().Engine(store).dry_run(watcher_id)}
+        if body.action in ("rotate_webhook", "revoke_webhook"):
+            secret = store.rotate_webhook(watcher_id, revoke=body.action == "revoke_webhook")
+            # Secret is returned once. Exact-path token auth also requires this bearer
+            # header; URL knowledge cannot confer dashboard/session permissions.
+            return {"secret": secret, "path": f"{PLUGIN_PREFIX}/watchers/inbound?watcher={watcher_id}&secret={secret}" if secret else None,
+                    "authorization": "Bearer " + secret if secret else None}
+        if body.action not in ("activate", "pause", "retry", "discard"):
+            raise ValueError("Unknown watcher action.")
+        getattr(store, body.action)(watcher_id)
+        if body.action in ("activate", "retry") and store.get(watcher_id)["status"] == "active":
+            try:
+                _sibling("watcher_service.py", "alice_watcher_service").ensure_schedule(store.home)
+            except Exception:
+                store.pause(watcher_id)
+                raise ValueError("Hermes cron is unavailable; watcher remains paused.")
+        return {"watcher": store.get(watcher_id)}
+    return await asyncio.to_thread(lambda: _watcher_call(act))
+
+
+class _WatcherFeedback(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str
+    value: str = Field(min_length=1, max_length=300)
+    remove: bool = False
+
+
+@router.put("/watchers/feedback")
+async def watcher_feedback(body: _WatcherFeedback) -> JSONResponse:
+    return await asyncio.to_thread(lambda: _watcher_call(lambda store: {"feedback": store.feedback("local", body.kind, body.value, body.remove)}))
+
+
+@router.post("/watchers/inbound")
+async def watcher_inbound(request: Request) -> JSONResponse:
+    principal = getattr(request.state, "token_principal", None)
+    if principal is None or principal.provider != "alice-watcher" or "alice-watcher-inbound" not in principal.scopes:
+        return JSONResponse({"error": "Watcher-scoped bearer required."}, status_code=401, headers=_NO_STORE)
+    ident, secret = request.query_params.get("watcher", ""), request.query_params.get("secret", "")
+    if principal.principal != ident:
+        return JSONResponse({"error": "Wrong watcher."}, status_code=403, headers=_NO_STORE)
+    raw = bytearray()
+    async for chunk in request.stream():
+        raw.extend(chunk)
+        if len(raw) > 16384:
+            return JSONResponse({"error": "Event exceeds 16 KB."}, status_code=413, headers=_NO_STORE)
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return JSONResponse({"error": "Invalid JSON event."}, status_code=400, headers=_NO_STORE)
+    def ingest(store):
+        if store.webhook_owner(secret) != ident:
+            raise ValueError("Webhook was revoked or rotated.")
+        accepted = store.ingest(ident, payload)
+        return {"accepted": accepted, "event_id": payload["id"]}
+    return await asyncio.to_thread(lambda: _watcher_call(ingest))

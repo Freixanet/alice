@@ -250,6 +250,31 @@ def poll_errands(state, home, send, now=None):
     return sent
 
 
+def poll_watcher_notices(state, home, send, now=None):
+    """Operational watcher failures: one generic push, no source or model content."""
+    now = time.time() if now is None else now
+    path = home / '.alice' / 'watchers' / 'journal.sqlite'
+    if not path.is_file():
+        state.setdefault('watcher_notices', 0)
+        return []
+    try:
+        with sqlite3.connect('file:' + urllib.parse.quote(str(path)) + '?mode=ro', uri=True) as conn:
+            rows = conn.execute("SELECT rowid,created FROM notices WHERE owner='local' AND rowid>? ORDER BY rowid", (state.get('watcher_notices', 0),)).fetchall()
+    except sqlite3.Error:
+        return []
+    if 'watcher_notices' not in state:
+        state['watcher_notices'] = rows[-1][0] if rows else 0
+        return []
+    sent = []
+    for seq, created in rows:
+        if now - created <= FRESH_SECONDS:
+            message = ('Alice', 'Una vigilancia necesita tu atención', 'alice://open?chat=home')
+            send(*message)
+            sent.append(message)
+        state['watcher_notices'] = seq
+    return sent
+
+
 def poll_once(state, home, send, now=None):
     """One pass over every profile. Returns the notifications sent, as (title, body, url)."""
     now = time.time() if now is None else now
@@ -397,6 +422,7 @@ def main():
         try:
             poll_once(state, HERMES, send)
             poll_errands(state, HERMES, send)
+            poll_watcher_notices(state, HERMES, send)
             save_state(STATE, state)
         except Exception as error:
             # Database, file and JSON errors name the problem, never chat content.
