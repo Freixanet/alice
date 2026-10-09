@@ -95,6 +95,18 @@ call, no notification/ack, and no journal mutation. The watcher remains paused.
 Complete Google consent before rerunning against real email; a synthetic schema
 check is not evidence of a completed Gmail dry run.
 
+After Google consent and enabling Gmail API, the empty real dry run succeeded
+and the watcher was activated with no-agent cron `4dd22ecdff88`. The test email
+was detected automatically, classified `notify` (0.98), acknowledged, and delivered
+with receipt `b910875431144289ae423e697ddc48ff` settled without error. Hermes stored
+the Spanish agent answer in the default profile's Bot Chat.
+
+Alice's routine presentation previously displayed the Watchers internal prompt
+and JSON while hiding that agent answer. The presentation now recognizes only
+the named, typed Watchers handover, hides that internal request, and preserves
+the agent answer. The original transcript remains intact; other routine cards
+and ordinary user messages keep their existing behavior.
+
 Use the dependency interpreter selected by Hermes' own package manager, rather
 than assuming its old `hermes-agent/venv` is the running environment:
 

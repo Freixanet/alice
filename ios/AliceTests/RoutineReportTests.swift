@@ -34,6 +34,30 @@ final class RoutineReportTests: XCTestCase {
 
     private let report = "[Cronjob \"Chollos del dia\" output — scheduled job, not the user. Review it.]\n\n**FILA -85%**"
 
+    private let watcher = "[Cronjob \"Alice watchers\" output — scheduled job, not the user. Review it.]\n\n"
+        + "Alice watcher notice. Return a concise answer.\n\n"
+        + "{\"proactive\":true,\"delivery_id\":\"b910875431144289ae423e697ddc48ff\",\"items\":[{\"message\":\"Invoice overdue\"}]}"
+
+    func testWatcherInternalRequestIsHiddenAndItsAnswerStaysVisible() {
+        let shown = RoutineDelivery.present([
+            message("1", .assistant, "Hola"),
+            message("2", .user, watcher),
+            message("3", .assistant, "La factura requiere atención hoy."),
+            message("4", .user, "Gracias"),
+        ], botName: nil)
+        XCTAssertEqual(shown.map(\.id), ["1", "3", "4"])
+        XCTAssertEqual(shown[1].content, "La factura requiere atención hoy.")
+        XCTAssertNil(shown[1].routineName)
+    }
+
+    func testOnlyAValidNamedWatcherEnvelopeIsHidden() {
+        XCTAssertTrue(RoutineReport(watcher)!.isWatcherHandover)
+        XCTAssertFalse(RoutineReport(watcher.replacingOccurrences(of: "Alice watchers", with: "Other routine"))!.isWatcherHandover)
+        XCTAssertFalse(RoutineReport(watcher.replacingOccurrences(of: "\"proactive\":true", with: "\"proactive\":false"))!.isWatcherHandover)
+        XCTAssertFalse(RoutineReport(watcher + " trailing text")!.isWatcherHandover)
+        XCTAssertNil(RoutineReport("Alice watcher notice. This is my own message."))
+    }
+
     func testAReportIsShownOnceAsTheBotsMessage() {
         let shown = RoutineDelivery.present([
             message("1", .assistant, "Hola"),

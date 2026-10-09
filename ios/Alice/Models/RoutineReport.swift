@@ -16,6 +16,24 @@ extension RoutineReport {
     private static let opening = "[Cronjob \""
     private static let afterName = "\" output — scheduled job, not the user."
 
+    /// Watchers hand source data to the agent; only its answer belongs in the chat.
+    /// Keep the original transcript and recognize only our named, typed envelope.
+    var isWatcherHandover: Bool {
+        struct Envelope: Decodable {
+            struct Item: Decodable { let message: String }
+            let proactive: Bool
+            let delivery_id: String
+            let items: [Item]
+        }
+        guard name == "Alice watchers", body.hasPrefix("Alice watcher notice. "),
+              let separator = body.range(of: "\n\n"),
+              let data = String(body[separator.upperBound...]).data(using: .utf8),
+              let envelope = try? JSONDecoder().decode(Envelope.self, from: data)
+        else { return false }
+        return envelope.proactive && !envelope.items.isEmpty
+            && envelope.delivery_id.range(of: "^[a-f0-9]{32,64}$", options: .regularExpression) != nil
+    }
+
     init?(_ text: String) {
         guard text.hasPrefix(Self.opening),
               let nameEnd = text.range(of: Self.afterName),
@@ -215,6 +233,12 @@ enum RoutineDelivery {
             switch message.role {
             case .user:
                 if let report = RoutineReport(message.content) {
+                    if report.isWatcherHandover {
+                        // Unlike routine reports, the payload is an internal request,
+                        // not the finished result. Preserve the following agent answer.
+                        answeringHandover = false
+                        continue
+                    }
                     let failure = RoutineReport.failure(in: report.body)
                     let parts: (intro: String?, report: String, outro: String?) = failure == nil
                         ? RoutineReport.split(report.body) : (nil, report.body, nil)
