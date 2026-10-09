@@ -37,7 +37,7 @@ struct WatchersScreen: View {
                     WatcherMorningSettings(settings: morning) { await refresh() }
                 }
                 if let usage = snapshot.usage {
-                    Section("Daily model calls") {
+                    Section {
                         LabeledContent("Watch updates", value: "\(usage.today.proactive)")
                         LabeledContent("Morning briefing", value: "\(usage.today.briefing)")
                         LabeledContent("Total today", value: "\(usage.today.total)")
@@ -47,6 +47,8 @@ struct WatchersScreen: View {
                                 LabeledContent(day.date, value: "\(day.total)")
                             }
                         }
+                    } header: {
+                        Text("Daily model calls")
                     } footer: {
                         if !usage.available { Text("Model call counting is unavailable on this Hermes version.") }
                         Text("Calls for watch messages and briefings share your model quota. Failed attempts and retries count too. This is not your remaining Plus quota. Classifier calls are separate.")
@@ -125,7 +127,7 @@ private struct WatcherMorningSettings: View {
     }
 
     var body: some View {
-        Section("Morning briefing") {
+        Section {
             Toggle("Send a morning briefing", isOn: $enabled)
             DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
                 .environment(\.timeZone, zone)
@@ -136,6 +138,8 @@ private struct WatcherMorningSettings: View {
             }
             if confirmation { Text("Briefing time saved.").foregroundStyle(.secondary) }
             if let failure { Text(failure).foregroundStyle(.red) }
+        } header: {
+            Text("Morning briefing")
         } footer: {
             Text("Once a day: tasks waiting for your review and updates caught by your watches. Nothing to report means no message and no model call.")
         }
