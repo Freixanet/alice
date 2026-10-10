@@ -37,7 +37,7 @@ con fixtures no demuestra su comportamiento en una conversación real.
 
 ## Ejemplos de los bloques
 
-En Ajustes → Componentes, la sección **Resultados de tareas** muestra texto,
+En Ajustes → Desarrollador → Componentes, la sección **Resultados de tareas** muestra texto,
 tabla, lista de comprobación, borrador, evento y tarjeta de enlace, en español
 e inglés. Usa las mismas vistas que el detalle de una Task y datos locales:
 no crea tareas, no llama al modelo, no envía el borrador ni añade el evento al

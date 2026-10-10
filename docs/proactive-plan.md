@@ -3,7 +3,8 @@
 ## Estado vigente — 9 octubre 2026
 
 Rama `codex/proactive-watchers`. Plugin instalado: `958cc0e`; app iPhone:
-build 97, `99f3b7f`. El cambio posterior del plugin no requiere otra app.
+build 98, `512c737`, confirmado en el dispositivo. El plugin no cambió para
+la galería de componentes.
 Las compras están desactivadas y sus herramientas no se registran.
 
 - **Fase 1:** Watchers, fuentes, sandbox, ruta clasificadora explícita,
@@ -28,8 +29,8 @@ Las compras están desactivadas y sus herramientas no se registran.
   económico y las respuestas normales del chat están fuera de ese contador.
   El redactor recibe sólo el lote actual, sin historial ni memorias anteriores;
   los avisos ya entregados conservan su texto. Briefing real entregado por el
-  programador y contador verificado en el host; pendiente confirmación visual
-  del iPhone. Agrupación de eventos en la ventana y respuesta de un toque
+  programador y contador verificado en el host; resumen visible confirmado por el usuario; pendiente confirmar el contador
+  en la pantalla del iPhone. Agrupación de eventos en la ventana y respuesta de un toque
   tienen pruebas aisladas, pendiente comprobación real de esos recorridos.
 - **Push:** mecanismo existente Mac → Bark, con aviso genérico y apertura de
   Alice; el contenido se recupera del Hermes de cada usuario.
@@ -86,7 +87,8 @@ muestra para el día configurado en Madrid: proactive 1, briefing 1, total 2.
 Se restauraron inmediatamente 08:00 Europe/Madrid y enabled=true; no se borró
 el cursor ni `last_date`. La prueba cuenta como el briefing del día de Madrid,
 por lo que no vuelve a enviar otro a las 08:00 de ese mismo día. Pendiente
-confirmar la tarjeta, los valores y el horario en la pantalla del iPhone.
+confirmar los valores del contador en la pantalla del iPhone. El usuario confirmó
+que el resumen aparece en el chat.
 
 Guías vigentes: [Watchers y Gmail](watchers-first-email.md),
 [Tasks y revisiones](tasks-review.md), [fase 3 y comprobaciones](watchers-phase3.md).
@@ -538,3 +540,23 @@ El watcher `4ae19f9cce5546adb661d9634108528b` sigue en el host, pausado.
 No se volvió a instalar el plugin ni se alteraron su journal o su configuración.
 La comprobación visual del teléfono sigue pendiente; el build no acredita esa UI.
 Fase 2 sigue sin iniciarse.
+
+## Galería de resultados de Tasks — build 98
+
+Ajustes → Desarrollador → Componentes → Resultados de tareas contiene seis
+muestras locales: texto, tabla, checklist, borrador, evento y enlace. Usa
+`TaskResultBlocks`, igual que el detalle de una Task, y datos tipados de
+`TaskBlockGallery`, en español e inglés. No crea Tasks ni llama a Hermes/modelos;
+el borrador no se envía y el evento no se añade al calendario. El enlace abre
+example.com si se toca.
+
+Validación local de las seis muestras con el modelo real `ReviewTask.Block`:
+pasa en ambos idiomas (`swiftc -module-cache-path /private/tmp/alice-gallery-swift-cache`
+con modelo, muestras y comprobación temporal). Compilación genérica para iOS:
+pasa; app `512c737` de `codex/proactive-watchers`, build 98, instalada y versión
+confirmada con `devicectl device info apps`. Se reutilizó la caché de dispositivo
+`/private/tmp/alice-device97`; logs `alice-gallery-build98.log` y
+`alice-gallery-install98.log` en `/private/tmp`. No se ejecutaron XCTest de
+simulador ni pruebas UI sobre los datos reales. Revisión visual de las seis
+muestras en el iPhone pendiente; el cambio no modifica permisos de Tasks ni
+el kill switch de compras.
