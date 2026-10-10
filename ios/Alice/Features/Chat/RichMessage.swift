@@ -1480,6 +1480,7 @@ struct RichMessageView: View {
         case let .interactive(artifact):
             InteractiveArtifactView(artifact: artifact, replyProfile: interactiveReplyProfile)
                 .id(artifact.title + artifact.html + artifact.jsFunctions + artifact.jsExpressions)
+                .chatWide()
         case let .component(component):
             UIComponentView(component: component, language: ChatLanguage.of(content))
         case let .media(media):
