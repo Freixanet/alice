@@ -553,6 +553,21 @@ def _consume_surviving_checkout_approval(home: Path, errand_id: str, run_id: str
         _write(path, entries)
 
 
+def _finish_paid_checkout(home: Path, errand_id: str, expected: Dict[str, Any]) -> bool:
+    """Finish the paid snapshot without overwriting a concurrently replaced checkout or queue."""
+    with _locked(home) as path:
+        entries = _read(path, strict=True)
+        entry = next((e for e in entries if e.get("id") == errand_id), None)
+        if (entry is None or entry.get("status") != "working"
+                or (entry.get("receipt") or {}).get("outcome") != "paid"
+                or any(entry.get(key) != expected.get(key)
+                       for key in ("checkout", "receipt", "run_id", "resume_message"))):
+            return False
+        entry.update(status="done", resume_message=None, updated_at=time.time())
+        _write(path, entries)
+        return True
+
+
 def approved_message(checkout: Dict[str, Any]) -> str:
     """How the errand goes on after «Permitir»: pay that total, with that card, and nothing else."""
     total = checkout.get("approved_total") or checkout.get("total") or ""
@@ -1330,8 +1345,9 @@ class Engine:
             # A surviving run may have persisted its paid receipt before recovery.
             # Observe that terminal outcome before starting any replacement run.
             if (entry.get("receipt") or {}).get("outcome") == "paid":
-                update(self.home, self.errand_id, status="done", resume_message=None)
-                return "done"
+                if _finish_paid_checkout(self.home, self.errand_id, entry):
+                    return "done"
+                continue  # A concurrent change must be read before doing anything else.
             if int(entry.get("runs") or 0) >= MAX_RUNS:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"
