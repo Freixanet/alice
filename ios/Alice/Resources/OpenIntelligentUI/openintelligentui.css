@@ -63,6 +63,19 @@
   -webkit-text-fill-color: var(--color-text-secondary) !important;
 }
 
+/* The host owns the artifact's outer width; content cannot shrink the card. */
+html, body, #content {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+body { margin: 0 !important; padding: 0 !important; }
+#content > * {
+  width: 100% !important;
+  max-width: none !important;
+  box-sizing: border-box !important;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-background-primary: #1a1a18;

@@ -12,7 +12,7 @@ final class Probe: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         guard m.frameInfo.isMainFrame, let data=m.body as? [String:Any], data["type"] as? String == "draft", let value=data["value"] as? String,
               let bytes=value.data(using:.utf8), let results=try? JSONSerialization.jsonObject(with:bytes) as? [String:Bool] else{return}
         print("WK sandbox:", results)
-        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran","darkTheme","liveLightTheme","controlsPreserved","darkInputContrast","lightInputContrast"].allSatisfy {results[$0] == true}
+        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran","darkTheme","liveLightTheme","controlsPreserved","darkInputContrast","lightInputContrast","fullWidth"].allSatisfy {results[$0] == true}
         finished=true
     }
     func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy)->Void) {
@@ -33,6 +33,9 @@ var payload:[String:Any]=[
  "jsFunctions":"""
  async function probe() {
   const results={ran:true};
+  const compact=document.createElement('div');compact.style.cssText='width:40px;max-width:60px;padding:16px';compact.textContent='Small';document.getElementById('content').append(compact);
+  const availableWidth=document.documentElement.clientWidth; // Excludes any native scrollbar.
+  results.fullWidth=Math.abs(compact.getBoundingClientRect().width-availableWidth)<1 && Math.abs(document.getElementById('content').getBoundingClientRect().width-availableWidth)<1;
   const themeCheck=document.createElement('div');themeCheck.style.cssText='color:var(--c-foreground,#171717);background:var(--c-background,#fff)';document.body.append(themeCheck);
   results.darkTheme=getComputedStyle(themeCheck).color==='rgb(232, 230, 222)' && getComputedStyle(themeCheck).backgroundColor==='rgb(26, 26, 24)' && document.documentElement.style.colorScheme==='dark';
   const before=document.getElementById('people').value;

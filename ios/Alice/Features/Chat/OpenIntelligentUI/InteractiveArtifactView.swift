@@ -30,6 +30,7 @@ struct InteractiveArtifactView: View {
                 default: break
                 }
             }
+            .frame(maxWidth: .infinity)
             .frame(height: height)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             if let problem { Text(problem).font(.caption).foregroundStyle(.secondary) }
@@ -39,7 +40,8 @@ struct InteractiveArtifactView: View {
                     .disabled(originChat != store.activeID)
             }
         }
-        .padding(12)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .onAppear { originChat = store.activeID; height = CGFloat(artifact.initialHeight) }
         .task(id: artifact.html + artifact.jsFunctions + artifact.jsExpressions) {
             do { try await Task.sleep(for: .seconds(8)) } catch { return }

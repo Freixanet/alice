@@ -39,6 +39,10 @@ partial artifacts do not execute; placeholders are visible during native loading
 Each message is a separate snapshot. Filters, controls and calculations are local.
 The host explicitly applies Alice's light/dark theme, updates it without reloading
 controls and maps common `--c-*` aliases to upstream semantic theme tokens.
+Interactive chat surfaces always expand to the maximum reply-bubble width. Native
+horizontal wrapper padding is removed and the HTML root fills available width,
+including when generated content asks for a narrower width. The portable WebKit
+probe verifies a 40px/max-60px sample fills the usable viewport (excluding scrollbar).
 Editable-field backgrounds, text, WebKit text-fill, caret and borders are owned
 by the host theme to prevent generated light-only input styles from hiding values.
 The WebKit regression probe reproduces white input backgrounds with light text,
