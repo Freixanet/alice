@@ -273,5 +273,22 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(self.resumed, [])
 
 
+    def test_timestamp_less_legacy_checkout_can_be_refreshed_without_approval(self):
+        entry = self.waiting()
+        checkout = dict(entry["checkout"])
+        checkout.pop("requested_at")
+        self.errands.update(self.home, entry["id"], checkout=checkout)
+        answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                  json={"decision": "allow", "checkout_id": checkout["id"]})
+        self.assertEqual(answer.status_code, 409)
+        self.assertEqual(self.resumed, [])
+        saved = self.errands.get(self.home, entry["id"])["checkout"]
+        self.assertEqual(saved, {**checkout, "status": "expired"})
+        refresh = self.client.post(self.url(f"/{entry['id']}/refresh"))
+        self.assertEqual(refresh.status_code, 200)
+        self.assertIn("checkout_request", self.resumed[-1][1])
+        self.assertNotIn(self.errands.APPROVED_PREFIX, self.resumed[-1][1])
+
+
 if __name__ == "__main__":
     unittest.main()

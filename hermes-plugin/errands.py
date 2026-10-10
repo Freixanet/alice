@@ -469,7 +469,7 @@ def expire_checkouts(home: Path, now: Optional[float] = None) -> List[str]:
             if not isinstance(checkout, dict) or checkout.get("status") != "pending":
                 continue
             age = _checkout_age(checkout, now)
-            if age is not None and age > CHECKOUT_TTL:
+            if age is None or age > CHECKOUT_TTL:
                 entry["checkout"] = {**checkout, "status": "expired"}
                 entry["updated_at"] = now
                 expired.append(entry["id"])
@@ -522,6 +522,21 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
                      resume_message=approved_message(checkout) if allow else None)
         _write(path, entries)
     return entry
+
+
+def _record_started_checkout_run(home: Path, errand_id: str, run_id: str,
+                                 message: str, checkout_id: Optional[str]) -> None:
+    """Consume these instructions only after the gateway accepted their run; preserve a newer checkout."""
+    with _locked(home) as path:
+        entries = _read(path, strict=True)
+        entry = next((e for e in entries if e.get("id") == errand_id), None)
+        if entry is None:
+            return
+        entry.update(run_id=run_id, runs=int(entry.get("runs") or 0) + 1, updated_at=time.time())
+        if (checkout_id and (entry.get("checkout") or {}).get("id") == checkout_id
+                and entry.get("resume_message") == message):
+            entry["resume_message"] = None
+        _write(path, entries)
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -1312,7 +1327,11 @@ class Engine:
                 update(self.home, self.errand_id, status="stuck",
                        reason=f"No se pudo hablar con Hermes: {type(exc).__name__}.")
                 return "stuck"
-            update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
+            if text.startswith(APPROVED_PREFIX):
+                _record_started_checkout_run(self.home, self.errand_id, run_id, text,
+                                             (entry.get("checkout") or {}).get("id"))
+            else:
+                update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
             state = self._wait_run(run_id)
             reply = _clean(state.get("output") or "", 2000)
             entry = self._entry()
@@ -1322,7 +1341,8 @@ class Engine:
                 return entry.get("status", "missing")
             if entry.get("resume_message"):
                 text = entry["resume_message"]
-                update(self.home, self.errand_id, resume_message=None)
+                if not text.startswith(APPROVED_PREFIX):
+                    update(self.home, self.errand_id, resume_message=None)
                 continue
             try:
                 from importlib.util import spec_from_file_location, module_from_spec
@@ -1459,7 +1479,7 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
     def body():
         try:
             pending = (get(home, errand_id) or {}).get("resume_message")
-            if pending:
+            if pending and not pending.startswith(APPROVED_PREFIX):
                 update(home, errand_id, resume_message=None)
             final = (engine_factory or Engine)(home, errand_id).run(pending or message)
             if final in ("done", "stuck", "denied", "stopped", "missing"):

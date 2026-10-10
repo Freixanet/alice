@@ -1149,3 +1149,100 @@ class AtomicCheckoutTests(Base):
                     self.assertEqual(errands.ensure_running(self.home), [entry["id"]])
                     self.assertTrue(completed.wait(timeout=3), "recovery did not finish")
                 self.assertEqual(gateway.started, [(entry["session_id"], errands.approved_message(decided["checkout"]))])
+
+
+    def test_second_restart_during_surviving_run_wait_keeps_approval_durable(self):
+        entry = self.waiting()
+        decided = self.decide(entry)
+        message = errands.approved_message(decided["checkout"])
+        errands.update(self.home, entry["id"], run_id="run_old")
+        observed = []
+        completed = threading.Event()
+        gateway = FakeGateway([done()])
+        gateway.current = [{"status": "running"}]
+
+        class SyntheticRestart(BaseException):
+            pass
+
+        class InterruptedEngine(errands.Engine):
+            def __init__(engine, home, errand_id):
+                super().__init__(home, errand_id, gateway=gateway, sleep=lambda _: None)
+
+            def _wait_run(engine, run_id):
+                observed.append(errands.get(engine.home, engine.errand_id).get("resume_message"))
+                raise SyntheticRestart()
+
+            def run(engine, text=None):
+                try:
+                    super().run(text)
+                except SyntheticRestart:
+                    return "working"
+                finally:
+                    completed.set()
+
+        self.assertTrue(errands.launch(self.home, entry["id"], "restart", engine_factory=InterruptedEngine))
+        self.assertTrue(completed.wait(timeout=3))
+        self.assertEqual(observed, [message])
+        self.assertEqual(errands.get(self.home, entry["id"])["resume_message"], message)
+        with errands._threads_lock:
+            thread = errands._threads.get(entry["id"])
+        if thread is not None:
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+        replacement = FakeGateway([done()])
+        original_status = replacement.status
+        polls = [{"status": "running"}, {"status": "completed", "output": ""}]
+        replacement.status = lambda run_id: polls.pop(0) if run_id == "run_old" and polls else original_status(run_id)
+        recovered = errands.Engine(self.home, entry["id"], gateway=replacement,
+                                   judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True):
+            self.assertEqual(recovered.run(errands.get(self.home, entry["id"])["resume_message"]), "done")
+        self.assertEqual(replacement.started, [(entry["session_id"], message)])
+        self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
+
+    def test_expiry_recovers_missing_or_invalid_legacy_timestamps(self):
+        for requested in (None, "yesterday", False, float("nan"), float("inf"), 0, NOW + 2):
+            with self.subTest(requested=requested):
+                entry = self.waiting()
+                checkout = {**entry["checkout"], "requested_at": requested}
+                errands.update(self.home, entry["id"], checkout=checkout)
+                self.assertIn(entry["id"], errands.expire_checkouts(self.home, now=NOW + 1))
+                saved = errands.get(self.home, entry["id"])["checkout"]
+                self.assertEqual(saved["id"], checkout["id"])
+                self.assertEqual(saved["items"], checkout["items"])
+                self.assertEqual(saved["total"], checkout["total"])
+                self.assertEqual(saved["status"], "expired")
+                self.assertIsNone(self.decide(entry))
+
+
+    def test_gateway_start_failure_preserves_queued_approval(self):
+        entry = self.waiting()
+        decided = self.decide(entry)
+        factory = lambda h, i: errands.Engine(h, i, gateway=FakeGateway([], fail=True),
+                                               judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True), mock.patch.object(errands, "release_context"):
+            self.assertTrue(errands.launch(self.home, entry["id"], "restart", engine_factory=factory))
+            with errands._threads_lock:
+                thread = errands._threads.get(entry["id"])
+            if thread is not None:
+                thread.join(timeout=3)
+                self.assertFalse(thread.is_alive())
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["status"], "stuck")
+        self.assertEqual(saved["resume_message"], errands.approved_message(decided["checkout"]))
+
+    def test_run_acceptance_does_not_consume_a_newer_checkout_message(self):
+        entry = self.waiting()
+        decided = self.decide(entry)
+        def replace_checkout(_):
+            errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"}, now=NOW + 2)
+            errands.update(self.home, entry["id"], resume_message="new synthetic message")
+        gateway = FakeGateway([done()], on_start=replace_checkout)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True):
+            self.assertEqual(engine.run(errands.approved_message(decided["checkout"])), "needs_approval")
+        saved = errands.get(self.home, entry["id"])
+        self.assertNotEqual(saved["checkout"]["id"], decided["checkout"]["id"])
+        self.assertEqual(saved["checkout"]["status"], "pending")
+        self.assertEqual(saved["resume_message"], "new synthetic message")
