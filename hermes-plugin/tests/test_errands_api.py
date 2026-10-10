@@ -43,7 +43,7 @@ class ErrandRoutesTests(unittest.TestCase):
             mock.patch.object(self.api, "_hermes_root", return_value=self.home),
             mock.patch.object(self.errands, "launch", return_value=False),
             mock.patch.object(self.errands, "_fetch", side_effect=OSError("offline")),
-            mock.patch.object(self.errands, "resume", side_effect=lambda h, i, m: self.resumed.append((i, m)) or True),
+            mock.patch.object(self.errands, "resume", side_effect=lambda h, i, m, **kwargs: self.resumed.append((i, m)) or True),
         ):
             patch.start()
             self.addCleanup(patch.stop)
@@ -102,6 +102,26 @@ class ErrandRoutesTests(unittest.TestCase):
         again = self.client.post(self.url(f"/{entry['id']}/checkout"),
                                  json={"decision": "allow", "checkout_id": checkout_id})
         self.assertEqual(again.status_code, 409)
+
+    def test_checkout_replaced_between_endpoint_check_and_decision_is_not_approved(self):
+        entry = self.waiting()
+        original = self.errands.decide_checkout
+        replacement = {}
+
+        def replace_then_decide(*args, **kwargs):
+            self.errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"})
+            replacement.update(self.errands.get(self.home, entry["id"])["checkout"])
+            return original(*args, **kwargs)
+
+        with mock.patch.object(self.errands, "decide_checkout", side_effect=replace_then_decide):
+            answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                      json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        self.assertEqual(answer.status_code, 409)
+        saved = self.errands.get(self.home, entry["id"])["checkout"]
+        self.assertNotEqual(saved["id"], entry["checkout"]["id"])
+        self.assertEqual(saved, replacement)
+        self.assertEqual(saved["status"], "pending")
+        self.assertEqual(self.resumed, [])
 
     def test_an_approval_for_another_checkout_is_refused(self):
         entry = self.waiting()
@@ -177,6 +197,66 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(again.status_code, 200)
         self.assertIn("checkout_request", self.resumed[-1][1])
         self.assertEqual(self.client.post(self.url(f"/{entry['id']}/refresh")).status_code, 409)
+
+
+    def test_response_and_wakeup_keep_the_decided_snapshot_after_replacement(self):
+        entry = self.waiting()
+        messages = []
+
+        def replace_on_resume(home, errand_id, message, **kwargs):
+            messages.append((message, kwargs["checkout"]))
+            self.errands.request_checkout(home, errand_id, {**CHECKOUT, "total": "279,80 €"})
+            return False
+
+        with mock.patch.object(self.errands, "resume", side_effect=replace_on_resume):
+            answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                      json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        self.assertEqual(answer.status_code, 200)
+        decided = answer.json()["errand"]["checkout"]
+        self.assertEqual(decided["id"], entry["checkout"]["id"])
+        self.assertEqual(decided["status"], "approved")
+        self.assertEqual(messages, [(self.errands.approved_message(decided), decided)])
+        self.assertEqual(self.errands.get(self.home, entry["id"])["checkout"]["status"], "pending")
+
+    def test_stopped_between_endpoint_check_and_decision_is_not_resumed(self):
+        entry = self.waiting()
+        original = self.errands.decide_checkout
+
+        def stop_then_decide(*args, **kwargs):
+            self.errands.update(self.home, entry["id"], status="stopped")
+            return original(*args, **kwargs)
+
+        with mock.patch.object(self.errands, "decide_checkout", side_effect=stop_then_decide):
+            answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                      json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        self.assertEqual(answer.status_code, 409)
+        self.assertEqual(self.resumed, [])
+        self.assertEqual(self.errands.get(self.home, entry["id"])["status"], "stopped")
+
+    def test_corrupt_archive_returns_safe_error_and_is_not_changed(self):
+        entry = self.waiting()
+        path = self.errands._path(self.home)
+        for content in (b"{broken", b"{}", b"[null]", b"[{}]", b"\xff"):
+            with self.subTest(content=content):
+                path.write_bytes(content)
+                answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                          json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+                self.assertEqual(answer.status_code, 503)
+                self.assertEqual(path.read_bytes(), content)
+                self.assertEqual(self.resumed, [])
+
+
+    def test_failed_decision_persistence_returns_error_without_resuming(self):
+        entry = self.waiting()
+        path = self.errands._path(self.home)
+        before = path.read_bytes()
+        with mock.patch.object(self.errands.os, "replace", side_effect=OSError("synthetic disk failure")):
+            answer = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                      json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        self.assertEqual(answer.status_code, 503)
+        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.resumed, [])
+
 
 if __name__ == "__main__":
     unittest.main()

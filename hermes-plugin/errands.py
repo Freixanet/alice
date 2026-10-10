@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import fcntl
 import json
+import math
 import os
 import re
 import secrets
@@ -117,11 +118,20 @@ def _locked(home: Path):
             fcntl.flock(lock, fcntl.LOCK_UN)
 
 
-def _read(path: Path) -> List[Dict[str, Any]]:
+def _read(path: Path, *, strict: bool = False) -> List[Dict[str, Any]]:
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+    except FileNotFoundError:
         return []
+    except (OSError, ValueError):
+        if strict:
+            raise
+        return []
+    if strict and (not isinstance(data, list) or any(
+            not isinstance(e, dict) or not isinstance(e.get("id"), str) or not e["id"] for e in data)):
+        raise ValueError("Invalid errand archive")
+    if strict and len({e["id"] for e in data}) != len(data):
+        raise ValueError("Duplicate errand identity")
     return [e for e in data if isinstance(e, dict)] if isinstance(data, list) else []
 
 
@@ -439,17 +449,31 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
                      "End your turn with one line saying the checkout is waiting for approval.")}
 
 
+def _checkout_age(checkout: Dict[str, Any], now: float) -> Optional[float]:
+    requested = checkout.get("requested_at")
+    if (isinstance(requested, bool) or not isinstance(requested, (int, float))
+            or not math.isfinite(requested) or requested <= 0 or requested > now):
+        return None
+    return now - requested
+
+
 def expire_checkouts(home: Path, now: Optional[float] = None) -> List[str]:
-    """Checkouts left waiting past CHECKOUT_TTL become «expired»: approving one resumed an errand
-    on a checkout Apple had closed hours before, without the person knowing."""
-    now = now or time.time()
+    """Expire waiting checkouts without overwriting a concurrent replacement or decision."""
     expired = []
-    for entry in listing(home):
-        checkout = entry.get("checkout")
-        if (isinstance(checkout, dict) and checkout.get("status") == "pending"
-                and now - float(checkout.get("requested_at") or now) > CHECKOUT_TTL):
-            update(home, entry["id"], now=now, checkout={**checkout, "status": "expired"})
-            expired.append(entry["id"])
+    with _locked(home) as path:
+        now = time.time() if now is None else now
+        entries = _read(path, strict=True)
+        for entry in entries:
+            checkout = entry.get("checkout")
+            if not isinstance(checkout, dict) or checkout.get("status") != "pending":
+                continue
+            age = _checkout_age(checkout, now)
+            if age is not None and age > CHECKOUT_TTL:
+                entry["checkout"] = {**checkout, "status": "expired"}
+                entry["updated_at"] = now
+                expired.append(entry["id"])
+        if expired:
+            _write(path, entries)
     return expired
 
 
@@ -460,28 +484,42 @@ def refresh_message(checkout: Dict[str, Any]) -> str:
 
 
 def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
-                    card_label: str = "") -> Optional[Dict[str, Any]]:
-    now = now or time.time()
-    expire_checkouts(home, now)
-    entry = get(home, errand_id)
-    checkout = (entry or {}).get("checkout")
-    if entry is None or not isinstance(checkout, dict) or checkout.get("status") != "pending":
-        return None
-    # Existing archives may predate cents. Validate them before granting payment approval.
-    amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
-    if allow and (not amount or not amount[1]):
-        return None
-    checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
-    if allow:
-        # The yes is to this total, kept in cents for the code that checks the payment page.
-        checkout["approved_total"] = checkout.get("total", "")
-        checkout["total_cents"], checkout["currency"] = amount
-        checkout["approved_cents"], checkout["approved_currency"] = amount
-    if allow and _clean(card_label, 60):
-        checkout["card_label"] = _clean(card_label, 60)
-    status = "working" if allow else "denied"
-    return update(home, errand_id, now=now, checkout=checkout, status=status,
-                  reason="" if allow else "Has denegado la compra.")
+                    card_label: str = "", *, checkout_id: str) -> Optional[Dict[str, Any]]:
+    """Compare the exact checkout and persist its one decision under the writer lock."""
+    with _locked(home) as path:
+        now = time.time() if now is None else now
+        entries = _read(path, strict=True)
+        matches = [e for e in entries if e.get("id") == errand_id]
+        entry = matches[0] if len(matches) == 1 else None
+        checkout = (entry or {}).get("checkout")
+        if (entry is None or entry.get("status") != "needs_approval"
+                or not isinstance(checkout_id, str) or not checkout_id
+                or not isinstance(checkout, dict) or checkout.get("id") != checkout_id
+                or checkout.get("status") != "pending"):
+            return None
+        age = _checkout_age(checkout, now)
+        if age is None:
+            return None
+        if age > CHECKOUT_TTL:
+            entry["checkout"] = {**checkout, "status": "expired"}
+            entry["updated_at"] = now
+            _write(path, entries)
+            return None
+        # Existing archives may predate cents. Validate them before granting payment approval.
+        amount = _money().parse(checkout.get("total"), checkout.get("currency") or "") if allow else None
+        if allow and (not amount or not amount[1]):
+            return None
+        checkout = {**checkout, "status": "approved" if allow else "denied", "decided_at": now}
+        if allow:
+            checkout["approved_total"] = checkout.get("total", "")
+            checkout["total_cents"], checkout["currency"] = amount
+            checkout["approved_cents"], checkout["approved_currency"] = amount
+        if allow and _clean(card_label, 60):
+            checkout["card_label"] = _clean(card_label, 60)
+        entry.update(checkout=checkout, status="working" if allow else "denied",
+                     reason="" if allow else "Has denegado la compra.", updated_at=now)
+        _write(path, entries)
+    return entry
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -1499,11 +1537,30 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
                     "Do not start another or do it here."}
 
 
-def resume(home: Path, errand_id: str, message: str) -> bool:
-    """The person answered (approval, a question): the goal leaves its wait and the errand goes on."""
+def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[str, Any]] = None) -> bool:
+    """Resume an answer; a checkout decision must still be the persisted approved snapshot."""
+    if checkout is not None:
+        # Do not let this delayed wake-up revive a stopped errand or another checkout.
+        # launch only starts a thread; it never acquires this store lock synchronously.
+        with _locked(home) as path:
+            entries = _read(path, strict=True)
+            entry = next((e for e in entries if e.get("id") == errand_id), None)
+            if (entry is None or entry.get("status") != "working"
+                    or entry.get("checkout") != checkout or checkout.get("status") != "approved"
+                    or approved_checkout(entry) is None):
+                return False
+            entry.update(questions=None, approval=None)
+            _write(path, entries)
+            _resume_goal(entry)
+            return launch(home, errand_id, approved_message(checkout))
     entry = update(home, errand_id, status="working", questions=None, approval=None)
     if entry is None:
         return False
+    _resume_goal(entry)
+    return launch(home, errand_id, message)
+
+
+def _resume_goal(entry: Dict[str, Any]) -> None:
     try:
         manager = _goal_manager(entry["session_id"])
         if manager.state is not None and manager.state.status == "paused":
@@ -1512,7 +1569,6 @@ def resume(home: Path, errand_id: str, message: str) -> bool:
             manager.stop_waiting()
     except Exception:
         pass
-    return launch(home, errand_id, message)
 
 
 def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:

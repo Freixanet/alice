@@ -84,7 +84,7 @@ class CheckoutTests(Base):
         errands.request_checkout(self.home, entry['id'], {**CHECKOUT, 'currency': ''}, now=NOW)
         checkout = errands.get(self.home, entry['id'])['checkout']
         self.assertEqual((checkout['total_cents'], checkout['currency']), (2798, 'EUR'))
-        decided = errands.decide_checkout(self.home, entry['id'], True, now=NOW + 1)
+        decided = errands.decide_checkout(self.home, entry['id'], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 1)
         self.assertEqual((decided['checkout']['approved_cents'], decided['checkout']['approved_currency']), (2798, 'EUR'))
 
     def test_invalid_checkout_total_never_waits_for_approval(self):
@@ -121,13 +121,13 @@ class CheckoutTests(Base):
     def test_allow_approves_that_shop_for_ten_minutes(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
-        decided = errands.decide_checkout(self.home, entry["id"], True, now=NOW + 5)
+        decided = errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 5)
         self.assertEqual(decided["status"], "working")
         self.assertIsNotNone(errands.approved_checkout(decided, "https://www.hsnstore.com/x", now=NOW + 60))
         self.assertIsNone(errands.approved_checkout(decided, "https://otra-tienda.es", now=NOW + 60))
         self.assertIsNone(errands.approved_checkout(decided, now=NOW + 5 + errands.APPROVAL_TTL + 1))
         # A decision is taken once.
-        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], False, now=NOW + 10))
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], False, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 10))
 
     def test_without_a_saved_card_the_person_is_asked_for_one_before_the_total(self):
         entry = self.errand()
@@ -153,7 +153,7 @@ class CheckoutTests(Base):
     def test_the_yes_is_to_that_total(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
-        decided = errands.decide_checkout(self.home, entry["id"], True, now=NOW + 5, card_label="Visa ···4242")
+        decided = errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 5, card_label="Visa ···4242")
         self.assertEqual(decided["checkout"]["approved_total"], "27,98 €")
         message = errands.approved_message(decided["checkout"])
         self.assertTrue(message.startswith(errands.APPROVED_PREFIX))
@@ -171,7 +171,7 @@ class CheckoutTests(Base):
     def test_deny_ends_the_errand(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
-        decided = errands.decide_checkout(self.home, entry["id"], False, now=NOW + 5)
+        decided = errands.decide_checkout(self.home, entry["id"], False, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 5)
         self.assertEqual(decided["status"], "denied")
         self.assertEqual(decided["checkout"]["status"], "denied")
         self.assertIsNone(errands.approved_checkout(decided, now=NOW + 6))
@@ -192,7 +192,7 @@ class GateTests(Base):
     def approved(self, site=CHECKOUT["site"], at=NOW):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "site": site}, now=at)
-        errands.decide_checkout(self.home, entry["id"], True, now=at)
+        errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=at)
         return entry
 
     def test_a_chat_can_never_pay(self):
@@ -380,7 +380,7 @@ class EngineTests(Base):
         gateway = FakeGateway([[{"status": "running"}, consent, {"status": "completed", "output": "Pagado"}]])
         entry, engine, _ = self.engine(gateway, [{"status": "done"}])
         errands.request_checkout(self.home, entry["id"], CHECKOUT)
-        errands.decide_checkout(self.home, entry["id"], True)
+        errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"])
         engine.run()
         self.assertEqual(gateway.approvals, [("run_1", "once", "req-1")])
 
@@ -763,7 +763,7 @@ class PictureTests(Base):
     def test_the_card_the_person_chose_travels_with_the_approval(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "card_label": ""})
-        decided = errands.decide_checkout(self.home, entry["id"], True, card_label="Mastercard ···4444")
+        decided = errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], card_label="Mastercard ···4444")
         self.assertEqual(decided["checkout"]["card_label"], "Mastercard ···4444")
 
 
@@ -775,12 +775,12 @@ class ExpiryTests(Base):
         self.assertEqual(errands.expire_checkouts(self.home, now=NOW + 60), [])
         self.assertEqual(errands.expire_checkouts(self.home, now=NOW + errands.CHECKOUT_TTL + 1), [entry["id"]])
         self.assertEqual(errands.get(self.home, entry["id"])["checkout"]["status"], "expired")
-        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + errands.CHECKOUT_TTL + 2))
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + errands.CHECKOUT_TTL + 2))
 
     def test_approving_late_is_refused_even_before_anything_marked_it(self):
         entry = self.errand()
         errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
-        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, now=NOW + 3 * 3600))
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, checkout_id=errands.get(self.home, entry["id"])["checkout"]["id"], now=NOW + 3 * 3600))
         self.assertIn("checkout_request", errands.refresh_message(errands.get(self.home, entry["id"])["checkout"]))
 
 
@@ -900,3 +900,197 @@ class BasketUnitsTests(unittest.TestCase):
         self.assertEqual(errands.blocked_by("precio 59,98 €", offer)["kind"], "other")
         self.assertEqual(errands.blocked_by("precio 34,99 € — subió", offer),
                          {"kind": "price", "price": "34,99 €"})
+
+
+class AtomicCheckoutTests(Base):
+    def waiting(self):
+        entry = self.errand()
+        errands.request_checkout(self.home, entry["id"], CHECKOUT, now=NOW)
+        return errands.get(self.home, entry["id"])
+
+    def decide(self, entry, allow=True, now=NOW + 1):
+        return errands.decide_checkout(self.home, entry["id"], allow, now=now,
+                                       checkout_id=entry["checkout"]["id"])
+
+    def concurrent_decisions(self, decisions):
+        import threading
+        entry = self.waiting()
+        barrier = threading.Barrier(2)
+        results, errors = [], []
+
+        def decide(allow):
+            try:
+                barrier.wait(timeout=3)
+                results.append(self.decide(entry, allow))
+            except BaseException as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=decide, args=(allow,), daemon=True) for allow in decisions]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+        self.assertFalse(any(thread.is_alive() for thread in threads), "decision lock deadlocked")
+        self.assertEqual(errors, [])
+        winners = [result for result in results if result is not None]
+        self.assertEqual(len(winners), 1)
+        self.assertEqual(errands.get(self.home, entry["id"]), winners[0])
+        self.assertIsNone(self.decide(entry))
+        return winners[0]
+
+    def test_two_approvals_have_one_persisted_winner(self):
+        self.assertEqual(self.concurrent_decisions([True, True])["checkout"]["status"], "approved")
+
+    def test_approval_and_denial_have_one_persisted_winner(self):
+        winner = self.concurrent_decisions([True, False])
+        self.assertIn(winner["checkout"]["status"], ("approved", "denied"))
+        self.assertEqual(winner["status"], "working" if winner["checkout"]["status"] == "approved" else "denied")
+
+    def test_replacement_is_unchanged_by_stale_approval_or_denial(self):
+        for allow in (True, False):
+            with self.subTest(allow=allow):
+                entry = self.waiting()
+                errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"}, now=NOW + 1)
+                before = errands._path(self.home).read_bytes()
+                self.assertIsNone(self.decide(entry, allow))
+                self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_every_ineligible_errand_state_is_unchanged(self):
+        for status in errands.STATUSES:
+            if status == "needs_approval":
+                continue
+            with self.subTest(status=status):
+                entry = self.waiting()
+                errands.update(self.home, entry["id"], status=status)
+                before = errands._path(self.home).read_bytes()
+                self.assertIsNone(self.decide(entry))
+                self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_expiry_is_checked_at_the_decision_not_before_the_lock(self):
+        entry = self.waiting()
+        self.assertIsNone(self.decide(entry, now=NOW + errands.CHECKOUT_TTL + 1))
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["checkout"]["status"], "expired")
+        self.assertNotIn("approved_cents", saved["checkout"])
+
+    def test_missing_invalid_or_nonfinite_timestamp_fails_closed(self):
+        for requested in (None, "yesterday", False, float("nan"), float("inf"), 0, NOW + 2):
+            with self.subTest(requested=requested):
+                entry = self.waiting()
+                errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": requested})
+                before = errands._path(self.home).read_bytes()
+                self.assertIsNone(self.decide(entry))
+                self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_unreadable_store_is_preserved_by_decision_and_expiry(self):
+        entry = self.waiting()
+        path = errands._path(self.home)
+        for content in (b"{broken", b"{}", b"[null]", b"[{}]", b"\xff",
+                        json.dumps([entry, entry]).encode()):
+            with self.subTest(content=content):
+                path.write_bytes(content)
+                for operation in (lambda: self.decide(entry), lambda: errands.expire_checkouts(self.home)):
+                    with self.assertRaises(ValueError):
+                        operation()
+                    self.assertEqual(path.read_bytes(), content)
+
+    def test_missing_store_or_checkout_is_not_created_or_decided(self):
+        self.assertIsNone(errands.decide_checkout(self.home, "missing", True, checkout_id="missing"))
+        self.assertFalse(errands._path(self.home).exists())
+        entry = self.errand()
+        before = errands._path(self.home).read_bytes()
+        self.assertIsNone(errands.decide_checkout(self.home, entry["id"], True, checkout_id="missing"))
+        self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_read_error_does_not_overwrite_the_archive(self):
+        entry = self.waiting()
+        path = errands._path(self.home)
+        before = path.read_bytes()
+        with mock.patch.object(Path, "read_text", side_effect=PermissionError("synthetic")):
+            with self.assertRaises(PermissionError):
+                self.decide(entry)
+        self.assertEqual(path.read_bytes(), before)
+
+    def test_failed_persistence_does_not_report_a_decision(self):
+        entry = self.waiting()
+        before = errands._path(self.home).read_bytes()
+        with mock.patch.object(errands.os, "replace", side_effect=OSError("synthetic disk failure")):
+            with self.assertRaises(OSError):
+                self.decide(entry)
+        self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_expiration_never_overwrites_a_decision(self):
+        entry = self.waiting()
+        winner = self.decide(entry)
+        self.assertEqual(errands.expire_checkouts(self.home, now=NOW + errands.CHECKOUT_TTL + 1), [])
+        self.assertEqual(errands.get(self.home, entry["id"]), winner)
+
+    def test_resume_uses_the_persisted_checkout_message(self):
+        entry = self.waiting()
+        # Fresh wall-clock data, because resume validates the approval's live TTL.
+        import time
+        errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": time.time()})
+        decided = self.decide(entry, now=time.time())
+        with mock.patch.object(errands, "_goal_manager") as manager, mock.patch.object(errands, "launch", return_value=True) as launch:
+            self.assertTrue(errands.resume(self.home, entry["id"], "wrong caller message", checkout=decided["checkout"]))
+        launch.assert_called_once_with(self.home, entry["id"], errands.approved_message(decided["checkout"]))
+        self.assertEqual(errands.get(self.home, entry["id"])["checkout"], decided["checkout"])
+        manager.assert_called_once_with(decided["session_id"])
+
+    def test_delayed_resume_cannot_revive_a_replacement_or_stopped_errand(self):
+        import time
+        for change in ("replacement", "stopped", "expired"):
+            with self.subTest(change=change):
+                entry = self.waiting()
+                errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": time.time()})
+                decided = self.decide(entry, now=time.time())
+                if change == "replacement":
+                    errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"})
+                elif change == "stopped":
+                    errands.update(self.home, entry["id"], status="stopped")
+                else:
+                    decided["checkout"]["decided_at"] = time.time() - errands.APPROVAL_TTL - 1
+                    errands.update(self.home, entry["id"], checkout=decided["checkout"])
+                before = errands._path(self.home).read_bytes()
+                with mock.patch.object(errands, "_goal_manager") as manager, mock.patch.object(errands, "launch") as launch:
+                    self.assertFalse(errands.resume(self.home, entry["id"], "approval", checkout=decided["checkout"]))
+                    launch.assert_not_called()
+                    manager.assert_not_called()
+                self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+
+    def test_invalid_persisted_amount_cannot_be_approved(self):
+        for total in (None, "not an amount", "-1 EUR", True, float("nan")):
+            with self.subTest(total=total):
+                entry = self.waiting()
+                errands.update(self.home, entry["id"], checkout={**entry["checkout"], "total": total})
+                before = errands._path(self.home).read_bytes()
+                self.assertIsNone(self.decide(entry))
+                self.assertEqual(errands._path(self.home).read_bytes(), before)
+
+    def test_checkout_resume_starts_the_real_launcher_without_nested_store_lock(self):
+        import time
+        entry = self.waiting()
+        errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": time.time()})
+        decided = self.decide(entry, now=time.time())
+        completed = threading.Event()
+        messages = []
+        original_launch = errands.launch
+
+        class SyntheticEngine:
+            def __init__(engine, home, errand_id):
+                engine.home, engine.errand_id = home, errand_id
+
+            def run(engine, message):
+                errands.update(engine.home, engine.errand_id, summary="synthetic run")
+                messages.append(message)
+                completed.set()
+                return "working"
+
+        def launch(home, errand_id, message):
+            return original_launch(home, errand_id, message, engine_factory=SyntheticEngine)
+
+        with mock.patch.object(errands, "_goal_manager"), mock.patch.object(errands, "launch", side_effect=launch):
+            self.assertTrue(errands.resume(self.home, entry["id"], "wrong", checkout=decided["checkout"]))
+            self.assertTrue(completed.wait(timeout=3), "launcher/store lock deadlocked")
+        self.assertEqual(messages, [errands.approved_message(decided["checkout"])])
