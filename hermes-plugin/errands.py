@@ -539,6 +539,20 @@ def _record_started_checkout_run(home: Path, errand_id: str, run_id: str,
         _write(path, entries)
 
 
+def _consume_surviving_checkout_approval(home: Path, errand_id: str, run_id: str,
+                                        checkout: Dict[str, Any]) -> None:
+    """The surviving run accepted this approval; do not replay it into another run."""
+    with _locked(home) as path:
+        entries = _read(path, strict=True)
+        entry = next((e for e in entries if e.get("id") == errand_id), None)
+        if (entry is None or entry.get("status") != "working" or entry.get("run_id") != run_id
+                or (entry.get("checkout") or {}).get("id") != checkout.get("id")
+                or entry.get("resume_message") != approved_message(checkout)):
+            return
+        entry.update(resume_message=None, updated_at=time.time())
+        _write(path, entries)
+
+
 def approved_message(checkout: Dict[str, Any]) -> str:
     """How the errand goes on after «Permitir»: pay that total, with that card, and nothing else."""
     total = checkout.get("approved_total") or checkout.get("total") or ""
@@ -1240,8 +1254,10 @@ class Engine:
         entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
         if is_payment_consent(approval):
-            ok = approved_checkout(entry) is not None
-            self.gateway.approve(run_id, "once" if ok else "deny", request_id)
+            checkout = approved_checkout(entry)
+            accepted = self.gateway.approve(run_id, "once" if checkout else "deny", request_id)
+            if checkout and accepted:
+                _consume_surviving_checkout_approval(self.home, self.errand_id, run_id, checkout)
             return
         # Any other approval (a login the person wanted to be asked about, a repeat payment):
         # the person answers it from the errand.
@@ -1302,13 +1318,20 @@ class Engine:
                 still = ""
             if still in ("running", "waiting_for_approval", "queued"):
                 self._wait_run(entry["run_id"])
-                # Recovery must keep the exact checkout instructions consumed by launch.
-                if not text.startswith(APPROVED_PREFIX):
+                # Preserve unused instructions across recovery, but never replay an approval
+                # already accepted by the surviving run.
+                if (not text.startswith(APPROVED_PREFIX)
+                        or self._entry().get("resume_message") != text):
                     text = CONTINUATION
         while True:
             entry = self._entry()
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
+            # A surviving run may have persisted its paid receipt before recovery.
+            # Observe that terminal outcome before starting any replacement run.
+            if (entry.get("receipt") or {}).get("outcome") == "paid":
+                update(self.home, self.errand_id, status="done", resume_message=None)
+                return "done"
             if int(entry.get("runs") or 0) >= MAX_RUNS:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"

@@ -1151,6 +1151,105 @@ class AtomicCheckoutTests(Base):
                 self.assertEqual(gateway.started, [(entry["session_id"], errands.approved_message(decided["checkout"]))])
 
 
+    def test_surviving_payment_receipt_does_not_start_another_run(self):
+        entry = self.waiting()
+        self.decide(entry)
+        errands.update(self.home, entry["id"], run_id="run_old")
+        approval = {"request_id": "fixture-payment", "command": "Fill payment card on https://www.hsnstore.com"}
+        waiting = {"status": "waiting_for_approval", "approval": approval}
+        polls = [waiting, waiting, {"status": "completed", "output": "Fixture order paid"}]
+        gateway = FakeGateway([done()])
+        original_status = gateway.status
+
+        def status(run_id):
+            if run_id != "run_old":
+                return original_status(run_id)
+            state = polls.pop(0)
+            if state["status"] == "completed":
+                errands.record_receipt(self.home, entry["session_id"],
+                                       {"outcome": "paid", "order": "FIXTURE-ONLY", "total": "27,98 €"})
+            return state
+
+        gateway.status = status
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True) as browser:
+            self.assertEqual(engine.run(errands.get(self.home, entry["id"])["resume_message"]), "done")
+        self.assertEqual(gateway.approvals, [("run_old", "once", "fixture-payment")])
+        self.assertEqual(gateway.started, [], "paid surviving run must not replay its approval")
+        browser.assert_not_called()
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["status"], "done")
+        self.assertEqual(saved["receipt"]["order"], "FIXTURE-ONLY")
+        self.assertIsNone(saved["resume_message"])
+
+    def test_restart_with_paid_receipt_does_not_start_another_run(self):
+        entry = self.waiting()
+        self.decide(entry)
+        errands.record_receipt(self.home, entry["session_id"],
+                               {"outcome": "paid", "order": "FIXTURE-ONLY", "total": "27,98 €"})
+        errands.update(self.home, entry["id"], run_id="run_old")
+        gateway = FakeGateway([done()])
+        gateway.current = done()
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True) as browser:
+            self.assertEqual(engine.run(errands.get(self.home, entry["id"])["resume_message"]), "done")
+        self.assertEqual(gateway.started, [], "persisted paid receipt must stop recovery before another run")
+        browser.assert_not_called()
+        self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
+
+    def test_surviving_run_that_used_approval_only_gets_a_continuation(self):
+        entry = self.waiting()
+        self.decide(entry)
+        errands.update(self.home, entry["id"], run_id="run_old")
+        approval = {"request_id": "fixture-payment", "command": "Fill payment card on https://www.hsnstore.com"}
+        waiting = {"status": "waiting_for_approval", "approval": approval}
+        polls = [waiting, waiting, {"status": "completed", "output": "Fixture card filled, no receipt yet"}]
+        gateway = FakeGateway([done()])
+        original_status = gateway.status
+        gateway.status = lambda run_id: polls.pop(0) if run_id == "run_old" else original_status(run_id)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+        with mock.patch.object(errands, "prepare_browser", return_value=True):
+            self.assertEqual(engine.run(errands.get(self.home, entry["id"])["resume_message"]), "done")
+        self.assertEqual(gateway.approvals, [("run_old", "once", "fixture-payment")])
+        self.assertEqual(gateway.started, [(entry["session_id"], errands.CONTINUATION)])
+        self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
+
+    def test_failed_surviving_approval_keeps_queued_instructions(self):
+        entry = self.waiting()
+        decided = self.decide(entry)
+        errands.update(self.home, entry["id"], run_id="run_old")
+        gateway = FakeGateway([])
+        gateway.approve = mock.Mock(return_value=False)
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway)
+        engine._answer_approval("run_old", {"request_id": "fixture-payment",
+                                           "command": "Fill payment card on https://www.hsnstore.com"})
+        gateway.approve.assert_called_once_with("run_old", "once", "fixture-payment")
+        self.assertEqual(errands.get(self.home, entry["id"])["resume_message"],
+                         errands.approved_message(decided["checkout"]))
+
+    def test_surviving_approval_preserves_replacement_checkout_instructions(self):
+        entry = self.waiting()
+        self.decide(entry)
+        errands.update(self.home, entry["id"], run_id="run_old")
+        gateway = FakeGateway([])
+
+        def approve(*_):
+            errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"}, now=NOW + 2)
+            errands.update(self.home, entry["id"], resume_message="new fixture message")
+            return True
+
+        gateway.approve = approve
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway)
+        engine._answer_approval("run_old", {"request_id": "fixture-payment",
+                                           "command": "Fill payment card on https://www.hsnstore.com"})
+        saved = errands.get(self.home, entry["id"])
+        self.assertNotEqual(saved["checkout"]["id"], entry["checkout"]["id"])
+        self.assertEqual(saved["checkout"]["status"], "pending")
+        self.assertEqual(saved["resume_message"], "new fixture message")
+
     def test_second_restart_during_surviving_run_wait_keeps_approval_durable(self):
         entry = self.waiting()
         decided = self.decide(entry)
