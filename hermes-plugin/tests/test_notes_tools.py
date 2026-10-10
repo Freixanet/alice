@@ -230,7 +230,7 @@ class NotesToolsTests(unittest.TestCase):
                 + [t[0] for t in self.plugin.CALENDAR_TOOLS]
                 + [t[0] for t in self.plugin.WATCH_TOOLS]
                 + [t[0] for t in self.plugin.DOCUMENT_TOOLS]
-                + ["ask_person", "watchers", "review_tasks", "review_read"]
+                + ["ask_person", "watchers", "review_tasks", "review_read", "generateSandboxedUi"]
             ),
         )
 

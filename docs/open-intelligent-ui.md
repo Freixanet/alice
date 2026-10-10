@@ -1,0 +1,94 @@
+# OpenIntelligentUI in Alice
+
+This is a Hermes/iPhone adaptation of CopilotKit/OpenIntelligentUI, pinned source
+revision `f6e4388b26a64b9a0714943b08a1ce622b924eec`. It reuses the actual MIT-licensed
+shared theme, form and SVG styles and adapts the agent response playbook. It does
+not replace Hermes with the upstream React/FastAPI runtime or add Jev, API keys,
+a router-model call or a CDN dependency.
+
+## What people get
+
+Simple answers remain text. Exact comparisons use Markdown tables; existing native
+Alice cards remain available for supported tasks. Diagrams, calculators and other
+useful interactive answers use the `generateSandboxedUi` tool. Its description and
+the discoverable `openintelligentui` skill carry the choice/quality rules, without
+displacing any of Hermes' limited plugin prompt sections.
+
+The tool prepares a validated `alice-interactive` fence; the agent must include it
+once in its final answer. Prepared does not mean displayed. The fence passes through
+the same dashboard/gateway chat text paths and is stored in existing message archives,
+without a new persistence model. Invalid output stays visible as code; native/plain
+summaries provide accessible fallbacks. Only closed, complete artifacts execute.
+
+Title and summary precede the upstream ordered channels: initialHeight,
+placeholderMessages, css, html, jsFunctions, jsExpressions. In this adaptation
+partial artifacts do not execute; placeholders are visible during native loading.
+
+Each message is a separate snapshot. Filters, controls and calculations are local.
+`Websandbox.connection.remote.sendPrompt({text})` proposes a draft only. A native
+Review question button opens an editable sheet, and explicit Send checks connection,
+busy state and the originating chat, then uses the original reply profile. Cancelling
+sends nothing. Web content has no automatic model/tool/action bridge.
+
+Settings → Developer → Components → OpenIntelligentUI contains a local bill splitter
+and an illustrative plan comparison, drawn by the same production renderer. These
+examples have no Hermes connection. Purchases remain disabled.
+
+## Isolation and limitations
+
+The renderer uses a separate nonpersistent WKWebView and an iframe with only
+`allow-scripts` (no same-origin, forms, popups, downloads or top navigation).
+Generated data is JSON-escaped into a controlled main document, never interpolated
+as executable parent markup. The native handler ignores child-frame messages.
+CSP denies network, external scripts/styles/media/fonts, nested frames and objects;
+the navigation delegate denies external/custom/file URLs. Network APIs including
+WebRTC are disabled in the child. Resize and draft messages are bounded. No keys,
+cookies, native calendar, Vault, payments or Hermes credentials enter the document.
+
+No CDN importmap/Three.js/d3/chart.js is supplied. Agents must use local HTML, SVG,
+canvas and plain JavaScript. This is a deliberate mobile/offline adapter limitation,
+not full upstream web-runtime parity. iOS does not guarantee a hard CPU execution
+budget for arbitrary JS: generated loops can make an artifact unresponsive. Loading
+failure/timeout/process termination leaves the native summary readable; destroying
+the view removes its handler and stops loading. Do not treat rendering as proof that
+an agent's data, calculations or claims are correct.
+
+The companion web client has not gained this renderer. Plain SMS/iMessage channels
+replace the fence with its summary; other unsupported clients may show its source.
+The agent is instructed to use plain text on messaging channels.
+
+## Verification
+
+- `bash scripts/verify-open-intelligent-ui.sh`: production Swift parser/assembler,
+  isolated macOS WebKit, actual bundled calculations/reset/invalid inputs, opaque
+  parent/storage/cookie access, CSP network denial, WebRTC removal, script-closing
+  injection survival. No simulator, Hermes or model requests.
+- Plugin suite: `python -m unittest discover -s hermes-plugin/tests`, using a temporary
+  HERMES_HOME and the Hermes virtualenv. Exact result recorded at installation.
+- `node scripts/check-slash-parity.mjs`: shared command contracts.
+- Generic iOS device build, then pushed-source installation and device version read.
+
+Simulator unit/UI tests and physical screen/keyboard/Dynamic Type interaction require
+separate checks. Model-driven presentation choice is not established by fixtures.
+On iPhone, try “Hazme una calculadora interactiva para repartir una cuenta”; adjust
+values without sending a prompt, test zero people, reset, then review/cancel a query.
+A short factual question should still get a short text response.
+
+### Local run on 2026-10-09
+
+WebKit/Swift contract probe passed all opaque-parent, storage, cookie, network and
+WebRTC checks, plus both bundled controls and invalid-input/reset checks. Six new
+Python contract tests passed. Existing prompt-budget checks (2), registration checks
+(21), watcher checks (33) and text-channel checks (3) passed; slash parity is 52/52.
+
+The full isolated plugin run had 719 tests: 715 passed, 1 skipped, 1 failure and
+2 errors. The manifest failure was fixed by adding the new tool to its exact expected
+list (no original assertion removed or loosened), and the registration subset passed.
+The classifier fixture assumes the normal HERMES_HOME; it passed in that environment
+with mocked OAuth/transport. The remaining memory-review subprocess timeout was
+reproduced unchanged in baseline commit `f4d051a` (13 tests, 1 timeout). No memory or
+purchase assertion was changed. This is not a claim of a green complete suite.
+
+Three native fence-parser regression tests were added for complete, incomplete and
+invalid artifacts; they are pending simulator/CI execution. Local generic device
+compilation does not execute those tests or verify the physical interface.

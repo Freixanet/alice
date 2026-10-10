@@ -33,6 +33,15 @@ struct ComponentGallery: View {
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
                 }
 
+                NavigationLink {
+                    OpenIntelligentUIGallery()
+                } label: {
+                    Label("OpenIntelligentUI · Probar interfaces", systemImage: "chart.xyaxis.line")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
+                }
+
                 if let sandbox {
                     ForEach(GallerySection.allCases) { section in
                         Text(section.title(language))

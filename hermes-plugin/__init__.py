@@ -2558,6 +2558,14 @@ def register(ctx) -> None:
     ctx.register_system_prompt_section("alice.canal", channel_prompt)
     review_tools = _module("review_task_tools.py", "alice_review_task_tools")
     ctx.register_system_prompt_section("alice.tasks", lambda _=None: review_tools.PROMPT)
+    interactive_ui = _module("open_intelligent_ui.py", "alice_open_intelligent_ui")
+    ctx.register_tool(name="generateSandboxedUi", toolset="alice_tasks", schema=interactive_ui.SCHEMA,
+                      handler=_tool(interactive_ui.prepare), check_fn=_always,
+                      description=interactive_ui.SCHEMA["description"], emoji="📊")
+    if hasattr(ctx, "register_skill"):
+        ctx.register_skill("openintelligentui", (Path(__file__).parent / "skills/openintelligentui/SKILL.md").read_text(),
+                           description="Useful isolated interactive answers: diagrams, comparisons and calculators.")
+
     def review_task_handler(args=None, session_id="", **_):
         from hermes_constants import get_hermes_home
         _, profile = _root_and_sender(Path(get_hermes_home()))

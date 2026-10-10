@@ -32,6 +32,7 @@ provides_tools:
   - watchers
   - review_tasks
   - review_read
+  - generateSandboxedUi
 provides_hooks:
   - pre_tool_call
   - post_tool_call

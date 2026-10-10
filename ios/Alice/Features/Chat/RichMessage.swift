@@ -32,6 +32,7 @@ enum RichBlock: Equatable {
     /// ```alice-ui with a JSON object: a native piece of interface
     /// (`UIComponent`).
     case component(UIComponent)
+    case interactive(InteractiveArtifact)
     /// The past conversations the reply cites (`Receipts`), listed under it.
     case receipts([RichReceipt])
 }
@@ -385,17 +386,20 @@ enum RichMarkdown {
 
             if let fence = fence(trimmed) {
                 var body: [String] = []
+                var closed = false
                 index += 1
                 // An unclosed fence is a reply still being written: everything
                 // after it is code until the closing line arrives.
                 while index < lines.count {
                     let current = lines[index]
                     index += 1
-                    if current.trimmingCharacters(in: .whitespaces).hasPrefix(fence.marker) { break }
+                    if current.trimmingCharacters(in: .whitespaces).hasPrefix(fence.marker) { closed = true; break }
                     body.append(current)
                 }
                 let code = body.joined(separator: "\n")
-                if UIComponent.accepts(fence.language), let component = UIComponent(json: code) {
+                if fence.language == "alice-interactive", closed, let artifact = try? InteractiveArtifact(json: code) {
+                    blocks.append(.interactive(artifact))
+                } else if UIComponent.accepts(fence.language), let component = UIComponent(json: code) {
                     blocks.append(.component(component))
                 } else {
                     blocks.append(.code(language: fence.language, text: code))
@@ -1328,6 +1332,7 @@ struct RichMessageView: View {
     /// The words of the reply in a bubble (the experimental interface). Cards, buttons, media and
     /// code stay outside it, as their own surfaces.
     var bubbled = false
+    var interactiveReplyProfile: String? = nil
 
     @Environment(\.separatesEntries) private var separatesEntries
     @Environment(\.colorScheme) private var bubbleScheme
@@ -1465,6 +1470,9 @@ struct RichMessageView: View {
             AddEventCard(proposed: event, language: ChatLanguage.of(content))
         case let .changeEvent(change):
             ChangeEventCard(change: change, language: ChatLanguage.of(content))
+        case let .interactive(artifact):
+            InteractiveArtifactView(artifact: artifact, replyProfile: interactiveReplyProfile)
+                .id(artifact.title + artifact.html + artifact.jsFunctions + artifact.jsExpressions)
         case let .component(component):
             UIComponentView(component: component, language: ChatLanguage.of(content))
         case let .media(media):

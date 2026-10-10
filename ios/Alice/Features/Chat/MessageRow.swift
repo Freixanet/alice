@@ -108,7 +108,7 @@ struct MessageRow: View {
             }
         } else {
             RichMessageView(content: content, failed: message.error != nil, onTap: revealReplyExtras,
-                            bubbled: bubbled)
+                            bubbled: bubbled, interactiveReplyProfile: message.mentionProfile)
                 // A hold is the menu, so the words are not selected in place; Select opens them.
                 .environment(\.allowsRichTextSelection, false)
                 .contentShape(.contextMenuPreview, .rect(cornerRadius: 22))

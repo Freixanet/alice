@@ -1,0 +1,28 @@
+[
+  {
+    "initialHeight": 460,
+    "placeholderMessages": [
+      "Preparando controles locales",
+      "Dibujando la interfaz"
+    ],
+    "css": "section{display:grid;gap:12px} .actions{display:flex;gap:8px;flex-wrap:wrap} output{font-size:24px;font-weight:600}",
+    "title": "Repartir una cuenta",
+    "summary": "Ejemplo local en euros. Total y propina se reparten por igual; no incluye pagos ni guarda datos.",
+    "html": "<section><h2>Repartir una cuenta</h2><p>Ejemplo editable · importes en euros</p><label for=\"total\">Total (€)</label><input id=\"total\" type=\"number\" min=\"0\" max=\"1000000\" value=\"20\" oninput=\"calculateBill()\"><label for=\"tip\">Propina (%)</label><input id=\"tip\" type=\"number\" min=\"0\" max=\"100\" value=\"0\" oninput=\"calculateBill()\"><label for=\"people\">Personas</label><input id=\"people\" type=\"number\" min=\"1\" max=\"1000\" step=\"1\" value=\"2\" oninput=\"calculateBill()\"><output id=\"result\" aria-live=\"polite\"></output><p id=\"problem\" role=\"alert\"></p><p>Total × (1 + propina/100) ÷ personas</p><div class=\"actions\"><button onclick=\"resetBill()\">Restablecer</button><button onclick=\"askBill()\">Consultar este reparto</button></div></section>",
+    "jsFunctions": "function calculateBill(){\n const total=document.getElementById('total').valueAsNumber;\n const tip=document.getElementById('tip').valueAsNumber;\n const people=document.getElementById('people').valueAsNumber;\n const output=document.getElementById('result'),problem=document.getElementById('problem');\n if(![total,tip,people].every(Number.isFinite)||total<0||total>1000000||tip<0||tip>100||people<1||people>1000||!Number.isInteger(people)){output.textContent='';problem.textContent='Introduce un total válido, una propina de 0 a 100 y un número entero de personas mayor que cero.';return null;}\n const amount=total*(1+tip/100)/people;problem.textContent='';output.textContent=amount.toLocaleString('es-ES',{style:'currency',currency:'EUR'})+' por persona';return {total,tip,people,amount};\n}\nfunction resetBill(){document.getElementById('total').value=20;document.getElementById('tip').value=0;document.getElementById('people').value=2;calculateBill();}\nasync function askBill(){const values=calculateBill();if(!values)return;try{await Websandbox.connection.remote.sendPrompt({text:'Explícame este reparto de cuenta en euros: '+JSON.stringify(values)});}catch(e){document.getElementById('problem').textContent='No se pudo preparar la consulta.';}}\n",
+    "jsExpressions": "calculateBill();"
+  },
+  {
+    "initialHeight": 460,
+    "placeholderMessages": [
+      "Preparando controles locales",
+      "Dibujando la interfaz"
+    ],
+    "css": "section{display:grid;gap:12px} .actions{display:flex;gap:8px;flex-wrap:wrap} output{font-size:24px;font-weight:600}",
+    "title": "Comparar planes de ejemplo",
+    "summary": "Datos ilustrativos: Básico 10 €/mes y Plus 20 €/mes. Cambia los meses para ver el coste total, sin consultar al modelo.",
+    "html": "<section><h2>Comparar costes</h2><p>Planes ficticios, no precios actuales.</p><label for=\"months\">Meses: <span id=\"monthsLabel\">6</span></label><input id=\"months\" type=\"range\" min=\"1\" max=\"12\" value=\"6\" oninput=\"updateComparison()\"><svg viewBox=\"0 0 320 150\" role=\"img\" aria-labelledby=\"chartTitle\"><title id=\"chartTitle\">Costes de planes de ejemplo</title><rect id=\"basicBar\" x=\"80\" y=\"20\" height=\"35\" class=\"c-blue\"/><rect id=\"plusBar\" x=\"80\" y=\"80\" height=\"35\" class=\"c-green\"/><text x=\"0\" y=\"43\">Básico</text><text x=\"0\" y=\"103\">Plus</text></svg><p id=\"comparison\" aria-live=\"polite\"></p><button onclick=\"resetComparison()\">Restablecer</button></section>",
+    "jsFunctions": "function updateComparison(){const months=document.getElementById('months').valueAsNumber;if(!Number.isFinite(months)||months<1||months>12)return;document.getElementById('monthsLabel').textContent=months;document.getElementById('basicBar').setAttribute('width',months*8);document.getElementById('plusBar').setAttribute('width',months*16);document.getElementById('comparison').textContent='Básico: '+months*10+' €. Plus: '+months*20+' €. Diferencia: '+months*10+' €. Datos ilustrativos.';}\nfunction resetComparison(){document.getElementById('months').value=6;updateComparison();}",
+    "jsExpressions": "updateComparison();"
+  }
+]

@@ -50,6 +50,13 @@ def plain(text: str) -> str:
         links.append(f"{match.group(1).strip()}:\n{match.group(2)}")
         return f"\x00{len(links) - 1}\x00"
 
+    if "```alice-interactive" in text:
+        import importlib.util
+        from pathlib import Path
+        spec = importlib.util.spec_from_file_location("alice_interactive_plain", Path(__file__).with_name("open_intelligent_ui.py"))
+        interactive = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(interactive)
+        text = interactive.plain_fallback(text)
     out = _LINK.sub(keep, text)
     out = _BOLD.sub(r"\2", out)
     out = _ITALIC.sub(r"\1", out)
