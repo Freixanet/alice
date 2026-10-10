@@ -46,6 +46,23 @@
   --c-primary: var(--color-text-info);
 }
 
+/* Alice owns editable-field contrast, even when generated CSS fixes a light
+   background. Preserve widget layout and special controls (range/check/radio). */
+#content input:not([type]),
+#content input:is([type="text"], [type="number"], [type="email"], [type="search"], [type="url"], [type="tel"], [type="date"], [type="time"], [type="datetime-local"]),
+#content textarea,
+#content select {
+  background-color: var(--color-background-primary) !important;
+  color: var(--color-text-primary) !important;
+  -webkit-text-fill-color: var(--color-text-primary) !important;
+  caret-color: var(--color-text-primary) !important;
+  border-color: var(--color-border-secondary) !important;
+}
+#content input::placeholder, #content textarea::placeholder {
+  color: var(--color-text-secondary) !important;
+  -webkit-text-fill-color: var(--color-text-secondary) !important;
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --color-background-primary: #1a1a18;

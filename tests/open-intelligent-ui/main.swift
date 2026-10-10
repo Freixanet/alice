@@ -12,7 +12,7 @@ final class Probe: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         guard m.frameInfo.isMainFrame, let data=m.body as? [String:Any], data["type"] as? String == "draft", let value=data["value"] as? String,
               let bytes=value.data(using:.utf8), let results=try? JSONSerialization.jsonObject(with:bytes) as? [String:Bool] else{return}
         print("WK sandbox:", results)
-        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran","darkTheme","liveLightTheme","controlsPreserved"].allSatisfy {results[$0] == true}
+        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran","darkTheme","liveLightTheme","controlsPreserved","darkInputContrast","lightInputContrast"].allSatisfy {results[$0] == true}
         finished=true
     }
     func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy)->Void) {
@@ -29,13 +29,15 @@ probe.web=WKWebView(frame:NSRect(x:0,y:0,width:390,height:500),configuration:con
 probe.web.navigationDelegate=probe
 var payload:[String:Any]=[
  "title":"Probe", "summary":"Sandbox contract check", "initialHeight":300,
- "placeholderMessages":["One","Two"], "css":"", "html":"<p id='sample'>Sandbox</p>",
+ "placeholderMessages":["One","Two"], "css":"input[type='number'] {background:#fff;color:#eee;-webkit-text-fill-color:#eee;}", "html":"<p id='sample'>Sandbox</p>",
  "jsFunctions":"""
  async function probe() {
   const results={ran:true};
   const themeCheck=document.createElement('div');themeCheck.style.cssText='color:var(--c-foreground,#171717);background:var(--c-background,#fff)';document.body.append(themeCheck);
   results.darkTheme=getComputedStyle(themeCheck).color==='rgb(232, 230, 222)' && getComputedStyle(themeCheck).backgroundColor==='rgb(26, 26, 24)' && document.documentElement.style.colorScheme==='dark';
   const before=document.getElementById('people').value;
+  const field=document.getElementById('people');
+  results.darkInputContrast=getComputedStyle(field).backgroundColor==='rgb(26, 26, 24)' && getComputedStyle(field).color==='rgb(232, 230, 222)' && getComputedStyle(field).webkitTextFillColor==='rgb(232, 230, 222)';
   try {parent.document.body.textContent='escape';results.parentBlocked=false;}catch(e){results.parentBlocked=true;}
   try {localStorage.setItem('x','y');results.storageBlocked=false;}catch(e){results.storageBlocked=true;}
   try {document.cookie='test=1';results.cookieBlocked=document.cookie==='';}catch(e){results.cookieBlocked=true;}
@@ -45,6 +47,7 @@ var payload:[String:Any]=[
   await new Promise(resolve=>setTimeout(resolve,300));
   results.liveLightTheme=getComputedStyle(themeCheck).color==='rgb(26, 26, 26)' && getComputedStyle(themeCheck).backgroundColor==='rgb(255, 255, 255)' && document.documentElement.style.colorScheme==='light';
   results.controlsPreserved=document.getElementById('people').value===before;
+  results.lightInputContrast=getComputedStyle(field).backgroundColor==='rgb(255, 255, 255)' && getComputedStyle(field).color==='rgb(26, 26, 26)' && getComputedStyle(field).webkitTextFillColor==='rgb(26, 26, 26)';
   await Websandbox.connection.remote.sendPrompt({text:JSON.stringify(results)});
  }
  """, "jsExpressions":"probe();"
