@@ -14,6 +14,14 @@ struct InteractiveArtifact: Codable, Equatable, Sendable {
 
     static let fields: Set<String> = ["title", "summary", "initialHeight", "placeholderMessages", "css", "html", "jsFunctions", "jsExpressions"]
 
+    /// Some model replies put the closing fence immediately after the JSON.
+    /// A delimiter alone is insufficient: complete, validated JSON is required.
+    static func fromInlineClosedChatJSON(_ text: String, marker: String) throws -> Self {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !marker.isEmpty, trimmed.hasSuffix(marker) else { throw CocoaError(.coderInvalidValue) }
+        return try fromChatJSON(String(trimmed.dropLast(marker.count)))
+    }
+
     /// Wire compatibility for two harmless model formatting variations. Keep
     /// executable content, all field limits and the strict contract validator intact.
     static func fromChatJSON(_ json: String) throws -> Self {

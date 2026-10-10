@@ -117,6 +117,10 @@ are presentation-only variations; other unknown fields/types, missing fields,
 invalid values, forbidden markup and size limits remain rejected. The strict tool
 validator is unchanged. Compatibility is tested in the portable Swift probe and
 covered by an additional native fence-parser test (pending simulator/CI).
+The chat reader also recognizes a closing fence immediately after JSON, but only
+after the full artifact validates; incomplete JSON, missing fields and embedded
+fence delimiters remain inert. Portable Swift checks cover this boundary and a
+native whole-message parser regression is defined (pending simulator/CI).
 
 ### Task approval regression
 

@@ -18,6 +18,17 @@ final class InteractiveArtifactTests: XCTestCase {
         XCTAssertEqual(original, json)
     }
 
+    func testInlineClosingFenceRendersOnlyCompleteValidatedJSON() {
+        let blocks = RichMarkdown.blocks("```alice-interactive\n\(json)```")
+        XCTAssertEqual(blocks.count, 1)
+        guard case .interactive(let artifact) = blocks[0] else { return XCTFail("Complete inline-closed JSON must render") }
+        XCTAssertEqual(artifact.title, "Cuenta")
+        let incomplete = "{\"title\":\"Cuenta\"}```"
+        let partial = RichMarkdown.blocks("```alice-interactive\n\(incomplete)")
+        guard case .code(_, let original) = partial[0] else { return XCTFail("Incomplete contract must stay inert") }
+        XCTAssertEqual(original, incomplete)
+    }
+
     func testKnownChatMetadataVariationStillRenders() {
         let variant = json.replacingOccurrences(of: "{\"title\"", with: "{\"type\":\"alice-interactive\",\"title\"")
             .replacingOccurrences(of: "[\"Uno\",\"Dos\"]", with: "[\"Uno\"]")

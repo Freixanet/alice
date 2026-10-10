@@ -94,6 +94,13 @@ for (key,value) in [("type","other" as Any),("unexpected",true),("html","<script
     do {_ = try InteractiveArtifact.fromChatJSON(String(decoding:JSONSerialization.data(withJSONObject:invalid),as:UTF8.self));fatalError("Unsafe chat variant accepted: \(key)")}catch{}
 }
 print("Chat compatibility: exact type/single loading message accepted; unsafe variants rejected")
+let completeJSON = String(decoding:try JSONSerialization.data(withJSONObject:payload),as:UTF8.self)
+let inlineClosed = try InteractiveArtifact.fromInlineClosedChatJSON(completeJSON + "```", marker:"```")
+assert(inlineClosed.html == payload["html"] as? String)
+for invalid in [completeJSON, "{\"title\":\"Partial\"}```", "{\"title\":\"Partial```", completeJSON.replacingOccurrences(of:"verifyControls();probe();",with:"```") + "```"] {
+    do {_ = try InteractiveArtifact.fromInlineClosedChatJSON(invalid,marker:"```");fatalError("Unsafe inline fence accepted")}catch{}
+}
+print("Inline closing fence: complete payload accepted; partial/invalid/fence-injection rejected")
 let artifact=try InteractiveArtifact(json:String(decoding:JSONSerialization.data(withJSONObject:payload),as:UTF8.self))
 let document=try InteractiveDocument.make(artifact,resourceRoot:URL(fileURLWithPath:CommandLine.arguments[1]),darkMode:true)
 try document.write(toFile:"/private/tmp/alice-openui-probe.html",atomically:true,encoding:.utf8)

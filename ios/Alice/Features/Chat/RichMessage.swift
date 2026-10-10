@@ -394,6 +394,13 @@ enum RichMarkdown {
                     let current = lines[index]
                     index += 1
                     if current.trimmingCharacters(in: .whitespaces).hasPrefix(fence.marker) { closed = true; break }
+                    if fence.language == "alice-interactive",
+                       current.trimmingCharacters(in: .whitespaces).hasSuffix(fence.marker),
+                       (try? InteractiveArtifact.fromInlineClosedChatJSON((body + [current]).joined(separator: "\n"), marker: fence.marker)) != nil {
+                        body.append(String(current.trimmingCharacters(in: .whitespaces).dropLast(fence.marker.count)))
+                        closed = true
+                        break
+                    }
                     body.append(current)
                 }
                 let code = body.joined(separator: "\n")
