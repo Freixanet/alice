@@ -14,6 +14,23 @@ struct InteractiveArtifact: Codable, Equatable, Sendable {
 
     static let fields: Set<String> = ["title", "summary", "initialHeight", "placeholderMessages", "css", "html", "jsFunctions", "jsExpressions"]
 
+    /// Wire compatibility for two harmless model formatting variations. Keep
+    /// executable content, all field limits and the strict contract validator intact.
+    static func fromChatJSON(_ json: String) throws -> Self {
+        guard json.utf8.count <= 700_000, let data = json.data(using: .utf8),
+              var object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { throw CocoaError(.coderInvalidValue) }
+        if let type = object["type"] {
+            guard type as? String == "alice-interactive" else { throw CocoaError(.coderInvalidValue) }
+            object.removeValue(forKey: "type")
+        }
+        if let messages = object["placeholderMessages"] as? [String], messages.count == 1 {
+            // Loading copy is presentation metadata, not an execution capability.
+            object["placeholderMessages"] = [messages[0], messages[0]]
+        }
+        return try Self(json: String(decoding: JSONSerialization.data(withJSONObject: object), as: UTF8.self))
+    }
+
     init(json: String) throws {
         guard json.utf8.count <= 700_000,
               let data = json.data(using: .utf8),

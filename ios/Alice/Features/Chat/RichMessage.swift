@@ -397,7 +397,7 @@ enum RichMarkdown {
                     body.append(current)
                 }
                 let code = body.joined(separator: "\n")
-                if fence.language == "alice-interactive", closed, let artifact = try? InteractiveArtifact(json: code) {
+                if fence.language == "alice-interactive", closed, let artifact = try? InteractiveArtifact.fromChatJSON(code) {
                     blocks.append(.interactive(artifact))
                 } else if UIComponent.accepts(fence.language), let component = UIComponent(json: code) {
                     blocks.append(.component(component))

@@ -80,6 +80,17 @@ for (key,value) in [("initialHeight",true as Any),("initialHeight",901),("html",
     do {_ = try InteractiveArtifact(json:String(decoding:JSONSerialization.data(withJSONObject:invalid),as:UTF8.self));fatalError("Invalid field accepted: \(key)")}catch{}
 }
 print("Swift contract: demos and missing/invalid-field rejection passed")
+var chatVariant = payload
+chatVariant["type"] = "alice-interactive"
+chatVariant["placeholderMessages"] = ["Preparando presupuesto"]
+let compatible = try InteractiveArtifact.fromChatJSON(String(decoding: JSONSerialization.data(withJSONObject:chatVariant),as:UTF8.self))
+assert(compatible.html == payload["html"] as? String && compatible.jsFunctions == payload["jsFunctions"] as? String)
+assert(compatible.placeholderMessages.count == 2)
+for (key,value) in [("type","other" as Any),("unexpected",true),("html","<script>send()</script>"),("placeholderMessages",[""]),("placeholderMessages",[]),("initialHeight",true),("css",String(repeating:"x",count:20001))] {
+    var invalid=chatVariant;invalid[key]=value
+    do {_ = try InteractiveArtifact.fromChatJSON(String(decoding:JSONSerialization.data(withJSONObject:invalid),as:UTF8.self));fatalError("Unsafe chat variant accepted: \(key)")}catch{}
+}
+print("Chat compatibility: exact type/single loading message accepted; unsafe variants rejected")
 let artifact=try InteractiveArtifact(json:String(decoding:JSONSerialization.data(withJSONObject:payload),as:UTF8.self))
 let document=try InteractiveDocument.make(artifact,resourceRoot:URL(fileURLWithPath:CommandLine.arguments[1]),darkMode:true)
 try document.write(toFile:"/private/tmp/alice-openui-probe.html",atomically:true,encoding:.utf8)

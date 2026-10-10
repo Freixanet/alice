@@ -18,6 +18,16 @@ final class InteractiveArtifactTests: XCTestCase {
         XCTAssertEqual(original, json)
     }
 
+    func testKnownChatMetadataVariationStillRenders() {
+        let variant = json.replacingOccurrences(of: "{\"title\"", with: "{\"type\":\"alice-interactive\",\"title\"")
+            .replacingOccurrences(of: "[\"Uno\",\"Dos\"]", with: "[\"Uno\"]")
+        let blocks = RichMarkdown.blocks("```alice-interactive\n\(variant)\n```")
+        XCTAssertEqual(blocks.count, 1)
+        guard case .interactive(let artifact) = blocks[0] else { return XCTFail("Known loading/type metadata must render") }
+        XCTAssertEqual(artifact.html, "<p>10 €</p>")
+        XCTAssertEqual(artifact.placeholderMessages, ["Uno", "Uno"])
+    }
+
     func testInvalidArtifactKeepsItsOriginalSource() {
         let invalid = json.replacingOccurrences(of: "<p>10 €</p>", with: "<iframe src='file:///private'>")
         let blocks = RichMarkdown.blocks("```alice-interactive\n\(invalid)\n```")

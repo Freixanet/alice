@@ -100,6 +100,13 @@ Three native fence-parser regression tests were added for complete, incomplete a
 invalid artifacts; they are pending simulator/CI execution. Local generic device
 compilation does not execute those tests or verify the physical interface.
 
+Chat decoding also accepts an exact optional `type: alice-interactive` discriminator
+and expands one nonempty loading string to the strict two-string contract. These
+are presentation-only variations; other unknown fields/types, missing fields,
+invalid values, forbidden markup and size limits remain rejected. The strict tool
+validator is unchanged. Compatibility is tested in the portable Swift probe and
+covered by an additional native fence-parser test (pending simulator/CI).
+
 ### Task approval regression
 
 Reproduced the guard incorrectly requiring review for `generateSandboxedUi`, then

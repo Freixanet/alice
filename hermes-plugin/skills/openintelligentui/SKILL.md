@@ -11,6 +11,11 @@ Fast path for a self-contained local calculator/diagram: write one final alice-i
 
 Theme follows Alice, not the device's browser default. Use --color-text-primary, --color-text-secondary, --color-background-primary, --color-background-secondary and --color-border-tertiary. Never invent theme variable names or hardcode white surfaces/black text. Keep code concise; reuse the host's form styles instead of writing a full stylesheet for simple controls.
 
+Final-answer shape (replace the example with the actual working UI). The fence already identifies the type: do not add a type field. Include two loading strings. Before replying check JSON syntax, all eight fields, working controls and that no forbidden markup is included:
+```alice-interactive
+{"title":"Example","summary":"Local example","initialHeight":300,"placeholderMessages":["Preparing controls","Preparing results"],"css":"","html":"<p>Example</p>","jsFunctions":"","jsExpressions":""}
+```
+
 Preparing and displaying an artifact requires no Task approval. Do not create a review Task or request acceptance merely to show a calculator or diagram. Review-and-send applies only to a follow-up question proposed by a control, not to local rendering or calculations.
 
 The host includes OpenIntelligentUI theme tokens, form styles and SVG .c-* classes. Use these tokens and only widget-specific css. html is body markup without script/style/iframe/form/meta/object/embed/base. Named behavior goes in jsFunctions; synchronous initialization in jsExpressions. Classic scripts: no top-level await. In Alice there is NO CDN import map or network: use HTML, SVG, canvas and plain JS; do not import Three/d3/chart.js, fetch data, access parent DOM, cookies/storage or invent backend APIs.

@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import re
 from pathlib import Path
 import unittest
 from unittest.mock import patch
@@ -17,6 +18,12 @@ def sample():
 
 
 class InteractiveTests(unittest.TestCase):
+    def test_agent_skill_example_obeys_the_strict_artifact_contract(self):
+        skill = (ROOT/'skills/openintelligentui/SKILL.md').read_text()
+        examples = re.findall(r'```alice-interactive\n(.*?)\n```', skill, re.S)
+        self.assertEqual(len(examples), 1)
+        self.assertEqual(ui.prepare(json.loads(examples[0]))['status'], 'prepared')
+
     def test_artifact_preparation_bypasses_action_review_but_external_tools_do_not(self):
         guard_spec = importlib.util.spec_from_file_location('tested_open_ui_guard', ROOT / 'review_task_guard.py')
         guard = importlib.util.module_from_spec(guard_spec)
