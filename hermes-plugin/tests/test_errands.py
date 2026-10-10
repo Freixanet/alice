@@ -1117,3 +1117,35 @@ class AtomicCheckoutTests(Base):
         with mock.patch.object(errands, "_goal_manager"), mock.patch.object(errands, "launch", return_value=False):
             self.assertFalse(errands.resume(self.home, entry["id"], "approval", checkout=decided["checkout"]))
         self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
+
+
+    def test_restart_preserves_approval_after_waiting_for_a_surviving_run(self):
+        for surviving_status in ("running", "waiting_for_approval", "queued"):
+            with self.subTest(surviving_status=surviving_status):
+                entry = self.waiting()
+                decided = self.decide(entry)
+                errands.update(self.home, entry["id"], run_id="run_old")
+                gateway = FakeGateway([done()])
+                original_status = gateway.status
+                polls = [{"status": surviving_status}, {"status": "completed", "output": ""}]
+                gateway.status = lambda run_id: polls.pop(0) if run_id == "run_old" and polls else original_status(run_id)
+                completed = threading.Event()
+
+                class SyntheticEngine(errands.Engine):
+                    def __init__(engine, home, errand_id):
+                        super().__init__(home, errand_id, gateway=gateway,
+                                         judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+
+                    def run(engine, message=None):
+                        try:
+                            return super().run(message)
+                        finally:
+                            completed.set()
+
+                original_launch = errands.launch
+                with mock.patch.object(errands, "prepare_browser", return_value=True), \
+                        mock.patch.object(errands, "release_context"), \
+                        mock.patch.object(errands, "launch", side_effect=lambda h, i, m: original_launch(h, i, m, engine_factory=SyntheticEngine)):
+                    self.assertEqual(errands.ensure_running(self.home), [entry["id"]])
+                    self.assertTrue(completed.wait(timeout=3), "recovery did not finish")
+                self.assertEqual(gateway.started, [(entry["session_id"], errands.approved_message(decided["checkout"]))])

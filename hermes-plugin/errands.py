@@ -1287,7 +1287,9 @@ class Engine:
                 still = ""
             if still in ("running", "waiting_for_approval", "queued"):
                 self._wait_run(entry["run_id"])
-                text = CONTINUATION
+                # Recovery must keep the exact checkout instructions consumed by launch.
+                if not text.startswith(APPROVED_PREFIX):
+                    text = CONTINUATION
         while True:
             entry = self._entry()
             if entry.get("status") != "working":
