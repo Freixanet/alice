@@ -38,6 +38,12 @@
   --t: var(--color-text-tertiary);
   --bg2: var(--color-background-secondary);
   --b: var(--color-border-tertiary);
+  /* Compatibility aliases for generated artifacts; values follow Alice's theme. */
+  --c-foreground: var(--color-text-primary);
+  --c-background: var(--color-background-primary);
+  --c-border: var(--color-border-tertiary);
+  --c-muted: var(--color-background-secondary);
+  --c-primary: var(--color-text-info);
 }
 
 @media (prefers-color-scheme: dark) {

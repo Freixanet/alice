@@ -1,5 +1,5 @@
 // Alice host adapter for OpenIntelligentUI. Runs ONLY in the controlled main frame.
-function mountInteractiveArtifact(artifact, theme, token) {
+function mountInteractiveArtifact(artifact, theme, token, darkMode) {
   const frame = document.getElementById('widget');
   const safeJSON = value => JSON.stringify(value).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
   const innerBridge = `
@@ -15,7 +15,16 @@ function mountInteractiveArtifact(artifact, theme, token) {
       try {Object.defineProperty(window,name,{value:undefined,writable:false,configurable:false});} catch(_) {}
     }
     const content = document.getElementById('content');
-    const css = document.createElement('style'); css.textContent = ${safeJSON(theme)} + '\\n' + artifact.css; document.head.append(css);
+    const baseTheme = ${safeJSON(theme)};
+    const css = document.createElement('style'); document.head.append(css);
+    function setTheme(dark) {
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+      css.textContent = baseTheme.replaceAll('@media (prefers-color-scheme: dark)', dark ? '@media all' : '@media not all') + '\\n' + artifact.css;
+    }
+    setTheme(${darkMode === true});
+    window.addEventListener('message', event => {
+      if (event.source === parent && event.data?.token === token && event.data.type === 'theme' && typeof event.data.value === 'boolean') setTheme(event.data.value);
+    });
     content.innerHTML = artifact.html;
     function resize(){report('height', Math.max(180, Math.min(900, document.documentElement.scrollHeight)));}
     let resizePending = false;
@@ -46,4 +55,7 @@ function mountInteractiveArtifact(artifact, theme, token) {
     window.webkit?.messageHandlers?.interactiveUI?.postMessage({type,value});
   });
   frame.srcdoc='<!DOCTYPE html>'+doc.documentElement.outerHTML;
+  window.setInteractiveColorScheme = dark => {
+    if (typeof dark === 'boolean') frame.contentWindow.postMessage({token,type:'theme',value:dark}, '*');
+  };
 }

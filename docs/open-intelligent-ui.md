@@ -14,8 +14,10 @@ useful interactive answers use the `generateSandboxedUi` tool. Its description a
 the discoverable `openintelligentui` skill carry the choice/quality rules, without
 displacing any of Hermes' limited plugin prompt sections.
 
-The tool prepares a validated `alice-interactive` fence; the agent must include it
-once in its final answer. Prepared does not mean displayed. The fence passes through
+For self-contained local interfaces the agent can emit one `alice-interactive` fence
+directly; the native parser validates it before rendering. Optional server-side
+validation uses the tool, whose returned fence must appear once in the final answer.
+Prepared does not mean displayed. The fence passes through
 the same dashboard/gateway chat text paths and is stored in existing message archives,
 without a new persistence model. Invalid output stays visible as code; native/plain
 summaries provide accessible fallbacks. Only closed, complete artifacts execute.
@@ -28,6 +30,8 @@ placeholderMessages, css, html, jsFunctions, jsExpressions. In this adaptation
 partial artifacts do not execute; placeholders are visible during native loading.
 
 Each message is a separate snapshot. Filters, controls and calculations are local.
+The host explicitly applies Alice's light/dark theme, updates it without reloading
+controls and maps common `--c-*` aliases to upstream semantic theme tokens.
 `Websandbox.connection.remote.sendPrompt({text})` proposes a draft only. A native
 Review question button opens an editable sheet, and explicit Send checks connection,
 busy state and the originating chat, then uses the original reply profile. Cancelling
@@ -104,3 +108,15 @@ Review Tasks tests pass, including the real hook with tracked/untracked sessions
 draft-only mode, no created approvals, continued blocking of external actions and
 unchanged single-use approval checks. No existing assertion was weakened. No model
 request or iOS change was needed; live agent response and visual checks remain pending.
+
+### Theme and generation latency regression
+
+Read-only timing inspection of the reported calculator found 47.9 seconds from user
+message to final answer, with skill loading, repeated tool discovery, assembly and
+regeneration of the artifact. Its CSS used undefined `--c-*` variables with light-only
+fallbacks. The skill now documents direct final artifacts for local-only interfaces;
+this avoids the optional assembly/discovery round trips when the agent follows it.
+Actual future generation time remains model-dependent and has not been benchmarked.
+The isolated WebKit probe passes explicit dark colors, live light-theme change and
+unchanged control values, plus every existing sandbox check. Eight Python artifact
+and two unchanged prompt-budget tests pass. No model request was made for verification.

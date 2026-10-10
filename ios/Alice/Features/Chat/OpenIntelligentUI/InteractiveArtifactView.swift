@@ -72,6 +72,7 @@ struct InteractiveArtifactView: View {
 }
 
 struct InteractiveWebSurface: UIViewRepresentable {
+    @Environment(\.colorScheme) private var colorScheme
     let artifact: InteractiveArtifact
     var receive: @MainActor (String, Any) -> Void
 
@@ -94,9 +95,18 @@ struct InteractiveWebSurface: UIViewRepresentable {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.receive = receive
-        guard context.coordinator.artifact != artifact else { return }
+        let dark = colorScheme == .dark
+        view.overrideUserInterfaceStyle = dark ? .dark : .light
+        if context.coordinator.artifact == artifact {
+            if context.coordinator.darkMode != dark {
+                context.coordinator.darkMode = dark
+                view.evaluateJavaScript("window.setInteractiveColorScheme?.(\(dark));", completionHandler: nil)
+            }
+            return
+        }
         context.coordinator.artifact = artifact
-        do { view.loadHTMLString(try InteractiveDocument.make(artifact), baseURL: nil) }
+        context.coordinator.darkMode = dark
+        do { view.loadHTMLString(try InteractiveDocument.make(artifact, darkMode: dark), baseURL: nil) }
         catch { receive("error", true) }
     }
 
@@ -108,12 +118,16 @@ struct InteractiveWebSurface: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var artifact: InteractiveArtifact?
+        var darkMode = false
         var receive: @MainActor (String, Any) -> Void
         init(receive: @escaping @MainActor (String, Any) -> Void) { self.receive = receive }
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.frameInfo.isMainFrame, let data = message.body as? [String: Any],
                   let type = data["type"] as? String, let value = data["value"] else { return }
+            if type == "ready" {
+                message.webView?.evaluateJavaScript("window.setInteractiveColorScheme?.(\(darkMode));", completionHandler: nil)
+            }
             receive(type, value)
         }
 

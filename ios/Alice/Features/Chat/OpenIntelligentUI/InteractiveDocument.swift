@@ -2,7 +2,7 @@ import Foundation
 
 /// Controlled main document, opaque iframe. Generated strings are JSON-escaped; only the iframe receives markup.
 enum InteractiveDocument {
-    static func make(_ artifact: InteractiveArtifact, resourceRoot: URL? = nil) throws -> String {
+    static func make(_ artifact: InteractiveArtifact, resourceRoot: URL? = nil, darkMode: Bool = false) throws -> String {
         func resource(_ name: String, _ ext: String) throws -> String {
             let url = resourceRoot?.appendingPathComponent(name + "." + ext)
                 ?? Bundle.main.url(forResource: name, withExtension: ext)
@@ -25,7 +25,7 @@ enum InteractiveDocument {
         <style nonce="\(nonce)">html,body{margin:0;background:transparent}iframe{border:0;width:100%;display:block}</style></head>
         <body><iframe id="widget" title="Interfaz interactiva" sandbox="allow-scripts" referrerpolicy="no-referrer"></iframe>
         <script nonce="\(nonce)">\(host)
-        mountInteractiveArtifact(\(try literal(artifact)), \(try literal(theme)), \(try literal(UUID().uuidString)));
+        mountInteractiveArtifact(\(try literal(artifact)), \(try literal(theme)), \(try literal(UUID().uuidString)), \(darkMode));
         </script></body></html>
         """
     }

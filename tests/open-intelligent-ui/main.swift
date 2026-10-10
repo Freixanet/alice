@@ -6,10 +6,13 @@ final class Probe: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var finished = false
     var failed = false
     func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) {
+        if let data=m.body as? [String:Any], data["type"] as? String == "ready", m.frameInfo.isMainFrame {
+            web.evaluateJavaScript("window.setInteractiveColorScheme(false)", completionHandler:nil)
+        }
         guard m.frameInfo.isMainFrame, let data=m.body as? [String:Any], data["type"] as? String == "draft", let value=data["value"] as? String,
               let bytes=value.data(using:.utf8), let results=try? JSONSerialization.jsonObject(with:bytes) as? [String:Bool] else{return}
         print("WK sandbox:", results)
-        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran"].allSatisfy {results[$0] == true}
+        failed = !["parentBlocked","storageBlocked","cookieBlocked","networkBlocked","rtcBlocked","ran","darkTheme","liveLightTheme","controlsPreserved"].allSatisfy {results[$0] == true}
         finished=true
     }
     func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy)->Void) {
@@ -30,12 +33,18 @@ var payload:[String:Any]=[
  "jsFunctions":"""
  async function probe() {
   const results={ran:true};
+  const themeCheck=document.createElement('div');themeCheck.style.cssText='color:var(--c-foreground,#171717);background:var(--c-background,#fff)';document.body.append(themeCheck);
+  results.darkTheme=getComputedStyle(themeCheck).color==='rgb(232, 230, 222)' && getComputedStyle(themeCheck).backgroundColor==='rgb(26, 26, 24)' && document.documentElement.style.colorScheme==='dark';
+  const before=document.getElementById('people').value;
   try {parent.document.body.textContent='escape';results.parentBlocked=false;}catch(e){results.parentBlocked=true;}
   try {localStorage.setItem('x','y');results.storageBlocked=false;}catch(e){results.storageBlocked=true;}
   try {document.cookie='test=1';results.cookieBlocked=document.cookie==='';}catch(e){results.cookieBlocked=true;}
   results.rtcBlocked=typeof RTCPeerConnection==='undefined';
   try {await fetch('https://example.com/should-never-be-requested');results.networkBlocked=false;}catch(e){results.networkBlocked=true;}
   const attack="</script><script>parent.document.body.textContent='escaped'</script>";
+  await new Promise(resolve=>setTimeout(resolve,300));
+  results.liveLightTheme=getComputedStyle(themeCheck).color==='rgb(26, 26, 26)' && getComputedStyle(themeCheck).backgroundColor==='rgb(255, 255, 255)' && document.documentElement.style.colorScheme==='light';
+  results.controlsPreserved=document.getElementById('people').value===before;
   await Websandbox.connection.remote.sendPrompt({text:JSON.stringify(results)});
  }
  """, "jsExpressions":"probe();"
@@ -72,7 +81,7 @@ for (key,value) in [("initialHeight",true as Any),("initialHeight",901),("html",
 }
 print("Swift contract: demos and missing/invalid-field rejection passed")
 let artifact=try InteractiveArtifact(json:String(decoding:JSONSerialization.data(withJSONObject:payload),as:UTF8.self))
-let document=try InteractiveDocument.make(artifact,resourceRoot:URL(fileURLWithPath:CommandLine.arguments[1]))
+let document=try InteractiveDocument.make(artifact,resourceRoot:URL(fileURLWithPath:CommandLine.arguments[1]),darkMode:true)
 try document.write(toFile:"/private/tmp/alice-openui-probe.html",atomically:true,encoding:.utf8)
 probe.web.loadHTMLString(document,baseURL:nil)
 let deadline=Date().addingTimeInterval(20)
