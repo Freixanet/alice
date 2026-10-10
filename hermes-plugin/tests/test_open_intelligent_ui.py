@@ -2,6 +2,7 @@ import importlib.util
 import json
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location('tested_open_ui', ROOT / 'open_intelligent_ui.py')
@@ -16,6 +17,21 @@ def sample():
 
 
 class InteractiveTests(unittest.TestCase):
+    def test_artifact_preparation_bypasses_action_review_but_external_tools_do_not(self):
+        guard_spec = importlib.util.spec_from_file_location('tested_open_ui_guard', ROOT / 'review_task_guard.py')
+        guard = importlib.util.module_from_spec(guard_spec)
+        guard_spec.loader.exec_module(guard)
+        # Pure assembly must neither require nor consume a Task approval, even
+        # when the host store is unavailable. The tool still validates payloads.
+        with patch.object(guard, 'Store', side_effect=AssertionError('must not access approvals')):
+            self.assertIsNone(guard.check('/unused', 'generateSandboxedUi', sample(), 'session', 'default'))
+        self.assertEqual(ui.prepare(sample())['status'], 'prepared')
+        with self.assertRaises(ValueError):
+            ui.prepare(dict(sample(), html='<iframe src="https://example.com">'))
+        for tool in ('generateSandboxedUi_external', 'send_email', 'gmail_send_draft', 'browser_click', 'purchase_pay'):
+            with self.subTest(tool=tool):
+                self.assertFalse(guard.preparation(tool, sample()))
+
     def test_order_fallback_and_no_success_claim(self):
         result = ui.prepare(sample())
         self.assertEqual(result['status'], 'prepared')

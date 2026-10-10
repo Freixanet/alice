@@ -17,6 +17,9 @@ READ_TOOLS = frozenset({
     'think', 'ask_person', 'read_agent', 'list_agents', 'review_read',
 })
 CONTROL_TOOLS = frozenset({'review_tasks'})
+# Exact audited pure assembly tool: returns a validated chat artifact, never
+# executes its code or performs an external action. Rendering stays sandboxed.
+PREPARATION_TOOLS = frozenset({'generateSandboxedUi'})
 # Only exact, known read operations. Unknown extension names do not inherit permissions.
 READ_ACTIONS = {
     'watchers': {'list'}, 'goals': {'list', 'get', 'create', 'update', 'step', 'decide', 'link_routine'},
@@ -36,7 +39,7 @@ def safe_terminal(args):
 
 
 def preparation(tool, args):
-    if tool in READ_TOOLS or tool in CONTROL_TOOLS: return True
+    if tool in READ_TOOLS or tool in CONTROL_TOOLS or tool in PREPARATION_TOOLS: return True
     if tool in READ_ACTIONS and args.get('action') in READ_ACTIONS[tool]: return True
     if tool in ('terminal', 'shell', 'bash', 'run_command') and safe_terminal(args): return True
     # Draft tools are explicit API operations. Arbitrary browser clicks/typing can

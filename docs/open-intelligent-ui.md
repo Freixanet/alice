@@ -19,6 +19,9 @@ once in its final answer. Prepared does not mean displayed. The fence passes thr
 the same dashboard/gateway chat text paths and is stored in existing message archives,
 without a new persistence model. Invalid output stays visible as code; native/plain
 summaries provide accessible fallbacks. Only closed, complete artifacts execute.
+Preparation and display require no Task approval: the exact pure-assembly tool is
+allowed by the Review Tasks guard. Proposed follow-up questions still require native
+review-and-send; external action tools keep their original approval gates.
 
 Title and summary precede the upstream ordered channels: initialHeight,
 placeholderMessages, css, html, jsFunctions, jsExpressions. In this adaptation
@@ -92,3 +95,12 @@ purchase assertion was changed. This is not a claim of a green complete suite.
 Three native fence-parser regression tests were added for complete, incomplete and
 invalid artifacts; they are pending simulator/CI execution. Local generic device
 compilation does not execute those tests or verify the physical interface.
+
+### Task approval regression
+
+Reproduced the guard incorrectly requiring review for `generateSandboxedUi`, then
+allowed only that exact pure-assembly tool. Eight OpenIntelligentUI tests and 25
+Review Tasks tests pass, including the real hook with tracked/untracked sessions in
+draft-only mode, no created approvals, continued blocking of external actions and
+unchanged single-use approval checks. No existing assertion was weakened. No model
+request or iOS change was needed; live agent response and visual checks remain pending.

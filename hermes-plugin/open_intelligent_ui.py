@@ -9,7 +9,7 @@ import re
 FIELDS = ('title', 'summary', 'initialHeight', 'placeholderMessages', 'css', 'html', 'jsFunctions', 'jsExpressions')
 SCHEMA = {
     'name': 'generateSandboxedUi',
-    'description': 'Prepare one OpenIntelligentUI interactive answer for Alice. Use text/native cards for simple answers. No external action or model call. Emit the returned fence once in your final answer; prepared does not mean displayed.',
+    'description': 'Prepare one OpenIntelligentUI interactive answer for Alice. Use text/native cards for simple answers. No external action or model call. Preparing and displaying this artifact does not require Task approval. Only a follow-up question proposed by its controls requires the person to review and send it. Emit the returned fence once in your final answer; prepared does not mean displayed.',
     'parameters': {'type': 'object', 'additionalProperties': False, 'properties': {
         'title': {'type': 'string', 'minLength': 1, 'maxLength': 160},
         'summary': {'type': 'string', 'minLength': 1, 'maxLength': 2000, 'description': 'Accessible plain-text fallback with units, assumptions and provenance.'},

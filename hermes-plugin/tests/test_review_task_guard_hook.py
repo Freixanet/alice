@@ -32,3 +32,11 @@ class ReviewHookTests(unittest.TestCase):
     def test_storage_or_policy_error_blocks_instead_of_allowing(self):
         with mock.patch.object(self.plugin, '_module', side_effect=RuntimeError('fixture')):
             self.assertEqual(self.plugin._guard_review_task('send_email', {}, 'original')['action'], 'block')
+
+    def test_interactive_assembly_allowed_in_draft_only_and_tracked_tasks(self):
+        self.store.configure('draft_only')
+        self.store.create('Calculator', 'Split the bill locally', 'original', 'default')
+        for session in ('original', 'untracked'):
+            self.assertIsNone(self.plugin._guard_review_task('generateSandboxedUi', {}, session))
+            self.assertEqual(self.plugin._guard_review_task('send_email', {}, session)['action'], 'block')
+        self.assertEqual(self.store.db.execute('SELECT count(*) FROM approvals').fetchone()[0], 0)
