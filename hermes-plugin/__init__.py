@@ -2563,7 +2563,7 @@ def register(ctx) -> None:
                       handler=_tool(interactive_ui.prepare), check_fn=_always,
                       description=interactive_ui.SCHEMA["description"], emoji="📊")
     if hasattr(ctx, "register_skill"):
-        ctx.register_skill("openintelligentui", (Path(__file__).parent / "skills/openintelligentui/SKILL.md").read_text(),
+        ctx.register_skill("openintelligentui", Path(__file__).parent / "skills/openintelligentui/SKILL.md",
                            description="Useful isolated interactive answers: diagrams, comparisons and calculators.")
 
     def review_task_handler(args=None, session_id="", **_):

@@ -47,6 +47,22 @@ class InteractiveTests(unittest.TestCase):
     def test_invalid_artifact_plain_channel_does_not_leak_code(self):
         self.assertNotIn('secret', ui.plain_fallback('```alice-interactive\n{"secret":"x"}\n```'))
 
+    def test_registration_supplies_a_real_skill_path(self):
+        plugin_spec = importlib.util.spec_from_file_location('tested_open_ui_plugin', ROOT / '__init__.py')
+        plugin = importlib.util.module_from_spec(plugin_spec)
+        plugin_spec.loader.exec_module(plugin)
+        found = {}
+        class Context:
+            def register_skill(self, name, path, **kwargs):
+                self_path = Path(path)
+                if not self_path.is_file():
+                    raise AssertionError('Hermes requires a real SKILL.md path')
+                found[name] = self_path
+            def __getattr__(self, name):
+                return lambda *args, **kwargs: None
+        plugin.register(Context())
+        self.assertEqual(found['openintelligentui'], ROOT/'skills/openintelligentui/SKILL.md')
+
     def test_skill_and_prompt_preserve_safety_and_local_controls(self):
         skill = (ROOT/'skills/openintelligentui/SKILL.md').read_text()
         for rule in ['NO CDN', 'Never collect secrets', 'local', 'zero divisors', 'reduced motion', 'explicitly sends', 'snapshot']:
