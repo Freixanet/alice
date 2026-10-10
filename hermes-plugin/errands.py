@@ -518,7 +518,8 @@ def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float
         if allow and _clean(card_label, 60):
             checkout["card_label"] = _clean(card_label, 60)
         entry.update(checkout=checkout, status="working" if allow else "denied",
-                     reason="" if allow else "Has denegado la compra.", updated_at=now)
+                     reason="" if allow else "Has denegado la compra.", updated_at=now,
+                     resume_message=approved_message(checkout) if allow else None)
         _write(path, entries)
     return entry
 
@@ -1550,7 +1551,10 @@ def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[
                     or entry.get("checkout") != checkout or checkout.get("status") != "approved"
                     or approved_checkout(entry) is None):
                 return False
-            entry.update(questions=None, approval=None, resume_message=approved_message(checkout))
+            entry.update(questions=None, approval=None)
+            # A running engine may already have consumed the message committed by the decision.
+            if entry.get("resume_message") is not None:
+                entry["resume_message"] = approved_message(checkout)
             _write(path, entries)
             _resume_goal(entry)
             return launch(home, errand_id, approved_message(checkout))

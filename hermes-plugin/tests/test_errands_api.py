@@ -258,5 +258,20 @@ class ErrandRoutesTests(unittest.TestCase):
         self.assertEqual(self.resumed, [])
 
 
+    def test_wakeup_failure_keeps_decision_and_exact_message_persisted(self):
+        entry = self.waiting()
+        with mock.patch.object(self.errands, "resume", side_effect=OSError("synthetic wakeup failure")):
+            with self.assertRaises(OSError):
+                self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                 json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        saved = self.errands.get(self.home, entry["id"])
+        self.assertEqual(saved["checkout"]["status"], "approved")
+        self.assertEqual(saved["resume_message"], self.errands.approved_message(saved["checkout"]))
+        again = self.client.post(self.url(f"/{entry['id']}/checkout"),
+                                 json={"decision": "allow", "checkout_id": entry["checkout"]["id"]})
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(self.resumed, [])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1097,3 +1097,23 @@ class AtomicCheckoutTests(Base):
             self.assertTrue(errands.resume(self.home, entry["id"], "wrong", checkout=decided["checkout"]))
             self.assertTrue(completed.wait(timeout=3), "launcher/store lock deadlocked")
         self.assertEqual(messages, [errands.approved_message(decided["checkout"])])
+
+
+    def test_decision_persists_exact_message_before_any_resume(self):
+        entry = self.waiting()
+        errands.update(self.home, entry["id"], resume_message="stale synthetic answer")
+        decided = self.decide(entry)
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["status"], "working")
+        self.assertEqual(saved["resume_message"], errands.approved_message(saved["checkout"]))
+        self.assertEqual(decided, saved)
+
+    def test_resume_does_not_requeue_a_message_already_consumed_by_the_engine(self):
+        import time
+        entry = self.waiting()
+        errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": time.time()})
+        decided = self.decide(entry, now=time.time())
+        errands.update(self.home, entry["id"], resume_message=None)
+        with mock.patch.object(errands, "_goal_manager"), mock.patch.object(errands, "launch", return_value=False):
+            self.assertFalse(errands.resume(self.home, entry["id"], "approval", checkout=decided["checkout"]))
+        self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
