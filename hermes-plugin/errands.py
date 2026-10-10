@@ -443,7 +443,8 @@ def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Opti
                                   _clean(args.get("card_label"), 60)),
         "total": total, "total_cents": total_cents, "currency": currency, "requested_at": now,
     }
-    update(home, errand_id, now=now, status="needs_approval", checkout=checkout, site=entry.get("site") or site)
+    update(home, errand_id, now=now, status="needs_approval", checkout=checkout,
+           site=entry.get("site") or site, resume_message=None)
     return {"ok": True, "status": "needs_approval",
             "next": ("The person sees the checkout now. Do NOT fill a card or press anything that pays. "
                      "End your turn with one line saying the checkout is waiting for approval.")}
@@ -1549,7 +1550,7 @@ def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[
                     or entry.get("checkout") != checkout or checkout.get("status") != "approved"
                     or approved_checkout(entry) is None):
                 return False
-            entry.update(questions=None, approval=None)
+            entry.update(questions=None, approval=None, resume_message=approved_message(checkout))
             _write(path, entries)
             _resume_goal(entry)
             return launch(home, errand_id, approved_message(checkout))

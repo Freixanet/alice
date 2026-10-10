@@ -950,7 +950,9 @@ class AtomicCheckoutTests(Base):
         for allow in (True, False):
             with self.subTest(allow=allow):
                 entry = self.waiting()
+                errands.update(self.home, entry["id"], resume_message="stale synthetic approval")
                 errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"}, now=NOW + 1)
+                self.assertIsNone(errands.get(self.home, entry["id"])["resume_message"])
                 before = errands._path(self.home).read_bytes()
                 self.assertIsNone(self.decide(entry, allow))
                 self.assertEqual(errands._path(self.home).read_bytes(), before)
@@ -1073,6 +1075,7 @@ class AtomicCheckoutTests(Base):
         entry = self.waiting()
         errands.update(self.home, entry["id"], checkout={**entry["checkout"], "requested_at": time.time()})
         decided = self.decide(entry, now=time.time())
+        errands.update(self.home, entry["id"], resume_message="stale synthetic answer")
         completed = threading.Event()
         messages = []
         original_launch = errands.launch
