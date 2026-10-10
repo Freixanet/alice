@@ -34,3 +34,11 @@ enlaces HTTPS; no ejecutan código ni instrucciones incluidas en correos o pági
 El estado y los permisos se guardan en Hermes, no en el teléfono. El agente aún debe
 comprobar que su resultado responde a la petición: una compilación o una prueba
 con fixtures no demuestra su comportamiento en una conversación real.
+
+## Ejemplos de los bloques
+
+En Ajustes → Componentes, la sección **Resultados de tareas** muestra texto,
+tabla, lista de comprobación, borrador, evento y tarjeta de enlace, en español
+e inglés. Usa las mismas vistas que el detalle de una Task y datos locales:
+no crea tareas, no llama al modelo, no envía el borrador ni añade el evento al
+calendario. La tarjeta de enlace abre una referencia pública de ejemplo al tocarla.

@@ -13,6 +13,9 @@ final class ComponentGalleryTests: XCTestCase {
                     XCTAssertFalse(RichMarkdown.blocks(text).isEmpty, "\(sample) draws no block in \(language)")
                 case let .messages(messages):
                     XCTAssertFalse(messages.isEmpty, "\(sample) has no message in \(language)")
+                case let .taskBlocks(blocks):
+                    XCTAssertEqual(blocks.count, 1, "\(sample) needs a Task result")
+                    XCTAssertTrue(TaskBlockGallery.allCases.map(\.rawValue).contains(blocks.first?.type ?? ""))
                 case .view:
                     break
                 }

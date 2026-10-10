@@ -31,7 +31,7 @@ struct ComponentGallery: View {
                             .padding(.top, 8)
                         ForEach(GallerySample.allCases.filter { $0.section == section }) { sample in
                             VStack(alignment: .leading, spacing: 10) {
-                                Text(sample.title.uppercased())
+                                Text(sample.displayTitle(language).uppercased())
                                     .font(.caption2.weight(.semibold))
                                     .tracking(1.2)
                                     .foregroundStyle(.tertiary)
@@ -64,13 +64,14 @@ struct ComponentGallery: View {
 }
 
 enum GallerySection: String, CaseIterable, Identifiable {
-    case text, cards, choices, approvals, purchase, browser, agents, chrome
+    case text, taskResults, cards, choices, approvals, purchase, browser, agents, chrome
 
     var id: String { rawValue }
 
     func title(_ language: ChatLanguage) -> String {
         switch self {
         case .text: language.pick("Text and blocks", "Texto y bloques")
+        case .taskResults: language.pick("Task results", "Resultados de tareas")
         case .cards: language.pick("Cards", "Tarjetas")
         case .choices: language.pick("Choices and questions", "Opciones y preguntas")
         case .approvals: language.pick("Approvals", "Aprobaciones")
@@ -90,11 +91,15 @@ enum GalleryContent {
     case messages([Message])
     /// A card a chat shows beside the turns (errands, the checkout).
     case view(AnyView)
+    /// The exact native renderer used by the Tasks detail screen.
+    case taskBlocks([ReviewTask.Block])
 }
 
 enum GallerySample: String, CaseIterable, Identifiable {
     // Text and blocks
     case text, callouts, table, code, math, links, media, receipts
+    // Data-only Task results
+    case taskText, taskTable, taskChecklist, taskDraft, taskEvent, taskLink
     // Cards
     case event, move, cancel, connect, places, map, events, timeline, products, phrases, email, month, article
     case spending, secretKey, health, paymentCardOffer
@@ -117,6 +122,7 @@ enum GallerySample: String, CaseIterable, Identifiable {
     var section: GallerySection {
         switch self {
         case .text, .callouts, .table, .code, .math, .links, .media, .receipts: .text
+        case .taskText, .taskTable, .taskChecklist, .taskDraft, .taskEvent, .taskLink: .taskResults
         case .event, .move, .cancel, .connect, .places, .map, .events, .timeline, .products, .phrases, .email,
              .month, .article, .spending, .secretKey, .health, .paymentCardOffer: .cards
         case .replyButtons, .dottedButtons, .filledButtons, .slashChoices, .askPerson, .errandQuestions, .capsuleButtons: .choices
@@ -130,8 +136,30 @@ enum GallerySample: String, CaseIterable, Identifiable {
         }
     }
 
+    private var taskBlock: TaskBlockGallery? {
+        switch self {
+        case .taskText: .text
+        case .taskTable: .table
+        case .taskChecklist: .checklist
+        case .taskDraft: .draft
+        case .taskEvent: .event
+        case .taskLink: .linkCard
+        default: nil
+        }
+    }
+
+    func displayTitle(_ language: ChatLanguage) -> String {
+        taskBlock?.title(spanish: language == .spanish) ?? title
+    }
+
     var title: String {
         switch self {
+        case .taskText: "Task text"
+        case .taskTable: "Task table"
+        case .taskChecklist: "Task checklist"
+        case .taskDraft: "Task draft"
+        case .taskEvent: "Task event"
+        case .taskLink: "Task link card"
         case .text: "Text"
         case .callouts: "Callouts"
         case .table: "Table"
@@ -204,6 +232,18 @@ enum GallerySample: String, CaseIterable, Identifiable {
         let pick = language.pick
         typealias F = GalleryFixtures
         switch self {
+        case .taskText:
+            return .taskBlocks([TaskBlockGallery.text.block(spanish: language == .spanish)])
+        case .taskTable:
+            return .taskBlocks([TaskBlockGallery.table.block(spanish: language == .spanish)])
+        case .taskChecklist:
+            return .taskBlocks([TaskBlockGallery.checklist.block(spanish: language == .spanish)])
+        case .taskDraft:
+            return .taskBlocks([TaskBlockGallery.draft.block(spanish: language == .spanish)])
+        case .taskEvent:
+            return .taskBlocks([TaskBlockGallery.event.block(spanish: language == .spanish)])
+        case .taskLink:
+            return .taskBlocks([TaskBlockGallery.linkCard.block(spanish: language == .spanish)])
         case .text:
             return .markdown(pick(
                 "## A heading\nA paragraph with **bold**, *italic*, <u>underline</u>, `code` and a formula $E = mc^2$.\n\n- A list\n- With two items\n\n1. And a numbered one\n\n- [x] A task done\n- [ ] One to do",
@@ -479,6 +519,8 @@ struct GallerySampleView: View {
             }
         case let .view(view):
             view
+        case let .taskBlocks(blocks):
+            TaskResultBlocks(blocks: blocks)
         }
     }
 }
