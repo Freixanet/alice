@@ -24,6 +24,15 @@ struct ComponentGallery: View {
                 }
                 .segments()
 
+                NavigationLink {
+                    A2UIComponentGallery()
+                } label: {
+                    Label("a2ui-swift · Probar componentes", systemImage: "slider.horizontal.3")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding()
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 16))
+                }
+
                 if let sandbox {
                     ForEach(GallerySection.allCases) { section in
                         Text(section.title(language))

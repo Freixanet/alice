@@ -91,3 +91,12 @@ instead of treating a fixture version as a universal compatibility certificate.
 The full plugin regression run is not green in the installed Hermes environment;
 see the exact outcomes in [proactive-plan](proactive-plan.md). No universal Hermes
 or platform compatibility is claimed by the Watchers fixtures.
+
+### Local a2ui-swift preview
+
+Settings → Developer → Components → a2ui-swift renders the 18 standard v0.9
+component types using the SDK pinned in `ios/project.yml`. The sample inputs and
+actions are local and transient; media is bundled, and no Hermes/model transport
+is connected. This is a component preview, not live-chat A2UI support.
+Device compilation and installation are checked separately from visual review
+on the user’s iPhone; simulator/UI tests are not run without permission.

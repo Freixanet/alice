@@ -31,6 +31,22 @@ schemes:
     test:
       targets: [AlicePerformanceTests]
 
+packages:
+  A2UISwift:
+    url: https://github.com/BBC6BAE9/a2ui-swift
+    revision: 16476ba2cb3fcb4c4bcb141dfa4c2804adbdedb0
+
+  # Pin transitive packages too, so a clean build renders the same SDK.
+  A2UIJSONSchema:
+    url: https://github.com/ajevans99/swift-json-schema.git
+    exactVersion: 0.13.2
+  A2UICollections:
+    url: https://github.com/apple/swift-collections.git
+    exactVersion: 1.7.2
+  A2UISyntax:
+    url: https://github.com/swiftlang/swift-syntax.git
+    exactVersion: 604.0.0
+
 targets:
   Alice:
     type: application
@@ -118,6 +134,10 @@ targets:
         # Updated only while Alice runs: no push (see AgentActivityAttributes).
         NSSupportsLiveActivities: true
     dependencies:
+      - package: A2UISwift
+        product: A2UISwiftUI
+      - package: A2UISwift
+        product: A2UISwiftCore
       - target: AliceActivities
         embed: true
       - target: AliceShare
