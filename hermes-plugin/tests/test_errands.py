@@ -1213,6 +1213,67 @@ class AtomicCheckoutTests(Base):
         self.assertEqual(gateway.started, [])
         browser.assert_not_called()
 
+    def test_old_paid_receipt_cannot_finish_a_replacement_approved_checkout(self):
+        for replacement_during_read in (False, True):
+            with self.subTest(replacement_during_read=replacement_during_read):
+                entry = self.waiting()
+                decided = self.decide(entry)
+                errands.record_receipt(self.home, entry["session_id"],
+                                       {"outcome": "paid", "order": "FIRST-FIXTURE", "total": "27,98 €"})
+                replacement = {}
+
+                def replace_checkout():
+                    errands.request_checkout(self.home, entry["id"], {**CHECKOUT, "total": "279,80 €"}, now=NOW + 2)
+                    replacement.update(self.decide(errands.get(self.home, entry["id"]), now=NOW + 3))
+
+                if not replacement_during_read:
+                    replace_checkout()
+                gateway = FakeGateway([done("Fixture second checkout still needs work")])
+                engine = errands.Engine(self.home, entry["id"], gateway=gateway,
+                                        judge=lambda *_: {"status": "stuck", "reason": "fixture stop"})
+                original_entry = engine._entry
+                reads = 0
+
+                def current_entry():
+                    nonlocal reads
+                    snapshot = original_entry()
+                    reads += 1
+                    if replacement_during_read and reads == 2:
+                        replace_checkout()
+                    return snapshot
+
+                engine._entry = current_entry
+                message = errands.approved_message((decided if replacement_during_read else replacement)["checkout"])
+                with mock.patch.object(errands, "prepare_browser", return_value=True):
+                    self.assertEqual(engine.run(message), "stuck")
+                self.assertEqual(gateway.started,
+                                 [(entry["session_id"], errands.approved_message(replacement["checkout"]))])
+                saved = errands.get(self.home, entry["id"])
+                self.assertEqual(saved["checkout"]["id"], replacement["checkout"]["id"])
+                self.assertEqual(saved["checkout"]["status"], "approved")
+                self.assertEqual(saved["receipt"]["order"], "FIRST-FIXTURE")
+                self.assertEqual(saved["receipt"]["checkout_id"], decided["checkout"]["id"])
+
+    def test_legacy_paid_receipt_keeps_data_and_requires_review_before_recovery(self):
+        entry = self.waiting()
+        decided = self.decide(entry)
+        errands.record_receipt(self.home, entry["session_id"],
+                               {"outcome": "paid", "order": "LEGACY-FIXTURE", "total": "27,98 €"})
+        legacy = errands.get(self.home, entry["id"])["receipt"]
+        legacy.pop("checkout_id")
+        errands.update(self.home, entry["id"], receipt=legacy)
+        gateway = FakeGateway([])
+        engine = errands.Engine(self.home, entry["id"], gateway=gateway)
+        with mock.patch.object(errands, "prepare_browser", return_value=True) as browser:
+            self.assertEqual(engine.run(errands.approved_message(decided["checkout"])), "stuck")
+        saved = errands.get(self.home, entry["id"])
+        self.assertEqual(saved["receipt"], legacy)
+        self.assertEqual(saved["checkout"], decided["checkout"])
+        self.assertEqual(saved["resume_message"], errands.approved_message(decided["checkout"]))
+        self.assertIn("revisa el pedido", saved["reason"])
+        self.assertEqual(gateway.started, [])
+        browser.assert_not_called()
+
     def test_restart_with_paid_receipt_does_not_start_another_run(self):
         entry = self.waiting()
         self.decide(entry)

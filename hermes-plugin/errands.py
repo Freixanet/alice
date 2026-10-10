@@ -553,8 +553,8 @@ def _consume_surviving_checkout_approval(home: Path, errand_id: str, run_id: str
         _write(path, entries)
 
 
-def _finish_paid_checkout(home: Path, errand_id: str, expected: Dict[str, Any]) -> bool:
-    """Finish the paid snapshot without overwriting a concurrently replaced checkout or queue."""
+def _finish_paid_checkout(home: Path, errand_id: str, expected: Dict[str, Any]) -> Optional[str]:
+    """Finish only the paid checkout captured in this receipt; preserve a newer checkout or queue."""
     with _locked(home) as path:
         entries = _read(path, strict=True)
         entry = next((e for e in entries if e.get("id") == errand_id), None)
@@ -562,10 +562,24 @@ def _finish_paid_checkout(home: Path, errand_id: str, expected: Dict[str, Any]) 
                 or (entry.get("receipt") or {}).get("outcome") != "paid"
                 or any(entry.get(key) != expected.get(key)
                        for key in ("checkout", "receipt", "run_id", "resume_message"))):
-            return False
+            return "changed"
+        checkout = entry.get("checkout")
+        if checkout:
+            checkout_id = checkout.get("id") if isinstance(checkout, dict) else None
+            receipt_id = entry["receipt"].get("checkout_id")
+            if (not isinstance(checkout_id, str) or not checkout_id
+                    or not isinstance(receipt_id, str) or not receipt_id):
+                # Legacy receipts do not prove which checkout paid. Keep all data and instructions;
+                # require review rather than replay payment or silently discard another approval.
+                entry.update(status="stuck", updated_at=time.time(), reason=(
+                    "No se puede asociar el recibo al checkout actual; revisa el pedido antes de reanudar."))
+                _write(path, entries)
+                return "stuck"
+            if receipt_id != checkout_id:
+                return None  # A previous checkout paid; this checkout has its own decision.
         entry.update(status="done", resume_message=None, updated_at=time.time())
         _write(path, entries)
-        return True
+        return "done"
 
 
 def approved_message(checkout: Dict[str, Any]) -> str:
@@ -764,6 +778,8 @@ def record_receipt(home: Path, session_id: str, args: Dict[str, Any], now: Optio
         "card_label": _clean(args.get("card_label"), 60) or checkout.get("card_label", ""),
         "delivery": _clean(args.get("delivery"), 160) or checkout.get("delivery", ""), "at": now or time.time(),
     }
+    if isinstance(checkout.get("id"), str) and checkout["id"]:
+        receipt["checkout_id"] = checkout["id"]
     # Paid something other than the total the person approved: said on the result, never smoothed over.
     approved = checkout.get("approved_total")
     amount = _money().parse(receipt["total"], checkout.get("approved_currency") or checkout.get("currency") or "")
@@ -1345,9 +1361,12 @@ class Engine:
             # A surviving run may have persisted its paid receipt before recovery.
             # Observe that terminal outcome before starting any replacement run.
             if (entry.get("receipt") or {}).get("outcome") == "paid":
-                if _finish_paid_checkout(self.home, self.errand_id, entry):
-                    return "done"
-                continue  # A concurrent change must be read before doing anything else.
+                result = _finish_paid_checkout(self.home, self.errand_id, entry)
+                if result == "changed":
+                    text = self._entry().get("resume_message") or CONTINUATION
+                    continue
+                if result:
+                    return result
             if int(entry.get("runs") or 0) >= MAX_RUNS:
                 update(self.home, self.errand_id, status="stuck", reason="Ha usado todos sus intentos sin terminar.")
                 return "stuck"
@@ -1435,8 +1454,12 @@ class Engine:
                 return "stuck"
             receipt = entry.get("receipt") or {}
             if receipt.get("outcome") == "paid":
-                update(self.home, self.errand_id, status="done")
-                return "done"
+                result = _finish_paid_checkout(self.home, self.errand_id, entry)
+                if result == "changed":
+                    text = self._entry().get("resume_message") or CONTINUATION
+                    continue
+                if result:
+                    return result
             # Similar summaries are not a loop when the browser has recorded
             # new steps. Give a real no-progress loop one bounded recovery.
             if previous and repeats(previous, reply) and (entry.get("steps") or []) == steps_before:
