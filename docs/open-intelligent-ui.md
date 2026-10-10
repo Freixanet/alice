@@ -9,8 +9,8 @@ a router-model call or a CDN dependency.
 ## What people get
 
 Simple answers remain text. Exact comparisons use Markdown tables; existing native
-Alice cards remain available for supported tasks. Diagrams, calculators and other
-useful interactive answers use the `generateSandboxedUi` tool. Its description and
+Alice cards remain available for supported tasks. Numeric scenarios prefer native `alice-ui` calculators; free-form diagrams and
+interfaces use `alice-interactive`, with optional `generateSandboxedUi` validation. Its description and
 the discoverable `openintelligentui` skill carry the detailed quality rules. A short
 registered system-prompt section instructs the agent to choose interactive UI for
 budgets, savings exploration and comparisons with changing inputs, without an
@@ -21,7 +21,8 @@ receive this selection rule; restarting services alone does not rewrite the prom
 of an existing conversation. No persisted user prompt/history is edited for migration.
 Fixture checks prove registration and budget, not the live model's presentation choice.
 
-For self-contained local interfaces the agent can emit one `alice-interactive` fence
+For self-contained native scenarios the agent emits one `alice-ui` calculator
+fence; for flexible web interfaces it can emit one `alice-interactive` fence
 directly; the native parser validates it before rendering. Optional server-side
 validation uses the tool, whose returned fence must appear once in the final answer.
 Prepared does not mean displayed. The fence passes through
@@ -52,8 +53,8 @@ Review question button opens an editable sheet, and explicit Send checks connect
 busy state and the originating chat, then uses the original reply profile. Cancelling
 sends nothing. Web content has no automatic model/tool/action bridge.
 
-Settings → Developer → Components → OpenIntelligentUI contains a local bill splitter
-and an illustrative plan comparison, drawn by the same production renderer. These
+Settings → Developer → Components → OpenIntelligentUI contains native savings,
+plan comparison and bill splitting plus two flexible web demos, using production renderers. These
 examples have no Hermes connection. Purchases remain disabled.
 
 ## Isolation and limitations
@@ -146,3 +147,32 @@ Actual future generation time remains model-dependent and has not been benchmark
 The isolated WebKit probe passes explicit dark colors, live light-theme change and
 unchanged control values, plus every existing sandbox check. Eight Python artifact
 and two unchanged prompt-budget tests pass. No model request was made for verification.
+
+## Native scenarios alongside flexible OIUI
+
+Alice now prefers `alice-ui` type `calculator` for budgets/savings, bill splitting
+and numeric cost comparisons. Actual SwiftUI number fields, discrete sliders,
+results, reset and expandable formulas use Alice's semantic card colors. The
+card always fills the maximum reply width. Native examples share the production
+renderer in Settings → Developer → Components → OpenIntelligentUI, followed by
+the existing flexible web examples.
+
+The agent's openintelligentui skill documents the strict bounded postfix-arithmetic
+contract and automatic format choice. No generated Swift runs; inputs/results are
+data. No arbitrary expressions, model calls, network, credentials or actions run
+from native controls. Invalid/missing/out-of-range edits, fractional discrete values,
+zero divisors and overflow clear results. Decimal input follows the phone locale;
+reset returns to the original snapshot. Edits remain transient in the mounted
+card and are neither persisted nor automatically supplied to follow-up prompts.
+A fresh reply is a fresh snapshot. Text channels must use a plain answer.
+
+The existing `alice-interactive` HTML/CSS/JavaScript sandbox remains for free-form
+interfaces, diagrams and simulations that the native numeric contract cannot
+express. Existing place/calendar/email cards retain their native renderer.
+Both native and web interfaces wait for a closed fence. Unreadable data remains
+visible as code rather than executing or silently disappearing.
+
+Check native contract, real gallery/skill examples, arithmetic, locales and failure
+paths without a simulator or model calls: `bash scripts/verify-native-calculator.sh`.
+The chat-fence XCTest regression is also defined; simulator execution and visual
+review on the iPhone must be reported separately from device compilation.

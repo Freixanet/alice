@@ -39,6 +39,14 @@ class InteractiveTests(unittest.TestCase):
         self.assertEqual(len(examples), 1)
         self.assertEqual(ui.prepare(json.loads(examples[0]))['status'], 'prepared')
 
+    def test_native_calculators_have_plain_summary_on_text_channels(self):
+        payload = {'type': 'calculator', 'summary': 'Ejemplo: ahorro mensual de 1000 euros.', 'inputs': []}
+        fence = '```alice-ui\n' + json.dumps(payload) + '\n```'
+        self.assertEqual(ui.plain_fallback(fence), payload['summary'])
+        self.assertNotIn('calculator', ui.plain_fallback('```alice-ui\n{"type":"calculator"}\n```'))
+        other = '```alice-ui\n{"type":"places","items":[]}\n```'
+        self.assertEqual(ui.plain_fallback(other), other)
+
     def test_artifact_preparation_bypasses_action_review_but_external_tools_do_not(self):
         guard_spec = importlib.util.spec_from_file_location('tested_open_ui_guard', ROOT / 'review_task_guard.py')
         guard = importlib.util.module_from_spec(guard_spec)

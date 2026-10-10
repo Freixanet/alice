@@ -51,6 +51,16 @@ final class UIComponentTests: XCTestCase {
         XCTAssertEqual(component(empty), .code(language: "alice-ui", text: empty))
     }
 
+    func testNativeCalculatorRequiresCompleteFenceAndRejectsCapabilities() {
+        let json = #"{"type":"calculator","title":"Local","summary":"Example","inputs":[{"id":"a","label":"Amount","value":20,"min":0,"max":100,"step":1,"control":"field","unit":"€"}],"outputs":[{"id":"b","label":"Double","expression":["a","2","*"],"unit":"€"}]}"#
+        guard case let .component(.calculator(model)) = component(json) else { return XCTFail("native dispatch") }
+        XCTAssertEqual(model.evaluate(model.initialValues), [40])
+        XCTAssertEqual(RichMarkdown.blocks("```alice-ui\n" + json + "```").last, .component(.calculator(model)))
+        XCTAssertEqual(RichMarkdown.blocks("```alice-ui\n" + json).last, .code(language: "alice-ui", text: json))
+        let unsafe = json.replacingOccurrences(of: "\"a\",\"2\"", with: "\"payment()\",\"2\"")
+        XCTAssertEqual(component(unsafe), .code(language: "alice-ui", text: unsafe))
+    }
+
     func testOtherCodeIsUntouched() {
         let json = #"{"type":"places","items":[{"title":"A"}]}"#
         XCTAssertEqual(component(json, fence: "json"), .code(language: "json", text: json))

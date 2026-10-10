@@ -1,0 +1,223 @@
+[
+  {
+    "type": "calculator",
+    "title": "Tu margen de ahorro",
+    "summary": "Ejemplo editable: 2.500 € de ingresos y 1.300 € de gastos fijos al mes. Ajusta el ocio para explorar tu ahorro.",
+    "inputs": [
+      {
+        "id": "income",
+        "label": "Ingresos al mes",
+        "value": 2500,
+        "min": 0,
+        "max": 50000,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      },
+      {
+        "id": "fixed",
+        "label": "Gastos fijos",
+        "value": 1300,
+        "min": 0,
+        "max": 50000,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      },
+      {
+        "id": "leisure",
+        "label": "Ocio",
+        "value": 200,
+        "min": 0,
+        "max": 1200,
+        "step": 10,
+        "control": "slider",
+        "unit": "€"
+      }
+    ],
+    "outputs": [
+      {
+        "id": "monthly",
+        "label": "Ahorro mensual",
+        "expression": [
+          "income",
+          "fixed",
+          "-",
+          "leisure",
+          "-"
+        ],
+        "unit": "€"
+      },
+      {
+        "id": "annual",
+        "label": "Si mantienes este mes todo el año",
+        "expression": [
+          "income",
+          "fixed",
+          "-",
+          "leisure",
+          "-",
+          "12",
+          "*"
+        ],
+        "unit": "€"
+      }
+    ]
+  },
+  {
+    "type": "calculator",
+    "title": "Dos planes, una decisión",
+    "summary": "Precios ilustrativos editables. El plan A cobra 40 € de alta y 12 €/mes; el B no tiene alta y cuesta 18 €/mes.",
+    "inputs": [
+      {
+        "id": "months",
+        "label": "Meses de uso",
+        "value": 12,
+        "min": 1,
+        "max": 36,
+        "step": 1,
+        "control": "slider",
+        "unit": "meses"
+      },
+      {
+        "id": "feeA",
+        "label": "Alta del plan A",
+        "value": 40,
+        "min": 0,
+        "max": 500,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      },
+      {
+        "id": "priceA",
+        "label": "Plan A al mes",
+        "value": 12,
+        "min": 0,
+        "max": 1000,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      },
+      {
+        "id": "priceB",
+        "label": "Plan B al mes",
+        "value": 18,
+        "min": 0,
+        "max": 1000,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      }
+    ],
+    "outputs": [
+      {
+        "id": "a",
+        "label": "Total del plan A",
+        "expression": [
+          "months",
+          "priceA",
+          "*",
+          "feeA",
+          "+"
+        ],
+        "unit": "€"
+      },
+      {
+        "id": "b",
+        "label": "Total del plan B",
+        "expression": [
+          "months",
+          "priceB",
+          "*"
+        ],
+        "unit": "€"
+      },
+      {
+        "id": "difference",
+        "label": "Plan B menos plan A",
+        "expression": [
+          "months",
+          "priceB",
+          "*",
+          "months",
+          "priceA",
+          "*",
+          "feeA",
+          "+",
+          "-"
+        ],
+        "unit": "€"
+      }
+    ]
+  },
+  {
+    "type": "calculator",
+    "title": "Una cuenta compartida",
+    "summary": "Ejemplo: reparte una cuenta de 84 € y ajusta una propina opcional. No realiza ningún pago.",
+    "inputs": [
+      {
+        "id": "bill",
+        "label": "Cuenta",
+        "value": 84,
+        "min": 0,
+        "max": 10000,
+        "step": 1,
+        "control": "field",
+        "unit": "€"
+      },
+      {
+        "id": "people",
+        "label": "Personas",
+        "value": 3,
+        "min": 1,
+        "max": 20,
+        "step": 1,
+        "control": "slider",
+        "unit": ""
+      },
+      {
+        "id": "tip",
+        "label": "Propina",
+        "value": 0,
+        "min": 0,
+        "max": 30,
+        "step": 1,
+        "control": "slider",
+        "unit": "%"
+      }
+    ],
+    "outputs": [
+      {
+        "id": "each",
+        "label": "Por persona",
+        "expression": [
+          "bill",
+          "1",
+          "tip",
+          "100",
+          "/",
+          "+",
+          "*",
+          "people",
+          "/"
+        ],
+        "unit": "€"
+      },
+      {
+        "id": "total",
+        "label": "Total con propina",
+        "expression": [
+          "bill",
+          "1",
+          "tip",
+          "100",
+          "/",
+          "+",
+          "*"
+        ],
+        "unit": "€"
+      }
+    ]
+  }
+]

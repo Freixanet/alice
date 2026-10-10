@@ -26,6 +26,8 @@ struct UIComponentView: View {
             MonthCard(month: month, language: language)
         case let .article(article):
             ArticleCard(article: article, language: language)
+        case let .calculator(calculator):
+            NativeCalculatorView(calculator: calculator, language: language).id(calculator)
         case let .spending(spending):
             SpendingCard(spending: spending)
         }

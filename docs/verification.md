@@ -221,3 +221,13 @@ On 2026-10-09 a read-only live check confirmed the Barkibu delivery's two rows i
 Opening canonical chats now requests history, and launch/foreground recovery
 loads the dashboard/chat independently of the gateway catalogue. Diagnostics
 record refresh completion and row count without logging message bodies.
+
+### Native interactive numeric scenarios
+
+Run `bash scripts/verify-native-calculator.sh` for the actual native contract,
+chat-component dispatch, bundled gallery and agent-skill example, locale roundtrips,
+scenario edits, undefined arithmetic and capability rejection. This uses portable
+Swift 6 production models, with no simulator or model calls. Chat fence gating is
+also covered by `UIComponentTests`; run simulator tests only with permission.
+Review physical-device gallery layout, keyboard, VoiceOver, Dynamic Type and both
+themes separately; a generic device compilation does not prove these interactions.

@@ -401,12 +401,19 @@ enum RichMarkdown {
                         closed = true
                         break
                     }
+                    if UIComponent.accepts(fence.language),
+                       current.trimmingCharacters(in: .whitespaces).hasSuffix(fence.marker),
+                       UIComponent(json: (body + [String(current.trimmingCharacters(in: .whitespaces).dropLast(fence.marker.count))]).joined(separator: "\n")) != nil {
+                        body.append(String(current.trimmingCharacters(in: .whitespaces).dropLast(fence.marker.count)))
+                        closed = true
+                        break
+                    }
                     body.append(current)
                 }
                 let code = body.joined(separator: "\n")
                 if fence.language == "alice-interactive", closed, let artifact = try? InteractiveArtifact.fromChatJSON(code) {
                     blocks.append(.interactive(artifact))
-                } else if UIComponent.accepts(fence.language), let component = UIComponent(json: code) {
+                } else if UIComponent.accepts(fence.language), closed, let component = UIComponent(json: code) {
                     blocks.append(.component(component))
                 } else {
                     blocks.append(.code(language: fence.language, text: code))
@@ -1482,7 +1489,11 @@ struct RichMessageView: View {
                 .id(artifact.title + artifact.html + artifact.jsFunctions + artifact.jsExpressions)
                 .chatWide()
         case let .component(component):
-            UIComponentView(component: component, language: ChatLanguage.of(content))
+            if case .calculator = component {
+                UIComponentView(component: component, language: ChatLanguage.of(content)).chatWide()
+            } else {
+                UIComponentView(component: component, language: ChatLanguage.of(content))
+            }
         case let .media(media):
             // Blocks are keyed by position; a different file landing in the
             // same slot (a reply still streaming) must not keep the old card.

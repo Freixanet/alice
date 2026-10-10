@@ -21,6 +21,7 @@ enum UIComponent: Equatable, Sendable {
     case calendar(month: String?)
     case article(Article)
     case spending(Spending)
+    case calculator(NativeCalculator)
 
     struct Place: Equatable, Sendable, Identifiable {
         var id: String { title + (query ?? "") }
@@ -165,6 +166,9 @@ enum UIComponent: Equatable, Sendable {
                 return Article.Section(heading: Self.string(row["heading"]), text: text)
             }
             self = .article(Article(title: title, image: Self.url(object["image"]), sections: sections))
+        case "calculator":
+            guard let calculator = NativeCalculator(json: text) else { return nil }
+            self = .calculator(calculator)
         case "spending":
             guard let income = Self.number(object["income"]), income.isFinite,
                   let spent = Self.number(object["spent"]), spent.isFinite,

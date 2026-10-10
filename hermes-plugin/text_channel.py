@@ -50,7 +50,7 @@ def plain(text: str) -> str:
         links.append(f"{match.group(1).strip()}:\n{match.group(2)}")
         return f"\x00{len(links) - 1}\x00"
 
-    if "```alice-interactive" in text:
+    if "```alice-interactive" in text or "```alice-ui" in text:
         import importlib.util
         from pathlib import Path
         spec = importlib.util.spec_from_file_location("alice_interactive_plain", Path(__file__).with_name("open_intelligent_ui.py"))

@@ -103,7 +103,8 @@ on the user’s iPhone; simulator/UI tests are not run without permission.
 
 ### OpenIntelligentUI Hermes/iPhone adapter
 
-Production chat fences, upstream styles and adapted agent skill/tool; local controls
+Production chat fences, upstream styles and adapted agent skill/tool; native SwiftUI
+numeric scenarios plus flexible sandboxed web compositions; local controls
 and native-reviewed follow-ups. No additional model/provider. See
 [contract, checks and adapter limitations](open-intelligent-ui.md). Companion web
 rendering and upstream CDN libraries are not implemented; purchases remain off.
