@@ -141,7 +141,7 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(verdict["action"], "block")
         self.errands.request_checkout(self.home, entry["id"], {"merchant": "HSN", "site": "hsnstore.com",
                                                                "items": [{"name": "Creatina"}], "total": "27,98 €"})
-        self.errands.decide_checkout(self.home, entry["id"], True)
+        self.errands.decide_checkout(self.home, entry["id"], True, checkout_id=self.errands.get(self.home, entry["id"])["checkout"]["id"])
         self.assertIsNone(self.plugin._guard_errand("browser_vault_fill", fill, session_id=entry["session_id"]))
 
     def test_a_chat_is_told_to_start_an_errand(self):
@@ -180,7 +180,7 @@ class ErrandHookTests(unittest.TestCase):
     def test_an_approved_purchase_still_requires_matching_live_total(self):
         entry=self.errand()
         self.errands.request_checkout(self.home,entry['id'],{'merchant':'HSN','site':'hsnstore.com','items':[{'name':'Creatina'}],'total':'27,98 €'})
-        self.errands.decide_checkout(self.home,entry['id'],True)
+        self.errands.decide_checkout(self.home,entry['id'],True, checkout_id=self.errands.get(self.home, entry["id"])["checkout"]["id"])
         self.errands.update(self.home,entry['id'],offer={'quote_ref':'pq-test'})
         prices=self.plugin._module('purchase_prices.py','alice_purchase_prices')
         access=self.plugin._module('errand_access.py','alice_errand_access')

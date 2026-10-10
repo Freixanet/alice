@@ -2652,19 +2652,28 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
 
     def decide():
         module, root = _errands_module(), _hermes_root()
-        module.expire_checkouts(root)
+        try:
+            module.expire_checkouts(root)
+        except (OSError, ValueError):
+            raise HTTPException(status_code=503, detail="No se pudieron leer los recados.")
         entry = _errand_or_404(errand_id)
-        checkout = entry.get("checkout") or {}
+        checkout = entry.get("checkout")
+        checkout = checkout if isinstance(checkout, dict) else {}
         if checkout.get("id") == body.checkout_id and checkout.get("status") == "expired":
             raise HTTPException(status_code=409, detail="Este checkout ha caducado: prepáralo de nuevo.")
         # The approval is for the checkout the person saw, never a newer one the agent sent meanwhile.
         if checkout.get("id") != body.checkout_id or checkout.get("status") != "pending":
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
-        entry = module.decide_checkout(root, errand_id, body.decision == "allow", card_label=body.card_label)
+        try:
+            entry = module.decide_checkout(root, errand_id, body.decision == "allow",
+                                           card_label=body.card_label, checkout_id=body.checkout_id)
+        except (OSError, ValueError):
+            raise HTTPException(status_code=503, detail="No se pudo guardar la decisión del checkout.")
         if entry is None:
             raise HTTPException(status_code=409, detail="Ese checkout ya no está pendiente.")
         if body.decision == "allow":
-            module.resume(root, errand_id, module.approved_message(entry.get("checkout") or checkout))
+            module.resume(root, errand_id, module.approved_message(entry["checkout"]),
+                          checkout=entry["checkout"])
         else:
             try:
                 from hermes_cli.goals import GoalManager
@@ -2672,7 +2681,7 @@ async def errands_checkout(errand_id: str, body: _CheckoutDecision) -> JSONRespo
                 GoalManager(session_id=entry["session_id"]).clear()
             except Exception:  # noqa: BLE001
                 pass
-        return module.public(module.get(root, errand_id) or entry)
+        return module.public(entry)
 
     return JSONResponse({"errand": await asyncio.to_thread(decide)}, headers=_NO_STORE)
 

@@ -128,7 +128,8 @@ capture_screenshot()
                 "total": "24,49 €", "currency": "EUR",
             }, fetch=lambda *_: (b"", "text/html"), saved_cards=lambda: [{"label": "Fixture card"}])
             assert checkout["status"] == "needs_approval"
-            approved = errands.decide_checkout(home, entry["id"], True)
+            checkout_id = errands.get(home, entry["id"])["checkout"]["id"]
+            approved = errands.decide_checkout(home, entry["id"], True, checkout_id=checkout_id)
             assert approved["checkout"]["approved_cents"] == 2449
             errands.record_receipt(home, entry["session_id"], {
                 "outcome": "paid", "order": "FIXTURE-ONLY", "total": "24,49 €",
