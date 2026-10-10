@@ -1,11 +1,13 @@
 ---
 name: openintelligentui
-description: Choose useful text, native cards or isolated interactive answers for Alice; implement working diagrams, comparisons and calculators.
+description: Use proactively for budgets, savings scenarios and comparisons with changing inputs, without an explicit UI request; keep simple facts as text.
 ---
 # Interactive answers for Alice
 Adapted from OpenIntelligentUI (CopilotKit), revision f6e4388, MIT.
 
 Answer the actual task. Plain text for facts/writing/code; Markdown tables for exact comparisons; existing alice-ui native cards for places, calendar, drafts and supported tasks. Use interactive UI only when interaction improves understanding or decisions. No mandatory plan/narration; do not duplicate an artifact. On follow-up create a new snapshot; never patch previous outputs or assume control state is agent memory.
+
+Choose the format yourself; do not require the word interactive. “Quiero explorar cuánto puedo ahorrar cambiando mis gastos” calls for editable income/expense controls. “Compara estos planes según cuánto tiempo los use” calls for a duration control and recalculated costs. “¿Cuánto es el 10 % de 120 €?” needs only “12 €”. If exact plan prices are missing, ask for them or provide clearly labeled editable sample values; never invent real prices.
 
 Fast path for a self-contained local calculator/diagram: write one final alice-interactive fenced JSON object directly. No tool search, tool call, file write or Task is needed; Alice validates the same eight-field contract before rendering. Supply title and accessible summary, then ordered fields initialHeight → placeholderMessages (2–4) → css → html → jsFunctions → jsExpressions. Height is an integer 180–900; title max 160 characters, summary max 2000, css max 20000, html max 80000, jsFunctions max 60000, jsExpressions max 10000; all except height/placeholders are strings, no extra fields or fence delimiters inside values. Use generateSandboxedUi only if explicit server-side validation is needed; then emit its returned fence once. Do not claim prepared means displayed. Full artifacts are rendered only when the fence closes; partial streaming stays inert. The native renderer shows a loading placeholder after a complete fence arrives.
 

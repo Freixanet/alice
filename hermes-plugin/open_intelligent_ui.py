@@ -7,6 +7,14 @@ import json
 import re
 
 FIELDS = ('title', 'summary', 'initialHeight', 'placeholderMessages', 'css', 'html', 'jsFunctions', 'jsExpressions')
+
+def selection_prompt(session_info=None):
+    if str((session_info or {}).get('platform') or '').lower() in {'photon', 'sms', 'imessage', 'bluebubbles', 'telegram'}:
+        return ''
+    return ('Use text for facts. For exploring savings, budgets or comparisons with changing inputs, '
+            'load skill openintelligentui and render an interactive answer without an explicit UI request. '
+            'Keep native cards for supported tasks.')
+
 SCHEMA = {
     'name': 'generateSandboxedUi',
     'description': 'Prepare one OpenIntelligentUI interactive answer for Alice. Use text/native cards for simple answers. No external action or model call. Preparing and displaying this artifact does not require Task approval. Only a follow-up question proposed by its controls requires the person to review and send it. Emit the returned fence once in your final answer; prepared does not mean displayed.',

@@ -1395,15 +1395,10 @@ def errands_prompt(_session_info=None) -> str:
 
 def debug_prompt(_session_info=None) -> str:
     return (
-        "## Alice app diagnostics\n"
-        "When the person asks what is wrong with Alice or the iPhone app, "
-        "call `alice_app_status` and `alice_recent_errors` before guessing. "
-        "Do not invent connection state. Typical causes: notConfigured means they "
-        "have not paired; unreachable means local network, Tailscale or Hermes is "
-        "down; reconnecting or lostTouch means the gateway dropped mid-turn and "
-        "Alice does not retry mutations; turn.failed is the last send; unknown "
-        "event kinds are stream events Alice has not learnt, and the reply should "
-        "still have been kept.\n"
+        "For Alice/iPhone problems call `alice_app_status` and `alice_recent_errors` before guessing. "
+        "Never invent connection state. notConfigured=not paired; unreachable=network/Tailscale/Hermes down; "
+        "reconnecting/lostTouch=gateway dropped mid-turn (mutations aren't retried); turn.failed=last send failed. "
+        "Unknown stream events must not lose replies."
     )
 
 
@@ -2559,12 +2554,13 @@ def register(ctx) -> None:
     review_tools = _module("review_task_tools.py", "alice_review_task_tools")
     ctx.register_system_prompt_section("alice.tasks", lambda _=None: review_tools.PROMPT)
     interactive_ui = _module("open_intelligent_ui.py", "alice_open_intelligent_ui")
+    ctx.register_system_prompt_section("alice.interactive", interactive_ui.selection_prompt)
     ctx.register_tool(name="generateSandboxedUi", toolset="alice_tasks", schema=interactive_ui.SCHEMA,
                       handler=_tool(interactive_ui.prepare), check_fn=_always,
                       description=interactive_ui.SCHEMA["description"], emoji="📊")
     if hasattr(ctx, "register_skill"):
         ctx.register_skill("openintelligentui", Path(__file__).parent / "skills/openintelligentui/SKILL.md",
-                           description="Useful isolated interactive answers: diagrams, comparisons and calculators.")
+                           description="Use proactively for budgets, savings scenarios and comparisons with changing inputs; no explicit UI request needed.")
 
     def review_task_handler(args=None, session_id="", **_):
         from hermes_constants import get_hermes_home

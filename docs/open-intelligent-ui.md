@@ -11,8 +11,15 @@ a router-model call or a CDN dependency.
 Simple answers remain text. Exact comparisons use Markdown tables; existing native
 Alice cards remain available for supported tasks. Diagrams, calculators and other
 useful interactive answers use the `generateSandboxedUi` tool. Its description and
-the discoverable `openintelligentui` skill carry the choice/quality rules, without
-displacing any of Hermes' limited plugin prompt sections.
+the discoverable `openintelligentui` skill carry the detailed quality rules. A short
+registered system-prompt section instructs the agent to choose interactive UI for
+budgets, savings exploration and comparisons with changing inputs, without an
+explicit UI request, while keeping simple facts as text and existing native cards.
+Diagnostics wording was condensed with its checks preserved to fit the unchanged
+prompt-budget limits. Hermes freezes plugin sections per session: new conversations
+receive this selection rule; restarting services alone does not rewrite the prompt
+of an existing conversation. No persisted user prompt/history is edited for migration.
+Fixture checks prove registration and budget, not the live model's presentation choice.
 
 For self-contained local interfaces the agent can emit one `alice-interactive` fence
 directly; the native parser validates it before rendering. Optional server-side

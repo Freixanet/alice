@@ -18,6 +18,21 @@ def sample():
 
 
 class InteractiveTests(unittest.TestCase):
+    def test_selection_rules_are_in_registered_system_prompt_without_explicit_ui_request(self):
+        plugin_spec = importlib.util.spec_from_file_location('tested_ui_selection_plugin', ROOT / '__init__.py')
+        plugin = importlib.util.module_from_spec(plugin_spec)
+        plugin_spec.loader.exec_module(plugin)
+        sections = {}
+        class Context:
+            def register_system_prompt_section(self, name, fn, **kwargs): sections[name] = fn
+            def __getattr__(self, name): return lambda *args, **kwargs: None
+        plugin.register(Context())
+        prompt = sections['alice.interactive']({'platform':'api_server'})
+        for rule in ['text for facts', 'savings', 'budgets', 'comparisons', 'without an explicit UI request', 'skill openintelligentui', 'native cards']:
+            self.assertIn(rule, prompt)
+        for channel in ['sms', 'imessage', 'telegram', 'photon', 'bluebubbles']:
+            self.assertEqual(sections['alice.interactive']({'platform':channel}), '')
+
     def test_agent_skill_example_obeys_the_strict_artifact_contract(self):
         skill = (ROOT/'skills/openintelligentui/SKILL.md').read_text()
         examples = re.findall(r'```alice-interactive\n(.*?)\n```', skill, re.S)
