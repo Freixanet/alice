@@ -389,7 +389,7 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         root = _hermes_root()
         entry = errands.of_session(root,session)
         active_url = _active_url()
-        presses = name in ('browser_click','browser_press') or bool(errands.CLICKS.search(errands._text_of(args)))
+        presses = errands.browser_presses(name, args)
         payment_step = None
         if presses and (entry or {}).get('offer'):
             access = _module("errand_access.py", "alice_errand_access")
@@ -398,11 +398,25 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
                 active_url = context.get('url') or page_origin
             except Exception:
                 return {"action":"block","message":"No se pudo verificar la página de este recado antes de pulsar un control. Abre su propia página y reintenta."}
-            if errands.STEP_WORDS.search(errands._text_of(args)):
-                try:
-                    payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
-                except Exception:
-                    payment_step = None  # unread: «Finalizar compra» stays treated as paying
+            # A browser_click usually carries only a snapshot ref ("@e7"), not
+            # the button label. Check the *own* live page even when neither the
+            # URL nor the tool arguments mention payment. This does not replace
+            # executor-level authorization for effects outside a detected step.
+            opaque_press = (
+                name == "browser_click"
+                or (name == "browser_press" and isinstance(args, dict)
+                    and str(args.get("key") or "").lower()
+                    in ("enter", "return", "numpadenter", "control+enter", "ctrl+enter",
+                        "space", "spacebar", " "))
+                or name == "browser_exec"  # executable helper scripts can hide the final control
+            )
+            try:
+                payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
+            except Exception:
+                payment_step = None  # unread «Finalizar compra» still counts as paying
+                if opaque_press and not (errands.PAY_WORDS.search(errands._text_of(args))
+                                         or errands.PAY_PAGE.search(active_url)):
+                    return {"action": "block", "message": "No se pudo verificar si el botón o la tecla puede confirmar un pago en este recado. Actualiza su página y vuelve a intentarlo."}
         meta = _vault_meta(name, args)
         if meta is not None and meta.kind != "payment":
             return errands.login_gate(root, session)

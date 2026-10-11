@@ -207,13 +207,91 @@ class ErrandHookTests(unittest.TestCase):
         entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
         access = self.plugin._module("errand_access.py", "alice_errand_access")
         own_page = ("https://www.hsnstore.com", {"url": "https://www.hsnstore.com/creatina"}, None)
-        with mock.patch.object(access, "target", return_value=own_page):
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
             for name, args in (
                 ("browser_click", {"text": "Mostrar detalles"}),
                 ("browser_exec", {"code": "click_text('Show details')"}),
             ):
                 with self.subTest(tool=name):
                     self.assertIsNone(self.plugin._guard_errand(name, args, session_id=entry["session_id"]))
+
+    def test_r02_opaque_presses_detect_a_payment_step_without_checkout_url_or_labels(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/order/final"}, None)
+        # Real browser_click uses only a snapshot ref (@eN); it does not carry
+        # button text. An atypical checkout URL can therefore bypass a text gate.
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=True) as probe:
+            for name, args in (
+                ("browser_click", {"ref": "@e7"}),
+                ("browser_press", {"key": "Enter"}),
+                ("browser_exec", {"code": "click_at_xy(120, 70)"}),
+            ):
+                with self.subTest(tool=name):
+                    verdict = self.plugin._guard_errand(name, args, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+            self.assertGreaterEqual(probe.call_count, 3)
+
+    def test_r02_opaque_product_click_works_when_page_is_verified_not_to_be_payment(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/products/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"]))
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", side_effect=RuntimeError("unavailable")):
+            for name, args in (
+                ("browser_click", {"ref": "@e7"}),
+                ("browser_click", {"text": "Continue"}),
+                ("browser_press", {"key": "Ctrl+Enter"}),
+                ("browser_exec", {"code": "click_text('Continue')"}),
+            ):
+                with self.subTest(name=name, args=args):
+                    verdict = self.plugin._guard_errand(name, args, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+
+    def test_r02_text_describing_an_action_is_not_itself_a_browser_press(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/products/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", side_effect=RuntimeError("offline")):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_exec", {"code": "print('click')"}, session_id=entry["session_id"]))
+        # browser_type fills an input; text mentioning Enter does not press the key.
+        self.assertFalse(self.errands.is_pay_action(
+            "browser_type", {"ref": "@e2", "text": "Please enter your address"},
+            "https://shop.example/payment", payment_step=True))
+
+    def test_r02_browser_script_cannot_navigate_or_change_tabs_then_press_without_recheck(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
+            for code in (
+                "goto_url('https://shop.example/order/final'); click(3)",
+                "click('Continue'); click(3)",
+                "switch_tab('some-tab'); click(3)",
+                "scroll('down'); click(3)",
+            ):
+                with self.subTest(code=code):
+                    verdict = self.plugin._guard_errand(
+                        "browser_exec", {"code": code}, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+
+    def test_r02_read_only_cdp_cannot_target_an_unverified_foreign_tab(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        for target in ({"target_id": "other-tab"}, {"frame_id": "other-frame"}, {"target_id": ""}):
+            with self.subTest(target=target):
+                verdict = self.plugin._guard_errand(
+                    "browser_cdp", {"method": "DOM.getDocument", "params": {}, **target},
+                    session_id=entry["session_id"])
+                self.assertEqual(verdict["action"], "block")
 
     def test_r02_purchase_selection_chat_cannot_run_opaque_browser_code(self):
         session = "chat-9"
