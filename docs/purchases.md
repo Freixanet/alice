@@ -9,7 +9,7 @@ obligatoria en el ejecutor, limita su uso seguro a investigación y consulta
 sin credenciales de pago ni capacidad de modificación externa; cualquier
 compra real debe iniciarla y confirmarla la persona separadamente en la tienda.
 El [ADR R02](decisions/0002-r02-executor-authority.md) especifica la solución
-necesaria y el flujo manual *propuesto, todavía no implementado*.
+necesaria y el flujo manual _propuesto, todavía no implementado_.
 
 La compra se divide entre el chat, donde se decide qué comprar, y un recado de
 Hermes, que prepara el pedido y espera la aprobación antes de pagar.

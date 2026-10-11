@@ -31,7 +31,7 @@ exception that lets that click pass, plus repeated acceptance of one checkout
 at the non-consuming `pay_gate` layer (this does not prove two payments). The
 canary intentionally exits **2** if
 the desired authority is missing. Its positives demonstrate only that
-existing restricted tool flows remain available at the *tool-hook* level.
+existing restricted tool flows remain available at the _tool-hook_ level.
 
 **Crucial limitation:** checking button labels, URLs, DOM state or a card-input
 field cannot establish the effect of clicking an arbitrary element. Scripted
@@ -48,20 +48,20 @@ Keep optional generic middleware for observability and rewriting; introduce a
 Hermes executor. Alice supplies policy for its purchase sessions via a
 versioned **official** registration, e.g.
 `register_action_authorizer('browser.effect', authorize)`; this name is a
-*proposed API*, **not an existing Hermes feature**.
+_proposed API_, **not an existing Hermes feature**.
 
 ### Where checks must execute
 
-| Hermes component | Required change (upstream proposal) |
-|---|---|
-| `agent/tool_executor.py` | Establish a server-trusted actor/run/scope and fail closed if required authorization cannot be obtained, including callback exceptions/timeouts; do not treat generic prehooks as authoritative. |
-| `hermes_cli/plugins.py` / `middleware.py` | Add a versioned, required-authorizer registration distinct from best-effort hooks/middleware. No skip-on-error for required policies; unavailable/unregistered policy for protected scope = reject. |
-| `tools/browser_tool.py` / `browser_tool_session.py` | Validate every actual click/press/fill/navigation operation **after** resolving the real target/ref and **immediately before** issuing its browser command; reject changed target/document. |
-| `tools/browser_use_cli.py` and browser-use helper/CLI executor | Replace unrestricted multi-action scripting for protected runs with individual brokered commands (or a restricted declarative interpreter); every helper calls the authority. No unchecked JS/aliases/imports or ambient CDP transport. |
-| `tools/browser_console`, `browser_cdp_tool.py`, `browser_dialog_tool.py` | Make all script, raw protocol and dialog paths pass through the same broker, including explicit target/frame and indirect `Runtime.evaluate`/input. Reject unprovable effects rather than using tool-name regex. |
-| Agent tool registry/scope and child-process isolation | Remove direct shell, filesystem/network/CDP escape paths in protected runs at *execution*, not merely prompt/tool advertisement. Child processes must have no separate usable browser/debug credentials or unrestricted egress. |
-| Browser broker / network egress | Enforce session-owned browser context, target/frame, document epoch and approved egress policy. Classify uncertain externally mutating operations as requiring manual execution. A generic broker cannot itself prove a third-party payment semantic. |
-| Dashboard/phone browser input | Distinguish human-controlled authenticated actions from agent actions with trustworthy provenance. A human handoff must atomically revoke the agent's ability to act on that context. |
+| Hermes component                                                         | Required change (upstream proposal)                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent/tool_executor.py`                                                 | Establish a server-trusted actor/run/scope and fail closed if required authorization cannot be obtained, including callback exceptions/timeouts; do not treat generic prehooks as authoritative.                                                      |
+| `hermes_cli/plugins.py` / `middleware.py`                                | Add a versioned, required-authorizer registration distinct from best-effort hooks/middleware. No skip-on-error for required policies; unavailable/unregistered policy for protected scope = reject.                                                   |
+| `tools/browser_tool.py` / `browser_tool_session.py`                      | Validate every actual click/press/fill/navigation operation **after** resolving the real target/ref and **immediately before** issuing its browser command; reject changed target/document.                                                           |
+| `tools/browser_use_cli.py` and browser-use helper/CLI executor           | Replace unrestricted multi-action scripting for protected runs with individual brokered commands (or a restricted declarative interpreter); every helper calls the authority. No unchecked JS/aliases/imports or ambient CDP transport.               |
+| `tools/browser_console`, `browser_cdp_tool.py`, `browser_dialog_tool.py` | Make all script, raw protocol and dialog paths pass through the same broker, including explicit target/frame and indirect `Runtime.evaluate`/input. Reject unprovable effects rather than using tool-name regex.                                      |
+| Agent tool registry/scope and child-process isolation                    | Remove direct shell, filesystem/network/CDP escape paths in protected runs at _execution_, not merely prompt/tool advertisement. Child processes must have no separate usable browser/debug credentials or unrestricted egress.                       |
+| Browser broker / network egress                                          | Enforce session-owned browser context, target/frame, document epoch and approved egress policy. Classify uncertain externally mutating operations as requiring manual execution. A generic broker cannot itself prove a third-party payment semantic. |
+| Dashboard/phone browser input                                            | Distinguish human-controlled authenticated actions from agent actions with trustworthy provenance. A human handoff must atomically revoke the agent's ability to act on that context.                                                                 |
 
 If upstream cannot provide these hooks for every active execution backend,
 Hermes should **not advertise automated, safely authorized purchase submission**.
@@ -157,15 +157,15 @@ hook alone cannot guarantee that fallback against every alternate executor.
 
 ## Required acceptance evidence before R02 may close
 
-| Negative (must deny) | Positive (must preserve) |
-|---|---|
-| Required policy missing, exception, timeout or crash at every dispatch stage | Normal read-only DOM inspection, product title/price, screenshots |
-| Unknown final button and JS-driven network side effect despite harmless labels | Navigation and item selection within constrained fixture |
-| Raw console JS, `Runtime.evaluate`, CDP mouse/key/dialog and indirect JavaScript | Separate sanctioned product click, cart adjustment and checkout review |
-| Agent changes tab, popup, frame, document after authorization | Two authorized consecutive interactions each with fresh action authority |
-| Replays, mismatched session/profile/target/checkout/merchant/item/qty/recipient/total/currency | Valid one-use authorization for a specific **mock** checkout request |
-| Back-to-back submits, crash after dispatch, unknown transaction outcome | Correct no-retry/reconciliation state and human-control handoff |
-| Network, shell or subprocess bypassing browser broker | Authenticated person performs final submission with agent scope revoked |
+| Negative (must deny)                                                                           | Positive (must preserve)                                                 |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Required policy missing, exception, timeout or crash at every dispatch stage                   | Normal read-only DOM inspection, product title/price, screenshots        |
+| Unknown final button and JS-driven network side effect despite harmless labels                 | Navigation and item selection within constrained fixture                 |
+| Raw console JS, `Runtime.evaluate`, CDP mouse/key/dialog and indirect JavaScript               | Separate sanctioned product click, cart adjustment and checkout review   |
+| Agent changes tab, popup, frame, document after authorization                                  | Two authorized consecutive interactions each with fresh action authority |
+| Replays, mismatched session/profile/target/checkout/merchant/item/qty/recipient/total/currency | Valid one-use authorization for a specific **mock** checkout request     |
+| Back-to-back submits, crash after dispatch, unknown transaction outcome                        | Correct no-retry/reconciliation state and human-control handoff          |
+| Network, shell or subprocess bypassing browser broker                                          | Authenticated person performs final submission with agent scope revoked  |
 
 Use an isolated HTTPS **fictional store** and captured/mocked payment endpoint;
 no real merchants, orders, money, personal browser, vault or service effects.
