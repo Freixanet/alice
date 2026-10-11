@@ -19,3 +19,6 @@ For a meaningful new decision, capture:
 Record only durable decisions. Minor fixes, experiments and routine UI polish
 usually do not need an ADR. Supersede outdated records: never silently rewrite
 their historical rationale. Keep private runtime details outside public Git.
+
+When reviewing a PR that adopts or replaces a decision, check that the affected
+ADR's status matches what actually happened; link the adopting PR or successor.
