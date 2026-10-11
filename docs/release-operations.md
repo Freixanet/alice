@@ -11,6 +11,12 @@ fails unless the endpoint is healthy and its body and release header identify th
 same version. Record that version alongside the immutable Vercel deployment URL
 before promoting it.
 
+When checking a specific deployment or a rollback, supply its **full 40-character
+Git commit SHA** as `ALICE_EXPECTED_SHA` with the same command. This additionally
+rejects an alias serving a different release even when its body and header agree.
+The check compares only the 12-character version fingerprint exposed by Alice;
+it does not independently prove deployment integrity or authenticated behavior.
+
 ## Alerts
 
 Runtime logs use two machine-readable record types:
@@ -32,8 +38,9 @@ are cooled down for one minute per code, route and metric.
 
 1. Select the last known-good immutable production deployment in Vercel.
 2. Promote that deployment to the production alias; do not rebuild it.
-3. Run the release verifier against the production alias and confirm that its
-   version matches the selected deployment.
+3. Run the release verifier against the production alias with
+   `ALICE_EXPECTED_SHA` set to the selected deployment's commit SHA; confirm the
+   returned version matches. Do not rely on header/body agreement alone.
 4. Exercise login, `/connect`, one Hermes read and one chat request.
 5. Preserve the failed release logs and open a corrective change from `main`.
 
