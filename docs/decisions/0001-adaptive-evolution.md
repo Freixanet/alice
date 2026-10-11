@@ -1,6 +1,6 @@
 # ADR 0001: Evolve Alice without a fixed feature roadmap
 
-- **Status:** Proposed (pending review/merge of the adopting PR)
+- **Status:** Accepted ([PR #72](https://github.com/Freixanet/alice/pull/72), merged 2026-10-11)
 - **Date:** 2026-10-11
 - **Scope:** Engineering process and product evolution
 - **Supersedes:** None
