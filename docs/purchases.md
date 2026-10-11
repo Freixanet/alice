@@ -1,5 +1,16 @@
 # Comprar con Alice
 
+**Estado R02 P0 (PR #76, borrador, NO-GO para pagos autónomos):** el flujo
+descrito a continuación existe en el código, pero **no constituye una barrera
+verificada frente a todos los métodos de pago o ejecución del navegador**.
+El botón actual de aprobación reanuda al agente: no es una transferencia segura
+del último paso a una persona. Hasta que Hermes disponga de autorización
+obligatoria en el ejecutor, limita su uso seguro a investigación y consulta
+sin credenciales de pago ni capacidad de modificación externa; cualquier
+compra real debe iniciarla y confirmarla la persona separadamente en la tienda.
+El [ADR R02](decisions/0002-r02-executor-authority.md) especifica la solución
+necesaria y el flujo manual *propuesto, todavía no implementado*.
+
 La compra se divide entre el chat, donde se decide qué comprar, y un recado de
 Hermes, que prepara el pedido y espera la aprobación antes de pagar.
 
@@ -97,6 +108,15 @@ The person chooses a format in its detail and edits units there, initially one. 
 After login, `purchase_check_cart` reads the errand's real units and current price and binds them to its store session. `checkout_request` refuses absent/stale evidence and reads the final amount using `total_selector`; checkout items come from the chosen offer. Approval and the existing payment gates remain mandatory. The fixture script `scripts/verify-purchase-complete.py --agent` exercises GPT-6 Luna with a synthetic intercepted shop on an isolated Chrome port, fictional accounts and no payment operation. Native visual fixtures are behind the debug-only `-purchaseReview` argument and run in the Purchase review CI workflow.
 
 Antes de rellenar una tarjeta o ejecutar una acción de pago, el servidor vuelve a leer el total visible del resumen vinculado a la aprobación. Un cambio de importe, sesión o contexto bloquea el pago hasta una nueva comprobación y aprobación; un fallo al comprobarlo también bloquea el pago.
+
+**R02 (seguridad pendiente; [ADR propuesto](decisions/0002-r02-executor-authority.md)):**
+esas comprobaciones se aplican a los pasos de pago que Alice identifica. No
+garantizan la autorización de todos los efectos del navegador ni del envío
+definitivo del pedido. En versiones actuales de Hermes, los hooks y los
+middlewares pueden continuar tras ciertas excepciones y no supervisan cada
+operación del subproceso del navegador. Una aprobación de checkout en la app
+reanuda actualmente un agente; **no equivale a reservar el último clic para la
+persona**. PR #76 permanece en borrador y no autoriza activar pagos automáticos.
 
 # Correcciones de búsqueda y comprobación en Prozis
 
