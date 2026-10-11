@@ -34,9 +34,10 @@ An unavailable ledger is a limitation to report, not a reason to invent its cont
   personal Hermes installation is running it or that payments are safe overall.
 - **Browser action authorization (R02):** [PR #69](https://github.com/Freixanet/alice/pull/69)
   records an outstanding browser JavaScript authorization issue, separately
-  from the checkout recovery addressed by U1. That historical PR does not
-  establish whether the issue has since been resolved or which other execution
-  paths are affected. Consult [architecture](architecture.md),
+  from the checkout recovery addressed by U1. [PR #64](https://github.com/Freixanet/alice/pull/64)
+  proposes additional safeguards but is not integrated into `main`. Neither
+  proposal nor historical report proves complete coverage or current runtime
+  status. Consult [architecture](architecture.md),
   [verification](verification.md) and the relevant browser/tool code before
   making a security claim. Detailed reproductions and current operational
   status may be private; an agent without access must say which facts it cannot
