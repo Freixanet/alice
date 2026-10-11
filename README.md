@@ -13,7 +13,7 @@ on your own Mac or server.
 Store; you build it with Xcode. It needs iOS 26 and a Hermes you run yourself. It is an
 independent project, not a Nous Research product.
 
-[Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Guía en español](docs/getting-connected.md)
+[Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Public release snapshot](docs/release-status.md) · [Guía en español](docs/getting-connected.md)
 
 ## From a thought to a task
 
