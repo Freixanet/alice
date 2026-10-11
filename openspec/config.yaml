@@ -1,0 +1,36 @@
+schema: spec-driven
+
+context: |
+  Alice is an iOS-first Hermes companion developed in public as an evolving,
+  open-source-in-progress personal product and an engineering portfolio.
+  There is no mandatory feature roadmap. Priorities respond to user needs,
+  experimentation, AI advances, competitors, and standards.
+  Read AGENTS.md and docs/continuity.md; consult affected architecture,
+  decisions, specifications and tests, not the entire history by default.
+  Existing solutions and decisions are replaceable with a better verified design.
+  Distinguish proposed, merged, deployed and personally installed states.
+  Never publish private operational facts or alter a real person's Hermes
+  as part of routine development.
+
+rules:
+  proposal:
+    - Explain the user outcome, why it matters now, and what is out of scope.
+    - Keep the proposal proportional to risk; do not invent a feature roadmap.
+  specs:
+    - Specify observable behavior, relevant failure and recovery paths.
+    - Distinguish current intended behavior from speculative future features.
+  design:
+    - Link affected contracts and decision records when architecture changes.
+    - State why replacing an old design preserves or deliberately revises guarantees.
+  tasks:
+    - Include targeted regression and compatibility checks for affected surfaces.
+
+operations:
+  apply:
+    guidance:
+      - Preserve unrelated and concurrent changes; run actual applicable checks.
+      - Do not merge, deploy, install to personal Hermes or change live configuration without explicit authorization.
+  archive:
+    guidance:
+      - Sync only shipped behavior; update/supersede relevant decisions.
+      - State which results are only tested, merged, deployed or installed.
