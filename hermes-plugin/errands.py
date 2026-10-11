@@ -21,6 +21,7 @@ asked (``ask_before_login``).
 
 from __future__ import annotations
 
+import ast
 import fcntl
 import json
 import math
@@ -83,6 +84,63 @@ PAY_PAGE = re.compile(
 # Browser actions that can press something on the page (Browser Use code or built-in tools).
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
+# Raw DevTools and page scripting do not supply trustworthy button/merchant semantics.
+# A narrow set of data-only CDP methods is safe to inspect; everything else requires
+# a separate, checked high-level browser action during a purchase errand.
+RAW_BROWSER = ("browser_console", "browser_cdp", "browser_dialog")
+READ_ONLY_CDP = frozenset({
+    "DOM.getDocument", "DOM.querySelector", "DOM.querySelectorAll",
+    "DOM.describeNode", "Page.getFrameTree",
+})
+# These are the documented high-level browser helpers (and side-effect-free
+# Python builtins). Their *actual* clicks still pass the existing pay_gate;
+# arbitrary helper aliases, custom functions or raw JavaScript do not.
+CHECKED_BROWSER_HELPERS = frozenset({
+    "page_info", "print", "capture_screenshot", "wait_for_load",
+    "goto_url", "click", "click_text", "click_at_xy", "type_text",
+    "fill", "read", "scroll", "current_tab", "switch_tab",
+    "ensure_real_tab", "new_tab", "list_tabs", "press_key",
+    "len", "str", "int", "float", "bool", "range", "min", "max",
+})
+CHECKED_BROWSER_SYNTAX = (
+    ast.Module, ast.Expr, ast.Call, ast.Name, ast.Load, ast.Constant,
+    ast.keyword, ast.Tuple, ast.List, ast.Dict, ast.Subscript, ast.Slice,
+    ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.UnaryOp, ast.USub,
+)
+
+
+def unverified_browser_effect(tool_name: str, args: Any) -> bool:
+    """Fail closed for page effects whose target cannot be checked by the checkout gate.
+
+    This is a tool-layer containment, not an OS/CDP sandbox: independently executed
+    browser requests still require a trusted browser boundary before R02 can close.
+    """
+    a = args if isinstance(args, dict) else {}
+    if tool_name == "browser_cdp":
+        return str(a.get("method") or "") not in READ_ONLY_CDP
+    if tool_name == "browser_dialog":
+        return str(a.get("action") or "").lower() != "dismiss"
+    if tool_name == "browser_console":
+        return bool(str(a.get("expression") or "").strip())
+    if tool_name != "browser_exec":
+        return False
+    source = a.get("code")
+    if not isinstance(source, str):
+        return True
+    try:
+        nodes = ast.walk(ast.parse(source))
+    except (SyntaxError, ValueError, TypeError):
+        return True
+    # Reject aliases, assignments, functions, attributes, loops and dynamic
+    # expressions: otherwise `click = js; click(...)` could rebind an approved
+    # helper to an unguarded arbitrary-JavaScript primitive. This restricts
+    # *agent code* only; the trusted context preamble is injected afterwards.
+    return any(
+        not isinstance(node, CHECKED_BROWSER_SYNTAX)
+        or (isinstance(node, ast.Call) and
+            (not isinstance(node.func, ast.Name) or node.func.id not in CHECKED_BROWSER_HELPERS))
+        for node in nodes
+    )
 
 
 def _money():

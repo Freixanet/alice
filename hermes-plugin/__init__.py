@@ -358,7 +358,7 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
     name = str(tool_name or "")
-    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
+    if name in ("terminal", "execute_code", "shell", "bash", "run_command", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
         session = _session_id(session_id)
         if not session.startswith(_errands().SESSION_PREFIX):
             return None
@@ -369,6 +369,18 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         except Exception:
             pass
         return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
+    # The final tool boundary, not the model's wording, must reject arbitrary
+    # JavaScript/CDP/dialog effects. A valid checkout does not authorize raw
+    # commands against another tab, shop or amount.
+    if name in (*_errands().RAW_BROWSER, "browser_exec"):
+        session = _session_id(session_id)
+        if session.startswith(_errands().SESSION_PREFIX):
+            try:
+                entry = _errands().of_session(_hermes_root(), session)
+            except Exception:
+                return {"action": "block", "message": "No se pudo verificar la autoridad del navegador de este recado."}
+            if (entry or {}).get("offer") and _errands().unverified_browser_effect(name, args):
+                return {"action": "block", "message": "Este recado no permite scripts, CDP ni diálogos con efectos sin verificar. Usa las herramientas de navegador comprobadas y solicita la aprobación del checkout antes de pagar."}
     if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
         return None
     session = _session_id(session_id)
@@ -1686,6 +1698,10 @@ def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
         return None
     if name.startswith(("browser", "catalog_", "web_search", "web_extract")):
         _LOOKED.add(session)
+    # Before a purchase option is chosen, a chat can research shops but cannot
+    # bypass that handoff by using raw page JavaScript/CDP/dialogs instead.
+    if session in _PURCHASE_OPEN and _errands().unverified_browser_effect(name, args):
+        return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     if _purchase_flow().is_cart_action(name, args):
         return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     return None
@@ -2033,6 +2049,9 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
+    # Check the *agent's original code* before the trusted isolation preamble
+    # adds CDP/imports. A later guard would misread our own preamble as unsafe.
+    ctx.register_hook("pre_tool_call", _guard_errand)
     # And each errand browses in its own context of it, never another errand's basket.
     ctx.register_hook("pre_tool_call", _isolate_errand_browser)
     ctx.register_hook("pre_tool_call", _guard_errand_access)
@@ -2042,7 +2061,6 @@ def register(ctx) -> None:
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
     # One payment per order, kept by the plugin rather than the model (purchases.py).
     # Nothing is paid without the person's approved checkout (errands.py).
-    ctx.register_hook("pre_tool_call", _guard_errand)
     # A chat turn that asks for an errand starts it, and neither browses nor asks itself.
     ctx.register_hook("pre_llm_call", _errand_turn)
     ctx.register_hook("pre_tool_call", _guard_chat_errand)
