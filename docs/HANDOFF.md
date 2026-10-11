@@ -1,5 +1,9 @@
 # Handoff — 24 Sep 2026
 
+> Historical snapshot only. Its branch, deployment and personal installation
+> claims are not current evidence. Verify Git, CI and the actual runtime before
+> using these instructions or assuming the listed versions are installed.
+
 This is where the work stands and what comes next. The user writes in Spanish, and expects plain explanations and a single recommendation (see AGENTS.md and CLAUDE.md).
 
 ## State
@@ -40,7 +44,7 @@ This is where the work stands and what comes next. The user writes in Spanish, a
    - (2) a status snippet under Alice's avatar; tapping it opens her activity log and the permissions she has been granted;
    - (3) a proactivity setting (off / less / more), plus approval cards for irreversible browser actions with a caution level;
    - (4) an Ideas tab and first-day tips;
-   - (5) a truly personal Alice: the user's own name, avatar and style. The persona currently hard-codes "Marcos".
+   - (5) a truly personal Alice: the user's own name, avatar and style. The persona currently hard-codes the owner's name.
    - (6) chat bubbles for Alice's messages (ask first).
 4. **Gmail isn't connected yet.** The user has to do it.
 
@@ -50,7 +54,7 @@ See AGENTS.md. In short:
 
 ```
 cd ios && xcodegen generate && xcodebuild -project Alice.xcodeproj -scheme Alice -configuration Debug -destination 'generic/platform=iOS' -derivedDataPath .build/DeviceData -allowProvisioningUpdates CURRENT_PROJECT_VERSION=96 build-for-testing
-xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B .build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
+xcrun devicectl device install app --device "DEVICE_ID" .build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
 ```
 
 Plugin tests:

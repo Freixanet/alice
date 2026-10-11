@@ -5,6 +5,21 @@ client and Hermes dashboard plugin are companion surfaces. Preserve useful
 features while making everyday use simpler. Do not treat a clean build as proof
 that a feature works against Hermes.
 
+## Evolve without a fixed roadmap
+
+Alice is a public, open-source-in-progress portfolio project. Product direction
+can change in response to user needs, new AI capabilities, industry standards
+and competitors; the engineering quality plan is **not** a feature roadmap.
+Architectures, features and earlier decisions may be replaced when a better
+approach is justified and verified. Do not preserve implementations merely
+because they are old, or discard guarantees merely because they look complex.
+
+Use [the continuity guide](docs/continuity.md) when changing a feature or
+architectural contract. Read affected specifications and decisions _selectively_;
+record why important choices change and what evidence supports them. Keep minor
+fixes lightweight. Never treat repository, deployment and a person's installed
+Hermes as the same state. Do not commit private runtime data.
+
 ## Start here, in any coding tool
 
 1. Read `README.md`, `docs/architecture.md`, `SECURITY.md` and the nearest instructions.
@@ -17,7 +32,10 @@ that a feature works against Hermes.
 This file is the shared source of instructions for Codex, Claude Code, Cursor
 and other tools. Tool-specific files point here rather than duplicate policy.
 
-## Contracts that must survive changes
+## Contracts to examine when changing designs
+
+These are current guarantees to preserve by default. A justified replacement may
+revise them after the affected security, data and compatibility checks are updated.
 
 - **Connection identity:** home chat belongs to the installation's main profile.
   Bot chats carry their own profile and canonical session. Never silently reroute
@@ -67,7 +85,8 @@ here; it depends on a simulator. To ship a change to the user's iPhone:
 xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
   -destination 'generic/platform=iOS' -derivedDataPath ios/.build/DeviceData \
   -allowProvisioningUpdates build
-xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
+xcrun devicectl list devices # find the target device ID; never commit its value
+xcrun devicectl device install app --device "DEVICE_ID" \
   ios/.build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
 ```
 
