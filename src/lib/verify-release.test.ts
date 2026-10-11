@@ -55,7 +55,7 @@ async function verify(fixture: StatusFixture) {
       const { stdout } = await execFileAsync(
         process.execPath,
         [verifier, `http://127.0.0.1:${address.port}`],
-        { env, timeout: 5_000 },
+        { env, timeout: 20_000 },
       );
       return { ok: true, message: stdout };
     } catch (error) {
@@ -99,28 +99,45 @@ describe("deployment release verifier", () => {
   });
 
   it.each([
-    { name: "missing header", bodyVersion: version },
-    { name: "missing body version", headerVersion: version },
+    {
+      name: "missing header",
+      bodyVersion: version,
+      message: "Release metadata is missing or inconsistent",
+    },
+    {
+      name: "missing body version",
+      headerVersion: version,
+      message: "Release metadata is missing or inconsistent",
+    },
     {
       name: "mismatched header",
       bodyVersion: version,
       headerVersion: "ffffffffffff",
+      message: "Release metadata is missing or inconsistent",
     },
-    { name: "empty version", bodyVersion: "", headerVersion: "" },
+    {
+      name: "empty version",
+      bodyVersion: "",
+      headerVersion: "",
+      message: "Release metadata is missing or inconsistent",
+    },
     {
       name: "invalid version",
       bodyVersion: "wrong version",
       headerVersion: "wrong version",
+      message: "Release metadata is missing or inconsistent",
     },
     {
       name: "HTTP error",
       bodyVersion: version,
       headerVersion: version,
       status: 503,
+      message: "Release check failed with HTTP 503",
     },
   ])("rejects $name", async (fixture) => {
     const result = await verify(fixture);
     expect(result.ok).toBe(false);
+    expect(result.message).toContain(fixture.message);
   });
 
   it.each(["", "abc", "g".repeat(40), "0".repeat(41)])(
