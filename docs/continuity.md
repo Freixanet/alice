@@ -18,6 +18,9 @@ users, competition, new AI models and industry standards. This document describe
 | What is actually running?                       | Git commit, deployment status and **separately** the installation/runtime inventory; never infer the latter from GitHub |
 | What happened during an agent session?          | Execution ledger if available to that agent, PR/CI records, evidence archives; this history is **not** a specification  |
 
+For a dated public view of repository, CI and web deployment state, see the
+[release snapshot](release-status.md). Recheck its live sources before use.
+
 The execution ledger may live outside this public repository and contain
 private operational facts. Do not copy local paths, tokens, personal sessions,
 private security reproductions, or installation inventories into public docs.
