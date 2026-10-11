@@ -1,6 +1,86 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Preferences": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preferencias"
+          }
+        }
+      }
+    },
+    "Your agent connection": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La conexión con tu agente"
+          }
+        }
+      }
+    },
+    "Stone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Piedra"
+          }
+        }
+      }
+    },
+    "Sage": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Salvia"
+          }
+        }
+      }
+    },
+    "Sky": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cielo"
+          }
+        }
+      }
+    },
+    "Violet": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Violeta"
+          }
+        }
+      }
+    },
+    "Rose": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Rosa"
+          }
+        }
+      }
+    },
+    "Amber": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ámbar"
+          }
+        }
+      }
+    },
     "Ask Alice to buy, order or book something. She does it in the background and asks you before paying.": {
       "localizations": {
         "es": {
@@ -14784,6 +14864,54 @@
           "stringUnit": {
             "state": "translated",
             "value": "Guarda el brief y pide posts nuevos a Alice"
+          }
+        }
+      }
+    },
+    "Couldn’t add attachment": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Couldn’t add attachment"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido añadir el adjunto"
+          }
+        }
+      }
+    },
+    "This file is too large. Choose a file of 20 MB or less.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This file is too large. Choose a file of 20 MB or less."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este archivo es demasiado grande. Elige uno de 20 MB o menos."
+          }
+        }
+      }
+    },
+    "This attachment could not be read. Try downloading it first or choosing it again.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This attachment could not be read. Try downloading it first or choosing it again."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No se ha podido leer este adjunto. Prueba a descargarlo primero o a seleccionarlo de nuevo."
           }
         }
       }

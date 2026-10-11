@@ -200,7 +200,7 @@ struct ErrandStack: View {
             // The browser only while it is being used: not before it starts, and gone once the
             // errand waits for the person or ends (a still page left there read as broken). Under
             // the errand's card, which is on screen first: above it, it pushed that card down.
-            if errand.status == .working && !errand.steps.isEmpty {
+            if (errand.status.isOpen || errand.status == .stuck) && !errand.steps.isEmpty {
                 ErrandBrowserCard(errand: errand, snapshot: snapshot, onOpen: onOpenBrowser)
             }
             if errand.status == .needsLogin, let request = errand.accessRequest {
@@ -269,7 +269,7 @@ struct ErrandStack: View {
                 }
             } else if [.stuck, .denied, .stopped].contains(errand.status) {
                 ErrandStoppedCard(errand: errand, session: session, sending: sending,
-                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel)
+                                  onAcceptPrice: onAcceptPrice, onRetry: onRetry, onCancel: onCancel, onOpenBrowser: onOpenBrowser)
             }
             if let problem, checkoutPhase == nil {
                 Text(problem).font(.footnote).foregroundStyle(Palette.danger(scheme))
@@ -304,8 +304,20 @@ struct ErrandChatBlock: View {
 
     @Environment(AppStore.self) private var store
     @State private var browsing = false
+    @State private var browserProblem: String?
 
     private var board: ErrandBoard { store.errandBoard }
+
+    private func openBrowser(for errand: Errand) {
+        guard errand.browserTarget != nil else {
+            browserProblem = errand.language.pick(
+                "This purchase’s browser is unavailable. Retry the purchase to reopen it.",
+                "El navegador de esta compra no está disponible. Reintenta la compra para recuperarlo.")
+            return
+        }
+        browserProblem = nil
+        browsing = true
+    }
 
     var body: some View {
         Group {
@@ -313,8 +325,8 @@ struct ErrandChatBlock: View {
                 ErrandStack(
                     errand: errand, logoID: errand.id,
                     // A saved errand's buttons wait for the Mac's own word on it.
-                    sending: board.sending.contains(errand.id) || !board.fresh, problem: board.problems[errand.id],
-                    onOpenBrowser: { browsing = true },
+                    sending: board.sending.contains(errand.id) || !board.fresh, problem: browserProblem ?? board.problems[errand.id],
+                    onOpenBrowser: { openBrowser(for: errand) },
                     onDecide: { allow, card in Task { await board.decide(errand, allow: allow, card: card) } },
                     onAnswer: { answers in Task { await board.answerQuestions(errand, answers) } },
                     onConfirm: { allow in Task { await board.confirm(errand, allow: allow) } },
@@ -334,7 +346,8 @@ struct ErrandChatBlock: View {
                     board.fresh && !old && new
                 }
                 .fullScreenCover(isPresented: $browsing) {
-                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)
+                    LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text,
+                                      pinnedTarget: errand.browserTarget)
                 }
             } else if !board.loaded {
                 HStack(spacing: 10) {

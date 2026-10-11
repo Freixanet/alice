@@ -6,6 +6,7 @@ struct TaskPlanCard: View {
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ScaledMetric(relativeTo: .subheadline) private var stepSpacing: CGFloat = 12
     let plan: TaskPlan
     /// The task is still going: the plan stays open.
     var working: Bool
@@ -25,7 +26,7 @@ struct TaskPlanCard: View {
             .accessibilityHint(expanded ? "Hides the steps" : "Shows the steps")
 
             if expanded {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: stepSpacing) {
                     ForEach(plan.items) { item in
                         row(item)
                     }
@@ -46,13 +47,13 @@ struct TaskPlanCard: View {
             ProgressRing(fraction: plan.total == 0 ? 0 : Double(plan.done) / Double(plan.total),
                          tint: store.accent.primary(scheme))
                 .frame(width: 18, height: 18)
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.subheadline.weight(.semibold))
+                    .font(.headline)
                     .foregroundStyle(.primary)
                 if !expanded, let current = plan.current {
                     Text(current.content)
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -63,7 +64,7 @@ struct TaskPlanCard: View {
                 .foregroundStyle(.tertiary)
                 .rotationEffect(.degrees(expanded ? 180 : 0))
         }
-        .frame(minHeight: 30)
+        .frame(minHeight: 44)
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
     }
@@ -79,7 +80,8 @@ struct TaskPlanCard: View {
                 .font(.footnote)
                 .frame(width: 16)
             Text(item.content)
-                .font(.footnote)
+                .font(.subheadline)
+                .lineSpacing(4)
                 .foregroundStyle(item.status == .inProgress ? .primary : .secondary)
                 .fontWeight(item.status == .inProgress ? .medium : .regular)
                 .strikethrough(item.status == .cancelled)

@@ -17,7 +17,7 @@ struct Sidebar: View, Equatable {
     /// destinations are listed visibly; configuration is progressively disclosed
     /// through Settings while remaining searchable for expert users.
     private enum Destination: String, Identifiable {
-        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect
+        case activity, feed, routines, projects, git, skills, tools, mcp, webhooks, channels, system, files, library, settings, connect, models, memory
         var id: String { rawValue }
     }
 
@@ -83,6 +83,8 @@ struct Sidebar: View, Equatable {
                 case .system: closable { SystemScreen() }
                 case .files: closable { HermesFilesScreen() }
                 case .library: closable { LibraryView() }
+                case .models: closable { ModelsProvidersScreen() }
+                case .memory: closable { MemoryScreen() }
                 // These two bring their own Done; a second would be one too many.
                 case .settings: NavigationStack { SettingsView() }
                     .presentationBackground(Palette.background(scheme))
@@ -411,9 +413,10 @@ struct Sidebar: View, Equatable {
         case .git: going = .git
         case .system: going = .system
         case .connect: going = .connect
-        // Reached inside Settings. Landing there is one tap short of the
-        // destination and still far better than not finding it at all.
-        case .settings, .memory, .models, .usage, .sessions, .insights,
+        case .models: going = .models
+        case .memory: going = .memory
+        // Other management destinations retain their existing Settings entry.
+        case .settings, .usage, .sessions, .insights,
              .configuration, .pairing, .plugins:
             going = .settings
         }
@@ -501,6 +504,7 @@ private struct SidebarList: View, Equatable {
 
     @Environment(AppStore.self) private var store
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     let width: CGFloat
     let onDismiss: () -> Void
 
@@ -622,6 +626,7 @@ private struct SidebarList: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.bottom, 6)
+            .accessibilityAddTraits(.isHeader)
     }
 
     @ViewBuilder
@@ -656,7 +661,7 @@ private struct SidebarList: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 if let attention {
                     ChatAttentionMark(attention: attention)
-                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
                 }
             }
             .frame(width: width - 48, alignment: .leading)
@@ -672,9 +677,10 @@ private struct SidebarList: View, Equatable {
             .contentShape(.contextMenuPreview, .rect(cornerRadius: 10))
         }
         .accessibilityIdentifier("sidebar.chat.\(conversation.id)")
+        .accessibilityAddTraits(conversation.id == store.activeID ? .isSelected : [])
         .buttonStyle(.pressableRow(cornerRadius: 10))
         // A new reply or a question marks the row as it arrives, not in a jump.
-        .animation(.snappy(duration: 0.25), value: attention)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: attention)
         .contextMenu {
             menu(for: conversation)
         } preview: {

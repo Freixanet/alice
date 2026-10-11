@@ -32,19 +32,23 @@ struct DrawerPan: UIViewRepresentable {
     let onChange: (CGFloat) -> Void
     /// Translation and predicted end translation, both on the x axis.
     let onEnd: (CGFloat, CGFloat) -> Void
+    /// Opt-in cancellation: a system interruption is not a released swipe.
+    let onCancel: (() -> Void)?
 
     init(
         controlIdentifierPrefix: String? = nil,
         startsAt: ((CGPoint) -> Bool)? = nil,
         shouldBegin: @escaping (CGPoint) -> Bool,
         onChange: @escaping (CGFloat) -> Void,
-        onEnd: @escaping (CGFloat, CGFloat) -> Void
+        onEnd: @escaping (CGFloat, CGFloat) -> Void,
+        onCancel: (() -> Void)? = nil
     ) {
         self.controlIdentifierPrefix = controlIdentifierPrefix
         self.startsAt = startsAt
         self.shouldBegin = shouldBegin
         self.onChange = onChange
         self.onEnd = onEnd
+        self.onCancel = onCancel
     }
 
     func makeUIView(context: Context) -> UIView {
@@ -65,12 +69,14 @@ struct DrawerPan: UIViewRepresentable {
         context.coordinator.shouldBegin = shouldBegin
         context.coordinator.onChange = onChange
         context.coordinator.onEnd = onEnd
+        context.coordinator.onCancel = onCancel
     }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             controlIdentifierPrefix: controlIdentifierPrefix, startsAt: startsAt,
-            shouldBegin: shouldBegin, onChange: onChange, onEnd: onEnd
+            shouldBegin: shouldBegin, onChange: onChange, onEnd: onEnd,
+            onCancel: onCancel
         )
     }
 
@@ -85,6 +91,7 @@ struct DrawerPan: UIViewRepresentable {
         var shouldBegin: (CGPoint) -> Bool
         var onChange: (CGFloat) -> Void
         var onEnd: (CGFloat, CGFloat) -> Void
+        var onCancel: (() -> Void)?
 
         private weak var host: UIView?
         fileprivate var pan: UIPanGestureRecognizer?
@@ -94,13 +101,15 @@ struct DrawerPan: UIViewRepresentable {
             startsAt: ((CGPoint) -> Bool)? = nil,
             shouldBegin: @escaping (CGPoint) -> Bool,
             onChange: @escaping (CGFloat) -> Void,
-            onEnd: @escaping (CGFloat, CGFloat) -> Void
+            onEnd: @escaping (CGFloat, CGFloat) -> Void,
+            onCancel: (() -> Void)? = nil
         ) {
             self.controlIdentifierPrefix = controlIdentifierPrefix
             self.startsAt = startsAt
             self.shouldBegin = shouldBegin
             self.onChange = onChange
             self.onEnd = onEnd
+            self.onCancel = onCancel
         }
 
         func attach(near anchor: UIView) {
@@ -130,11 +139,17 @@ struct DrawerPan: UIViewRepresentable {
             switch pan.state {
             case .changed:
                 onChange(x)
-            case .ended, .cancelled, .failed:
+            case .ended:
                 // A flick should finish the drawer even from a short drag, so
                 // hand back where the movement was heading, not just where the
                 // finger stopped. 0.2s is roughly the coast of a UIKit flick.
                 onEnd(x, x + pan.velocity(in: pan.view).x * 0.2)
+            case .cancelled, .failed:
+                if let onCancel {
+                    onCancel()
+                } else {
+                    onEnd(x, x + pan.velocity(in: pan.view).x * 0.2)
+                }
             default:
                 break
             }
