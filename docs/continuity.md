@@ -8,20 +8,43 @@ users, competition, new AI models and industry standards. This document describe
 
 ## Where the truth lives
 
-| Question | Primary reference |
-| --- | --- |
-| How should any coding agent work here? | [AGENTS.md](../AGENTS.md) |
-| How do components and identities interact? | [Architecture](architecture.md) |
-| What behavior is expected and how is it tested? | [Verification](verification.md), [compatibility](compatibility-matrix.md), tests; OpenSpec specs once present |
-| Why was an important design selected? | [Decision records](decisions/README.md), linked PRs and evidence |
-| What change is being considered or implemented? | A small PR; optionally `openspec/changes/<change>/` for significant behavioral work |
-| What is actually running? | Git commit, deployment status and **separately** the installation/runtime inventory; never infer the latter from GitHub |
-| What happened during an agent session? | Execution ledger if available to that agent, PR/CI records, evidence archives; this history is **not** a specification |
+| Question                                        | Primary reference                                                                                                       |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| How should any coding agent work here?          | [AGENTS.md](../AGENTS.md)                                                                                               |
+| How do components and identities interact?      | [Architecture](architecture.md)                                                                                         |
+| What behavior is expected and how is it tested? | [Verification](verification.md), [compatibility](compatibility-matrix.md), tests; OpenSpec specs once present           |
+| Why was an important design selected?           | [Decision records](decisions/README.md), linked PRs and evidence                                                        |
+| What change is being considered or implemented? | A small PR; optionally `openspec/changes/<change>/` for significant behavioral work                                     |
+| What is actually running?                       | Git commit, deployment status and **separately** the installation/runtime inventory; never infer the latter from GitHub |
+| What happened during an agent session?          | Execution ledger if available to that agent, PR/CI records, evidence archives; this history is **not** a specification  |
 
 The execution ledger may live outside this public repository and contain
 private operational facts. Do not copy local paths, tokens, personal sessions,
 private security reproductions, or installation inventories into public docs.
 An unavailable ledger is a limitation to report, not a reason to invent its contents.
+
+## Historical examples and evidence boundaries
+
+- **Checkout approval recovery (U1):** [PR #69](https://github.com/Freixanet/alice/pull/69)
+  ties a recovered approval to the checkout observed when the decision was
+  captured. Recovery, retries and concurrent replacements must not transfer a
+  payment decision to another checkout or replay a consumed decision. See
+  `hermes-plugin/errands.py`, its tests and [purchases](purchases.md). The PR
+  and tests establish the code change; they do not prove that a particular
+  personal Hermes installation is running it or that payments are safe overall.
+- **Browser action authorization (R02):** [PR #69](https://github.com/Freixanet/alice/pull/69)
+  records an outstanding browser JavaScript authorization issue, separately
+  from the checkout recovery addressed by U1. That historical PR does not
+  establish whether the issue has since been resolved or which other execution
+  paths are affected. Consult [architecture](architecture.md),
+  [verification](verification.md) and the relevant browser/tool code before
+  making a security claim. Detailed reproductions and current operational
+  status may be private; an agent without access must say which facts it cannot
+  verify. Green CI alone does not establish complete authorization coverage.
+
+These are _examples of how to follow evidence_, not immutable design choices or
+a standing task list. Replacements are welcome after affected guarantees and
+their tests have been reconsidered.
 
 ## Scale process to the change
 

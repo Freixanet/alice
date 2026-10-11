@@ -15,7 +15,7 @@ approach is justified and verified. Do not preserve implementations merely
 because they are old, or discard guarantees merely because they look complex.
 
 Use [the continuity guide](docs/continuity.md) when changing a feature or
-architectural contract. Read affected specifications and decisions *selectively*;
+architectural contract. Read affected specifications and decisions _selectively_;
 record why important choices change and what evidence supports them. Keep minor
 fixes lightweight. Never treat repository, deployment and a person's installed
 Hermes as the same state. Do not commit private runtime data.

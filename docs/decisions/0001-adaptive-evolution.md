@@ -50,9 +50,14 @@ Use **continuous product evolution with a living architecture**:
 
 ## Consequences
 
-+ Agents can reconstruct relevant intent and revise technical choices.
-+ New contributors can understand why a component exists.
-+ Important tests and documentation can evolve with the product.
+Benefits:
+
+- Agents can reconstruct relevant intent and revise technical choices.
+- New contributors can understand why a component exists.
+- Important tests and documentation can evolve with the product.
+
+Costs and limits:
+
 - Decisions/specifications need light maintenance and may become stale.
 - Human and automated reviews still cannot guarantee absence of regressions.
 - Public docs must not expose private installation or security evidence.
