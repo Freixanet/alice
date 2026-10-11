@@ -1729,7 +1729,7 @@ def _keep_errand_tools_visible() -> None:
 
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
-            for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
+            for name in ("errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read",
                          "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart"):
                 if name not in core:
                     core.append(name)
@@ -1815,6 +1815,26 @@ def _register_task_tools(ctx) -> None:
     errands = _errands()
     errands.card_rules = _card_rules
     _keep_errand_tools_visible()
+
+    # Explicit read-only inspection on the errand's pinned Chrome target.
+    # The model supplies selectors, never JS; CDP itself stays forbidden to the
+    # agent in a purchase offer because it has no proven target binding.
+    dom = _module("errand_dom_read.py", "alice_errand_dom_read")
+
+    def dom_read(args, **_):
+        try:
+            entry = errands.of_session(_hermes_root(), _session_id())
+            access = _module("errand_access.py", "alice_errand_access")
+            return _agent_json(dom.read(entry, args, inspect=access.target,
+                                        evaluate=access.page_evaluate))
+        except ValueError as exc:
+            return _agent_json({"ok": False, "error": str(exc)})
+        except Exception:
+            return _agent_json({"ok": False, "error": "No se pudo verificar la lectura DOM ni la pestaña propia del recado."})
+
+    ctx.register_tool(name="errand_dom_read", toolset="alice_tasks", handler=dom_read,
+                      schema=dom.SCHEMA, check_fn=_always,
+                      description=dom.SCHEMA["description"], emoji="🔎")
 
     def start(args, **_):
         from hermes_constants import get_hermes_home

@@ -85,14 +85,9 @@ PAY_PAGE = re.compile(
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
 PRESSING_BROWSER_HELPERS = frozenset({"click", "click_text", "click_at_xy", "press_key"})
-# Raw DevTools and page scripting do not supply trustworthy button/merchant semantics.
-# A narrow set of data-only CDP methods is safe to inspect; everything else requires
-# a separate, checked high-level browser action during a purchase errand.
+# Raw DevTools and page scripting do not supply trustworthy button/merchant
+# semantics or proof that the request targets this errand's own tab.
 RAW_BROWSER = ("browser_console", "browser_cdp", "browser_dialog")
-READ_ONLY_CDP = frozenset({
-    "DOM.getDocument", "DOM.querySelector", "DOM.querySelectorAll",
-    "DOM.describeNode", "Page.getFrameTree",
-})
 # These are the documented high-level browser helpers (and side-effect-free
 # Python builtins). Their *actual* clicks still pass the existing pay_gate;
 # arbitrary helper aliases, custom functions or raw JavaScript do not.
@@ -125,10 +120,10 @@ def unverified_browser_effect(tool_name: str, args: Any) -> bool:
     """
     a = args if isinstance(args, dict) else {}
     if tool_name == "browser_cdp":
-        # A nominally read-only method can inspect another tab or frame when
-        # given an explicit target outside the errand's pinned browser context.
-        return (str(a.get("method") or "") not in READ_ONLY_CDP
-                or "target_id" in a or "frame_id" in a)
+        # Hermes CDP without target_id uses its browser-level endpoint; a caller
+        # with a target_id can also choose a foreign tab. Neither proves the
+        # errand's context at final dispatch. Use errand_dom_read instead.
+        return True
     if tool_name == "browser_dialog":
         return str(a.get("action") or "").lower() != "dismiss"
     if tool_name == "browser_console":
@@ -758,7 +753,13 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         fresh = approved_checkout(entry, now=now)
         ok = fresh is not None and (fresh.get("site") in candidates or host in banks)
     else:
-        ok = approved_checkout(entry, now=now) is not None
+        # A checkout approval belongs to that merchant, not whichever browser
+        # tab or domain the agent happens to press after the user approved it.
+        # For purchase offers a missing/invalid page origin is never authority.
+        purchase_offer = bool((entry or {}).get("offer"))
+        page_shop = shop(active_url) if active_url else ""
+        ok = (not purchase_offer or bool(page_shop)) and approved_checkout(
+            entry, site=page_shop if purchase_offer else "", now=now) is not None
     if ok:
         return None
     return {"action": "block", "message": (
@@ -1054,6 +1055,9 @@ def brief(entry: Dict[str, Any]) -> str:
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
         f"{login} {what}"
+        "Para leer nombres, precios y etiquetas del DOM durante esta compra, usa `errand_dom_read` "
+        "con selectores CSS; nunca pases JavaScript de la página como supuesto código de lectura. "
+        "Haz cada operación del navegador en un paso separado para que se verifique el contexto. "
         "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
         "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
         "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "

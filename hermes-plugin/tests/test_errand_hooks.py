@@ -158,7 +158,6 @@ class ErrandHookTests(unittest.TestCase):
             ("browser_exec", {"code": "print(page_info())"}),
             ("browser_exec", {"code": 'print(page_info()["url"])'}),
             ("browser_exec", {"code": "print(1 + 1)"}),
-            ("browser_cdp", {"method": "DOM.getDocument", "params": {}}),
             ("browser_dialog", {"action": "dismiss"}),
         ):
             with self.subTest(route=name):
@@ -292,6 +291,66 @@ class ErrandHookTests(unittest.TestCase):
                     "browser_cdp", {"method": "DOM.getDocument", "params": {}, **target},
                     session_id=entry["session_id"])
                 self.assertEqual(verdict["action"], "block")
+
+    def test_r02_raw_cdp_read_needs_an_errand_pinned_executor(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        # Without target_id, Hermes sends DOM methods to a browser endpoint,
+        # NOT to a tab checked against the errand's pinned target/context.
+        verdict = self.plugin._guard_errand(
+            "browser_cdp", {"method": "DOM.getDocument", "params": {}},
+            session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
+
+    def test_r02_errand_dom_read_is_a_fixed_pinned_read_tool_not_arbitrary_js(self):
+        entry = self.errand(offer={"url": "https://shop.example/item", "option_id": "chosen"})
+        tools = self.tools()
+        self.assertIn("errand_dom_read", tools)
+        handler = tools["errand_dom_read"]["handler"]
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own = ("https://shop.example", {"target": "pinned-tab", "context": "c1"}, None)
+        with mock.patch.object(self.plugin, "_session_id", return_value=entry["session_id"]), \
+                mock.patch.object(access, "target", return_value=own), \
+                mock.patch.object(access, "page_evaluate", return_value=[{
+                    "selector": ".product-title", "matches": [{"text": "Creatina 500 g"}]}]) as evaluate:
+            result = json.loads(handler({"selectors": [".product-title"]}))
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["results"][0]["matches"][0]["text"], "Creatina 500 g")
+            javascript = evaluate.call_args.args[1]
+            self.assertNotIn("eval(", javascript)
+            self.assertNotIn("Function(", javascript)
+        # The model can send selectors as inert data, never its own JS to execute.
+        with mock.patch.object(self.plugin, "_session_id", return_value=entry["session_id"]):
+            for bad in ({"selectors": [".x"], "expression": "submitOrder()"},
+                        {"selectors": [".x"], "script": "window.pay()"},
+                        {"selectors": ["input[type=password]"]},
+                        {"selectors": [".x"] * 30}):
+                with self.subTest(bad=bad):
+                    self.assertFalse(json.loads(handler(bad))["ok"])
+
+    def test_r02_approved_checkout_is_not_authority_to_pay_a_different_shop(self):
+        entry = self.errand(offer={"url": "https://shop.example/item", "option_id": "chosen"})
+        self.errands.request_checkout(self.home, entry["id"], {
+            "merchant": "Shop", "site": "https://shop.example", "total": "34,99 €",
+            "items": [{"name": "Creatina"}], "currency": "EUR",
+        }, fetch=lambda *_: (b"", "text/html"))
+        checkout = self.errands.get(self.home, entry["id"])["checkout"]
+        self.errands.decide_checkout(self.home, entry["id"], True, checkout_id=checkout["id"])
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        with mock.patch.object(access, "target", return_value=(
+            "https://shop.example", {"url": "https://shop.example/checkout/payment"}, None)), \
+                mock.patch.object(access, "page_evaluate", return_value=True), \
+                mock.patch.object(self.plugin._module("purchase_prices.py", "alice_purchase_prices"),
+                                  "payment_ready", return_value=True):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"]))
+        with mock.patch.object(access, "target", return_value=(
+            "https://other.example", {"url": "https://other.example/checkout/payment"}, None)), \
+                mock.patch.object(access, "page_evaluate", return_value=True), \
+                mock.patch.object(self.plugin._module("purchase_prices.py", "alice_purchase_prices"),
+                                  "payment_ready", return_value=True):
+            verdict = self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
 
     def test_r02_purchase_selection_chat_cannot_run_opaque_browser_code(self):
         session = "chat-9"
@@ -427,7 +486,7 @@ class ErrandHookTests(unittest.TestCase):
 
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
-        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
+        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read",
                                            "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
