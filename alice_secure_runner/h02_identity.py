@@ -86,6 +86,8 @@ def _principal_fields(data: dict):
         raise InvalidCapability("invalid request binding")
     if not isinstance(data["job"], str) or (data["job"] and not _IDENTITY.fullmatch(data["job"])):
         raise InvalidCapability("invalid job binding")
+    if data["path"] == "/v1/jobs" and data["job"]:
+        raise InvalidCapability("job creation must not claim an existing job")
     if data["path"] != "/v1/jobs" and not data["job"]:
         raise InvalidCapability("job binding required")
     if any(type(data[k]) is not int for k in ("iat", "nbf", "exp")):
@@ -95,10 +97,11 @@ def _principal_fields(data: dict):
 
 
 class Keyring:
-    """Explicit active signing kid and retired verification keys.
+    """Explicit active signing kid and old verification keys.
 
-    Remove a retired kid to revoke all outstanding capabilities immediately.
-    Rotation is an Alice operator action, never a caller request.
+    Rotation is an Alice operator action, never a caller request. Existing
+    verifier instances use a snapshot: a trusted gateway restart is required
+    before retired keys are revoked or newly active keys become effective.
     """
 
     def __init__(self, keys: Mapping[str, bytes], active: str):

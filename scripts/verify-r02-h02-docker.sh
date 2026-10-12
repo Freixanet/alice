@@ -42,8 +42,10 @@ PY
 # Only random synthetic credentials, on disposable test host.
 chmod 644 "$H02_FIXTURE_DIR"/*
 python3 -m unittest discover -s tests -p 'test_h02_identity.py' -v
+python3 -m unittest discover -s tests -p 'test_h02_operator_policy.py' -v
 docker compose -f deploy/h02/compose.yaml config --quiet
 docker compose -f deploy/h02/compose.yaml --profile attack build --pull
 docker compose -f deploy/h02/compose.yaml up -d --no-deps asr gateway
-python3 scripts/h02_operator.py e2e
+# Resolve the installed repo package rather than sys.path[0]=scripts/:
+python3 -m scripts.h02_operator e2e
 echo "H02 SYNTHETIC SAME-HOST PASS (INDEPENDENT ADMIN HOST NOT ATTESTED)"

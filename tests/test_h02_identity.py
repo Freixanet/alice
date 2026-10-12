@@ -124,6 +124,16 @@ class H02IdentityTests(unittest.TestCase):
         with self.assertRaises(InvalidCapability):
             self.verify(self.mint(body=spoofed), body=spoofed)
 
+    def test_job_creation_requires_empty_job_and_owner_scope(self):
+        data = b'{"recipient":"fictional"}'
+        allowed = self.mint(role="owner", path="/v1/jobs", job="", body=data)
+        principal, body = self.verify(allowed, path="/v1/jobs", body=data)
+        self.assertEqual((principal["role"], body["recipient"]), ("owner", "fictional"))
+        with self.assertRaises(InvalidCapability):
+            self.mint(role="owner", path="/v1/jobs", job="job-123", body=data)
+        with self.assertRaises(InvalidCapability):
+            self.mint(role="proposal", path="/v1/jobs", job="", body=data)
+
     def test_bad_keyring_and_invalid_token_shape(self):
         with self.assertRaises(ValueError):
             Keyring({"k": b"x"}, "k")

@@ -32,7 +32,8 @@ It is NOT separate control-plane isolation between gateway and ASR.
 ## Implemented code and synthetic verification
 
 - `alice_secure_runner/h02_identity.py`: locally provisioned HMAC-SHA256
-  keyring, active `kid` and old verification keys (remove to revoke); strict
+  keyring, active `kid` and old verification keys (remove and **recreate the
+  gateway** to revoke; live reload is not implemented); strict
   issuer, fixed audience, registered subject, stable tenant/paired-session,
   role, job, HTTP method/path, exact request bytes digest, `nbf/iat/exp`
   (maximum five minutes) and one-time `jti`. Noncanonical/duplicate JSON,
@@ -43,6 +44,12 @@ It is NOT separate control-plane isolation between gateway and ASR.
   must be reconciled by Alice, not automatically retried. For this proof,
   an issued capability is **one-use**, not a reusable login/access token.
   This is not sender-constrained DPoP or hardware/device attestation.
+- **Security qualification:** the public H02 gateway holds the HMAC **signing**
+  key and coordinator/human backend secrets for both synthetic actors. A
+  compromised gateway can impersonate privileged Alice roles. This is a
+  **P0 production blocker**, not independent signed approval. Before real
+  integration, use an independently operated signer/device authorization,
+  public-key-only gateway verification and independently enforced ASR consent.
 - `h02_gateway.py`: fixed-route HTTPS gateway. Trusted Alice operator
   maps provisioned `sub` to actor and stable tenant/session; role and job
   checks are before privileged forwarding. Model JSON cannot override identity,
@@ -163,7 +170,11 @@ claim requires actual billing evidence. No cloud allocation was created.
 test yet, no OIDC/device attestation, no independent gateway->ASR workload
 identity, no full DNS/IPv6/renderer egress policy, no external PSP receipt
 verification, no independently attested browser reaper or certified payment
-provider. The prototype contains only fictional shop credentials.
+provider. Gateway key compromise permits privileged impersonation; lost
+responses to `/v1/jobs` do not yet have an idempotent creation/recovery ID,
+so additional unused jobs may be created. Keyring changes require recreating
+the gateway with its durable replay volume, rather than hot-reloading keys.
+The prototype contains only fictional shop credentials.
 
 ## Execution record
 

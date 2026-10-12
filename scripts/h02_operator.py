@@ -41,6 +41,51 @@ def call(path, body, role, job=""):
         return exc.code, json.loads(exc.read())
 
 
+def verify_policy():
+    """Inspect *effective* Docker network/port policy, not just Compose YAML."""
+    if not __debug__:
+        raise RuntimeError("refuse Docker security verification under python -O")
+    project = os.environ["H02_COMPOSE_PROJECT"]
+    private = project + "_asr_backplane"
+    public = project + "_public_front"
+    expected = {"asr": {private}, "gateway": {private, public}}
+    for service in ("asr", "gateway"):
+        identifier = docker("ps", "-q", service).stdout.strip()
+        if not identifier:
+            raise AssertionError("container not running: " + service)
+        observed = json.loads(subprocess.check_output(["docker", "inspect", identifier], text=True))[0]
+        host = observed["HostConfig"]
+        if (host.get("Privileged") or host.get("ReadonlyRootfs") is not True
+                or host.get("NetworkMode") == "host"
+                or host.get("PidMode") == "host"
+                or "ALL" not in (host.get("CapDrop") or [])
+                or observed["Config"]["User"] !=
+                ("12001:12001" if service == "asr" else "12002:12002")
+                or any(m["Destination"] == "/var/run/docker.sock" for m in observed.get("Mounts", []))):
+            raise AssertionError("unsafe live container privileges: " + service)
+        networks = observed["NetworkSettings"]["Networks"]
+        if set(networks) != expected[service]:
+            raise AssertionError("unexpected live Docker network membership: " + service)
+        for name in networks:
+            net = json.loads(subprocess.check_output(["docker", "network", "inspect", name], text=True))[0]
+            if net["Internal"] != (name == private):
+                raise AssertionError("unexpected live network internal policy: " + name)
+        ports = observed["NetworkSettings"].get("Ports") or {}
+        if service == "asr":
+            if any(v for v in ports.values()):
+                raise AssertionError("private ASR port exposed on host")
+            private_ip = networks[private].get("IPAddress")
+            if not private_ip:
+                raise AssertionError("private ASR IP missing")
+        else:
+            bindings = ports.get("8443/tcp") or []
+            if (set(ports) != {"8443/tcp"} or len(bindings) != 1
+                    or bindings[0].get("HostIp") != os.environ["H02_PUBLIC_BIND"]
+                    or bindings[0].get("HostPort") != "38444"):
+                raise AssertionError("H02 gateway binding unexpectedly widened")
+    return private_ip
+
+
 def main():
     for _ in range(80):
         try:
@@ -61,20 +106,7 @@ def main():
         role="proposal", job=job, path="/v1/proposals", body=raw)
     token_path = FIXTURE / "untrusted_one_use_proposal"
     token_path.write_text("Alice-H02 " + token)
-    asr_id = docker("ps", "-q", "asr").stdout.strip()
-    observed = json.loads(subprocess.check_output(["docker", "inspect", asr_id], text=True))[0]
-    networks = observed["NetworkSettings"]["Networks"]
-    expected_name = os.environ["H02_COMPOSE_PROJECT"] + "_asr_backplane"
-    if set(networks) != {expected_name}:
-        raise AssertionError("ASR has unexpected routable Docker networks")
-    network = json.loads(subprocess.check_output(["docker", "network", "inspect", expected_name], text=True))[0]
-    if network["Internal"] is not True:
-        raise AssertionError("ASR Docker network allows unanticipated egress")
-    if any(observed["NetworkSettings"].get("Ports", {}).values()):
-        raise AssertionError("private ASR port exposed to host")
-    ip = networks[expected_name]["IPAddress"]
-    if not ip:
-        raise AssertionError("ASR real private IP missing")
+    ip = verify_policy()
     print("H02_ALICE_OPERATOR_PRIVATE_POLICY_VERIFIED", flush=True)
     result = docker("--profile", "attack", "run", "--rm", "--no-deps",
                     "hostile-hermes", "python", "/h02_remote_probe.py",
