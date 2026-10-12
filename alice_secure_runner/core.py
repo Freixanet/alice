@@ -183,7 +183,12 @@ class AliceRunner:
         A recorded dispatch is UNKNOWN after restart, never an invitation to
         resend. Inconsistent/missing authorization rows fail closed.
         """
-        for job_id, serialized in self.__db.execute("SELECT job_id,state_json FROM jobs"):
+        # IMPORTANT: never UPDATE the same table while iterating a live
+        # SQLite cursor over it. _persist_job uses INSERT OR REPLACE, which
+        # deletes/reinserts rows with fresh rowids: a streaming cursor may
+        # repeatedly rediscover those rows and hang recovery indefinitely.
+        # Materialize the finite startup snapshot BEFORE mutating any row.
+        for job_id, serialized in self.__db.execute("SELECT job_id,state_json FROM jobs").fetchall():
             saved = json.loads(serialized)
             if not isinstance(saved, dict) or saved.get("id") != job_id:
                 raise ValueError("invalid persisted job")

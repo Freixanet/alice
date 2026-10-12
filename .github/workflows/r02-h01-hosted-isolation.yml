@@ -1,0 +1,35 @@
+name: R02 H01 Hosted Isolation Proof
+
+on:
+  pull_request:
+    paths:
+      - "deploy/h01/**"
+      - "scripts/h01_*.py"
+      - "scripts/verify-r02-h01-docker.sh"
+      - "alice_secure_runner/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "tests/test_h01_gateway.py"
+      - "tests/test_h01_operator_policy.py"
+      - "tests/test_alice_secure_runner.py"
+      - "tests/test_alice_real_browser.py"
+      - ".github/workflows/r02-h01-hosted-isolation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-boundary:
+    name: Hostile Hermes vs isolated synthetic ASR
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify ephemeral Docker support and prohibit personal credentials
+        run: |
+          docker info >/dev/null
+          test -z "${H01_REAL_PAYMENT_ENDPOINT:-}"
+          test -z "${H01_PERSONAL_HERMES_HOME:-}"
+      - name: Build clean wheels and isolated ephemeral containers; attack
+        run: bash scripts/verify-r02-h01-docker.sh

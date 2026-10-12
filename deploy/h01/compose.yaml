@@ -1,0 +1,96 @@
+name: ${H01_COMPOSE_PROJECT:?Set a fresh disposable project name; never reuse a real Docker project}
+
+services:
+  asr:
+    build:
+      context: ../..
+      dockerfile: deploy/h01/Dockerfile.runner
+    image: ${H01_COMPOSE_PROJECT:?}-fictional-runner:local
+    environment:
+      H01_SYNTHETIC_ONLY: "yes"
+      H01_FAULT_COMMIT_DELAY: "${H01_FAULT_COMMIT_DELAY:-0}"
+    networks: [asr_backplane]
+    volumes:
+      - asr_ledger:/var/lib/h01
+      - ${H01_FIXTURE_DIR:?}/asr.pem:/run/h01-tls/asr.pem:ro
+      - ${H01_FIXTURE_DIR:?}/asr.key:/run/h01-tls/asr.key:ro
+      - ${H01_FIXTURE_DIR:?}/device_hmac_hex:/run/h01-secrets/device_hmac_hex:ro
+      - ${H01_FIXTURE_DIR:?}/backend_coordinator_a:/run/h01-secrets/backend_coordinator_a:ro
+      - ${H01_FIXTURE_DIR:?}/backend_coordinator_b:/run/h01-secrets/backend_coordinator_b:ro
+      - ${H01_FIXTURE_DIR:?}/backend_human_a:/run/h01-secrets/backend_human_a:ro
+      - ${H01_FIXTURE_DIR:?}/backend_human_b:/run/h01-secrets/backend_human_b:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    init: true
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/h01/Dockerfile.gateway
+    image: ${H01_COMPOSE_PROJECT:?}-fictional-gateway:local
+    environment:
+      H01_SYNTHETIC_ONLY: "yes"
+    # Distinct CI operator bridge permits ONLY the GitHub runner to call the
+    # loopback-published API; Hermes is not attached to this routable bridge.
+    networks: [operator_front, asr_backplane, hermes_front]
+    ports: ["127.0.0.1:38443:8443"]
+    volumes:
+      - ${H01_FIXTURE_DIR:?}/gateway.pem:/run/h01-tls/gateway.pem:ro
+      - ${H01_FIXTURE_DIR:?}/gateway.key:/run/h01-tls/gateway.key:ro
+      - ${H01_FIXTURE_DIR:?}/asr.pem:/run/h01-ca/asr.pem:ro
+      - ${H01_FIXTURE_DIR:?}/backend_coordinator_a:/run/h01-secrets/backend_coordinator_a:ro
+      - ${H01_FIXTURE_DIR:?}/backend_coordinator_b:/run/h01-secrets/backend_coordinator_b:ro
+      - ${H01_FIXTURE_DIR:?}/backend_human_a:/run/h01-secrets/backend_human_a:ro
+      - ${H01_FIXTURE_DIR:?}/backend_human_b:/run/h01-secrets/backend_human_b:ro
+      - ${H01_FIXTURE_DIR:?}/owner_a:/run/h01-secrets/owner_a:ro
+      - ${H01_FIXTURE_DIR:?}/owner_b:/run/h01-secrets/owner_b:ro
+      - ${H01_FIXTURE_DIR:?}/proposal_a:/run/h01-secrets/proposal_a:ro
+      - ${H01_FIXTURE_DIR:?}/proposal_b:/run/h01-secrets/proposal_b:ro
+      - ${H01_FIXTURE_DIR:?}/human_a:/run/h01-secrets/human_a:ro
+      - ${H01_FIXTURE_DIR:?}/human_b:/run/h01-secrets/human_b:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 48
+    mem_limit: 256m
+    init: true
+
+  hostile-hermes:
+    profiles: [attack]
+    build:
+      context: ../..
+      dockerfile: deploy/h01/Dockerfile.attacker
+    image: ${H01_COMPOSE_PROJECT:?}-fictional-attacker:local
+    environment:
+      H01_ASR_BACKPLANE_IP: "${H01_ASR_BACKPLANE_IP:-}"
+      H01_ASR_HOST_PID: "${H01_ASR_HOST_PID:-}"
+      H01_BROWSER_JOB_ID: "${H01_BROWSER_JOB_ID:-}"
+    networks: [hermes_front]
+    volumes:
+      - ${H01_FIXTURE_DIR:?}/proposal_a:/run/hermes/proposal_a:ro
+      - ${H01_FIXTURE_DIR:?}/gateway.pem:/run/hermes/gateway.pem:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
+    init: true
+
+volumes:
+  asr_ledger:
+
+networks:
+  operator_front:
+    # Ordinary bridge for a loopback-only CI operator port. No ASR/Hermes.
+    internal: false
+  hermes_front:
+    internal: true
+  asr_backplane:
+    internal: true

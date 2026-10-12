@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+COPY scripts/h01_attacker.py /h01_attacker.py
+RUN groupadd -g 12003 hostile && useradd -u 12003 -g 12003 -s /usr/sbin/nologin hostile
+USER 12003:12003
+ENV PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+ENTRYPOINT ["python", "/h01_attacker.py"]

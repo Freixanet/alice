@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import html
 import secrets
+import time
 import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -35,6 +36,7 @@ class FictionalStore:
         self.redirect_browser_to: str | None = None
         self.redirect_hits = 0
         self.redirect_auth_header_seen = False
+        self.commit_delay_seconds = 0  # H01 synthetic crash-window laboratory only.
 
     def quote(self, cart_id: str, recipient: str) -> dict:
         with self._lock:
@@ -147,6 +149,8 @@ def make_handler(store: FictionalStore):
                 elif self.path == "/commit":
                     with store._lock:
                         store.submit_attempts += 1
+                        if store.commit_delay_seconds:
+                            time.sleep(store.commit_delay_seconds)
                         if store.fail_next_submit:
                             store.fail_next_submit = False
                             self._send(503, {"error": "effect uncertain"})
