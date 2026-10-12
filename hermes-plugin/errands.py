@@ -41,12 +41,49 @@ from urllib.parse import urlsplit
 SESSION_PREFIX = "errand-"
 
 
-def legacy_payment_blocked() -> bool:
-    """Strict opt-in ASR mode: legacy shared-browser payment is NEVER fallback.
+def legacy_payment_blocked(home: Path | None = None) -> bool:
+    """Persist opt-in ASR cutover to survive accidental lost environment flags.
 
-    This is application policy only; it does not sandbox Hermes' native tools.
+    Once an account enables ASR, a restart cannot silently reenable its old
+    card-filled shared-browser checkout. The marker is a migration guard, NOT
+    a defense against malicious root on Hermes Host A; actual merchant and
+    payment secrets must be absent from Host A entirely.
     """
-    return os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+    enabled = os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+    if home is None:
+        return enabled
+    marker = Path(home) / ".alice" / "r02-asr-only-v1"
+    if enabled:
+        try:
+            marker.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(marker, flags, 0o600)
+            try:
+                os.write(fd, b"ALICE_R02_ASR_ONLY_V1\n")
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        except FileExistsError:
+            pass
+        except OSError:
+            # The trusted ASR switch was requested: a local marker failure
+            # cannot turn a legacy payment back on during this process.
+            return True
+    # Corrupt or symlinked markers deny migration rather than enable payment.
+    return enabled or marker.is_symlink() or marker.exists()
+
+
+def legacy_purchase_errand(entry: Dict[str, Any] | None) -> bool:
+    """Conservative legacy purchase identification for restart/launch fencing."""
+    if not isinstance(entry, dict):
+        return False
+    if any(entry.get(field) for field in ("offer", "checkout", "card_origin", "card_request",
+                                         "payment", "receipt")):
+        return True
+    task = str(entry.get("request") or entry.get("task") or "")[:1500]
+    return bool(re.search(r"(?i)\b(?:comprar|compra|pedido|pagar|pago|buy|purchase|checkout|pay|payment|order)\b", task))
 
 
 LEGACY_DISABLED = "El pago con el navegador compartido de Hermes está desactivado para Alice Secure Runner."
@@ -485,7 +522,7 @@ def paying_card(home: Path, site: str, labels: List[str], asked: str = "") -> st
 def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None,
                      fetch: Optional[Callable[..., Tuple[bytes, str]]] = None,
                      saved_cards: Optional[Callable[[], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
-    if legacy_payment_blocked():
+    if legacy_payment_blocked(home):
         return {"ok": False, "error": LEGACY_DISABLED}
     now = now or time.time()
     entry = get(home, errand_id)
@@ -567,7 +604,7 @@ def refresh_message(checkout: Dict[str, Any]) -> str:
 def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
                     card_label: str = "", *, checkout_id: str) -> Optional[Dict[str, Any]]:
     """Compare the exact checkout and persist its one decision under the writer lock."""
-    if legacy_payment_blocked():
+    if legacy_payment_blocked(home):
         return None
     with _locked(home) as path:
         now = time.time() if now is None else now
@@ -755,7 +792,7 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
 
     ``card_fill_site`` is the page a saved payment card is about to be written into (None when
     the call is not a card fill); otherwise the call is checked as a browser action."""
-    if legacy_payment_blocked() and (
+    if legacy_payment_blocked(home) and (
             card_fill_site is not None or is_pay_action(tool_name, args, active_url, payment_step)):
         return {"action": "block", "message": LEGACY_DISABLED}
     filling = card_fill_site is not None
@@ -860,7 +897,7 @@ CARD_SCHEMA: Dict[str, Any] = {
 
 
 def request_card(home: Path, errand_id: str, page: str) -> Dict[str, Any]:
-    if legacy_payment_blocked():
+    if legacy_payment_blocked(home):
         return {"ok": False, "error": LEGACY_DISABLED}
     parts = urlsplit(str(page or ""))
     if parts.scheme != "https" or not parts.hostname:
@@ -1657,12 +1694,18 @@ def _engine_lock(home: Path, errand_id: str):
 def launch(home: Path, errand_id: str, message: Optional[str] = None,
            engine_factory: Optional[Callable[..., Engine]] = None) -> bool:
     """Starts the errand's engine in the background, unless one already drives it."""
+    if legacy_payment_blocked(home) and legacy_purchase_errand(get(home, errand_id)):
+        return False
     lock = _engine_lock(home, errand_id)
     if lock is None:
         return False
 
     def body():
         try:
+            if legacy_payment_blocked(home) and legacy_purchase_errand(get(home, errand_id)):
+                update(home, errand_id, status="stuck",
+                       reason="Legacy shopping disabled after Alice Secure Runner cutover.")
+                return
             pending = (get(home, errand_id) or {}).get("resume_message")
             if pending and not pending.startswith(APPROVED_PREFIX):
                 update(home, errand_id, resume_message=None)
@@ -1687,7 +1730,10 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 def ensure_running(home: Path) -> List[str]:
     """After a restart: an errand still ``working`` whose engine is gone continues where it was."""
     started = []
+    cutover = legacy_payment_blocked(home)
     for entry in listing(home):
+        if cutover and legacy_purchase_errand(entry):
+            continue
         if entry.get("status") == "working" and launch(
                 home, entry["id"], "[Continuing toward your standing goal] Se reinició el servicio: "
                                    "comprueba en qué punto está el recado en el navegador y sigue."):
@@ -1710,6 +1756,9 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
     if not task:
         raise ValueError("Say what the errand is.")
     option_id = (offer or {}).get("option_id")
+    if legacy_payment_blocked(home) and legacy_purchase_errand(
+            {"offer": offer, "request": task, "checkout": args.get("checkout")}):
+        return {"ok": False, "error": LEGACY_DISABLED}
     # Lookup and insertion share a process-safe lock. The same request remains
     # the same errand for its whole active lifetime; another task is independent.
     with _locked(home) as path:
@@ -1748,7 +1797,8 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[str, Any]] = None) -> bool:
     """Resume an answer; a checkout decision must still be the persisted approved snapshot."""
-    if legacy_payment_blocked() and (checkout is not None or APPROVED_PREFIX in message):
+    if legacy_payment_blocked(home) and (checkout is not None or APPROVED_PREFIX in message
+                                         or legacy_purchase_errand(get(home, errand_id))):
         return False
     if checkout is not None:
         # Do not let this delayed wake-up revive a stopped errand or another checkout.

@@ -73,7 +73,13 @@ compatible; H02.1 alone can select P-256 fixture validation.
    Hermes `/v1/runs` as a sandbox.
 6. Explicit `ALICE_R02_ASR_ONLY=yes` disables legacy Hermes checkout
    approval, payment-card request, payment tool gate approval, and old
-   approved-resume paths; it is **not** itself an OS/terminal sandbox.
+   approved-resume paths. A sticky `.alice/r02-asr-only-v1` marker in the
+   Hermes account prevents an accidentally lost environment setting on
+   restart from re-enabling legacy checkout. Existing legacy shopping errands
+   cannot restart under cutover; unrelated errands can. The marker is **not**
+   an OS/terminal sandbox and cannot resist Host A root deliberately deleting
+   local files. Credential migration and disabling Hermes' old card vault
+   must be handled by independently managed Alice policy before production.
    Existing ordinary Hermes checkout remains separately labeled as legacy
    when this opt-in mode is off. For flagged ASR errands, iOS displays
    only read-only, unverified status and blocks old payment controls.
@@ -86,21 +92,22 @@ compatible; H02.1 alone can select P-256 fixture validation.
 
 ## Integrated requirements matrix
 
-| Frontier | Implemented / tested | Remains blocked (cannot claim GO) |
-| --- | --- | --- |
-| H01/H02/H02.1 cryptographic authorization | Ed25519 issuer not on services; two public verifiers, separate durable replay, bounded HTTPS, idempotent job creation and previous fixture tests | Two independent administrators and real Host A/B attack with evidence; production workload mTLS/IdP, trusted ingress edge |
-| Network and browser | Docker internal egress islands; separate merchant network; no published ASR/merchant/CDP; browser route rejects redirects, POST, WS; bounded transport | Real OS-enforced per-process browser sandbox and full DNS/IPv4/IPv6/UDP/WebRTC egress controls under adversarial root |
-| User identity and consent | P-256 detached software signatures for exact canonical challenge, public-only key registry, expired/replayed consent refused | Secure Enclave enroll/attestation, iOS approval flow and trusted Alice account/device pairing, real key lifecycle |
-| Official Hermes | Official public plugin API registration contract and pure typed planner tests | Clean official installation + real model/supported versions, authenticated pairing and durable remote observe/act cycle |
-| Fictional checkout / related R03 | Real separate process merchant, durable SQLite receipt, exact itemization and variants, one dispatch, UNKNOWN, receipt-only reconciliation across **both** process crashes, exclusive simulated handoff | Real PSP/merchant adapter certification, external durable receipts, 3DS, encryption/compliance and no blind payment retries under real network |
-| iOS / distribution | Swift read-only status vocabulary and legacy checkout isolation, synthetic wheel and Docker image builds | Real authenticated ASR status feed, P-256 consent enrollment, secure hosted onboarding, actual deployment/update/recovery and real iOS device tests |
+| Frontier                                  | Implemented / tested                                                                                                                                                                                    | Remains blocked (cannot claim GO)                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| H01/H02/H02.1 cryptographic authorization | Ed25519 issuer not on services; two public verifiers, separate durable replay, bounded HTTPS, idempotent job creation and previous fixture tests                                                        | Two independent administrators and real Host A/B attack with evidence; production workload mTLS/IdP, trusted ingress edge                           |
+| Network and browser                       | Docker internal egress islands; separate merchant network; no published ASR/merchant/CDP; browser route rejects redirects, POST, WS; bounded transport                                                  | Real OS-enforced per-process browser sandbox and full DNS/IPv4/IPv6/UDP/WebRTC egress controls under adversarial root                               |
+| User identity and consent                 | P-256 detached software signatures for exact canonical challenge, public-only key registry, expired/replayed consent refused                                                                            | Secure Enclave enroll/attestation, iOS approval flow and trusted Alice account/device pairing, real key lifecycle                                   |
+| Official Hermes                           | Official public plugin API registration contract and pure typed planner tests                                                                                                                           | Clean official installation + real model/supported versions, authenticated pairing and durable remote observe/act cycle                             |
+| Fictional checkout / related R03          | Real separate process merchant, durable SQLite receipt, exact itemization and variants, one dispatch, UNKNOWN, receipt-only reconciliation across **both** process crashes, exclusive simulated handoff | Real PSP/merchant adapter certification, external durable receipts, 3DS, encryption/compliance and no blind payment retries under real network      |
+| iOS / distribution                        | Swift read-only status vocabulary and legacy checkout isolation, synthetic wheel and Docker image builds                                                                                                | Real authenticated ASR status feed, P-256 consent enrollment, secure hosted onboarding, actual deployment/update/recovery and real iOS device tests |
 
 ## Evidence rules and tests
 
 - `python3 -m unittest discover -s tests -q`: full repository Python
   test suite, excluding optional browser tests when local Chromium is absent.
 - `python3 -m unittest discover -s hermes-plugin/tests -p 'test_r02_*.py' -q`:
-  legacy payment cutover fixture tests.
+  legacy payment cutover, restart and official plugin registration fixture
+  tests; complete plugin registration rejects duplicate tool names.
 - `python3 -m unittest discover -s tests -p 'test_h021_external_merchant.py' -v`:
   **independent Python merchant PROCESS over real pinned TLS**,
   merchant crash and ASR reboot, durable receipt, read-only lookup, no
@@ -117,17 +124,17 @@ Mac Python environment. Record those omissions rather than marking PASS.
 
 ## Attacks and negative outcomes
 
-| Attempt | Expected result |
-| --- | --- |
-| Stolen gateway backend bearer without signed OWNER/COMMIT | Denied by independent ASR verifier |
-| Mutated Ed25519 role/path/job/body/tenant/session/replayed token | Denied by both verifiers and durable replay |
-| Forged/expired P-256 exact checkout consent | Denied by public-key device verifier and one-use job ledger |
-| Alter variant/tax/shipping/discount while keeping same final total | Denied before any merchant commit |
-| Different recipient with reused merchant checkout ID | Merchant rejects immutable receipt conflict |
-| Lost merchant reply / both independent processes restarted | `UNKNOWN` until exact durable merchant receipt read; no POST retry |
-| Read-only Chromium credential tries merchant cart/receipt | Denied; cannot access effect token through typed read endpoint |
-| Legacy Hermes approval/resume while `ALICE_R02_ASR_ONLY=yes` | Denied; no fallback to shared browser or saved card |
-| Root Host A scans B private Docker bridge IP | Cannot assert firewall success from routing failure; independent evidence PENDING |
+| Attempt                                                            | Expected result                                                                   |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                |
+| Mutated Ed25519 role/path/job/body/tenant/session/replayed token   | Denied by both verifiers and durable replay                                       |
+| Forged/expired P-256 exact checkout consent                        | Denied by public-key device verifier and one-use job ledger                       |
+| Alter variant/tax/shipping/discount while keeping same final total | Denied before any merchant commit                                                 |
+| Different recipient with reused merchant checkout ID               | Merchant rejects immutable receipt conflict                                       |
+| Lost merchant reply / both independent processes restarted         | `UNKNOWN` until exact durable merchant receipt read; no POST retry                |
+| Read-only Chromium credential tries merchant cart/receipt          | Denied; cannot access effect token through typed read endpoint                    |
+| Legacy Hermes approval/resume while `ALICE_R02_ASR_ONLY=yes`       | Denied; no fallback to shared browser or saved card                               |
+| Root Host A scans B private Docker bridge IP                       | Cannot assert firewall success from routing failure; independent evidence PENDING |
 
 ## Cost, distribution and operations
 

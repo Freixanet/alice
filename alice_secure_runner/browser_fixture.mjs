@@ -9,8 +9,10 @@ const playwright = require(process.env.ALICE_TEST_PLAYWRIGHT_MODULE);
 const origin = new URL(process.env.ALICE_FIXTURE_ORIGIN).origin;
 if (
   !/^https:\/\/localhost:\d+$/.test(origin) &&
-  !(process.env.ALICE_H021_EXTERNAL_MERCHANT === "yes" &&
-    origin === "https://merchant:8443")
+  !(
+    process.env.ALICE_H021_EXTERNAL_MERCHANT === "yes" &&
+    origin === "https://merchant:8443"
+  )
 )
   throw Error("fixture loopback TLS only");
 const browser = await playwright.chromium.launch({

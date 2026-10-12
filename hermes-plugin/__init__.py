@@ -1816,33 +1816,10 @@ def _register_task_tools(ctx) -> None:
     errands.card_rules = _card_rules
     _keep_errand_tools_visible()
 
-    # R02 prototype: official Hermes ctx.llm structured completion returns a
-    # PROPOSAL ONLY. This tool neither owns nor connects to Alice Secure Runner,
-    # has no runner credential/CDP, and cannot authorize or execute a purchase.
-    planner = _module("r02_planner.py", "alice_r02_planner")
-
-    def secure_plan(args, **_):
-        try:
-            args = args if isinstance(args, dict) else {}
-            proposal = planner.propose(
-                ctx, goal=args.get("goal"), observations=args.get("observations"),
-                epoch=args.get("epoch"))
-            return _agent_json({"ok": True, "proposal": proposal, "authority": "none"})
-        except (planner.InvalidProposal, planner.PlannerUnavailable):
-            return _agent_json({"ok": False, "error": "Planner unavailable or untrusted proposal rejected."})
-        except Exception:
-            return _agent_json({"ok": False, "error": "Planner could not provide a verified proposal."})
-
-    ctx.register_tool(
-        name="alice_secure_plan", toolset="alice_shopping_plan", handler=secure_plan,
-        schema={"name": "alice_secure_plan",
-                "description": "Propose one typed R02 shopping step. No runner, payment or browser authority.",
-                "parameters": {"type": "object", "properties": {
-                    "goal": {"type": "string", "maxLength": 2000},
-                    "epoch": {"type": "integer", "minimum": 0},
-                    "observations": {"type": "array", "maxItems": 24},
-                }, "required": ["goal", "epoch", "observations"], "additionalProperties": False}},
-        check_fn=_always, description="Structured proposal only, never executes effects.")
+    # Exactly ONE registration path; the previous permissive tool schema
+    # omitted the explicit state and could plan UNKNOWN/cancelled jobs.
+    # Registration here is unprivileged and uses official Hermes plugin ctx.
+    _module("r02_planner.py", "alice_r02_planner").register(ctx)
 
     # Explicit read-only inspection on the errand's pinned Chrome target.
     # The model supplies selectors, never JS; CDP itself stays forbidden to the
@@ -2108,15 +2085,6 @@ def _register_goal_tools(ctx) -> None:
 
 
 def register(ctx) -> None:
-    # Official Hermes plugin lifecycle. This registers ONLY an untrusted typed
-    # proposal tool; no signing/merchant/browser credential is ever attached.
-    # Without the official structured LLM interface, the handler fails closed.
-    try:
-        _module("r02_planner.py", "alice_r02_planner").register(ctx)
-    except Exception:
-        logging.getLogger(__name__).warning(
-            "Alice R02 planner registration unavailable; secure shopping disabled",
-            exc_info=False)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
