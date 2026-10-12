@@ -672,6 +672,40 @@ os._exit(68)
             finally:
                 recovered.close()
 
+    def test_recovery_snapshot_does_not_revisit_replaced_sqlite_rows(self):
+        """Regression: INSERT OR REPLACE under an active SELECT can loop forever.
+
+        Spawn a fresh OS process with a hard timeout; a hanging reloader must
+        fail the test rather than wedging CI or the hosted ASR health endpoint.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "restart.sqlite3")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            ids = [first.new_job("user-A", "paired", "Fake delivery")["job_id"] for _ in range(10)]
+            first.close()
+            child_code = """
+import sys
+from alice_secure_runner.core import AliceRunner, FictionalHTTPSAdapter
+origin, cert, token, key_hex, ledger = sys.argv[1:]
+adapter = FictionalHTTPSAdapter(origin=origin, ca_file=cert, merchant_token=token)
+runner = AliceRunner(adapter, approval_key=bytes.fromhex(key_hex), ledger_path=ledger)
+print('RECOVERED', len(runner._AliceRunner__jobs), flush=True)
+runner.close()
+"""
+            for _ in range(2):
+                child = subprocess.run(
+                    [sys.executable, "-c", child_code, self.shop.url, self.cert,
+                     self.shop_secret, self.device_key.hex(), ledger],
+                    cwd=str(Path(__file__).resolve().parents[1]),
+                    env={"PATH": os.environ.get("PATH", ""),
+                         "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                    capture_output=True, text=True, timeout=8, check=False)
+                self.assertEqual(child.returncode, 0, child.stderr)
+                self.assertIn("RECOVERED 10", child.stdout)
+            with sqlite3.connect(ledger) as db:
+                self.assertEqual({row[0] for row in db.execute("SELECT job_id FROM jobs")}, set(ids))
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM jobs").fetchone()[0], 10)
+
 
 if __name__ == "__main__":
     unittest.main()
