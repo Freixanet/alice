@@ -1,0 +1,90 @@
+# Only on the independent Alice-administered host B. Never on Hermes host A.
+# Synthetic fixture; H02_PUBLIC_BIND must be an explicitly selected host IP.
+name: ${H02_COMPOSE_PROJECT:?Use a unique Alice-owned disposable Compose project}
+services:
+  asr:
+    build:
+      context: ../..
+      dockerfile: deploy/h021/Dockerfile.runner
+    image: ${H02_COMPOSE_PROJECT:?}-runner:fixture
+    environment:
+      H01_SYNTHETIC_ONLY: "yes"
+      H021_SYNTHETIC_ONLY: "yes"
+    networks: [asr_backplane]
+    volumes:
+      - asr_ledger:/var/lib/h01
+      - ${H02_FIXTURE_DIR:?}/asr.pem:/run/h01-tls/asr.pem:ro
+      - ${H02_FIXTURE_DIR:?}/asr.key:/run/h01-tls/asr.key:ro
+      - ${H02_FIXTURE_DIR:?}/device_hmac_hex:/run/h01-secrets/device_hmac_hex:ro
+      - ${H02_FIXTURE_DIR:?}/backend_coordinator_a:/run/h01-secrets/backend_coordinator_a:ro
+      - ${H02_FIXTURE_DIR:?}/backend_coordinator_b:/run/h01-secrets/backend_coordinator_b:ro
+      - ${H02_FIXTURE_DIR:?}/backend_human_a:/run/h01-secrets/backend_human_a:ro
+      - ${H02_FIXTURE_DIR:?}/backend_human_b:/run/h01-secrets/backend_human_b:ro
+      - ${H02_FIXTURE_DIR:?}/public:/run/h021-auth:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: 2g
+    cpus: 2
+    init: true
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/h021/Dockerfile.gateway
+    image: ${H02_COMPOSE_PROJECT:?}-gateway:fixture
+    command: ["python", "-m", "alice_secure_runner.h02_gateway"]
+    environment:
+      H02_SYNTHETIC_ONLY: "yes"
+      H021_VERIFY_ONLY: "yes"
+    networks: [public_front, asr_backplane]
+    ports:
+      - "${H02_PUBLIC_BIND:?Specify explicitly e.g. 127.0.0.1}:38444:8443"
+    volumes:
+      - gateway_replays:/var/lib/h02
+      - ${H02_FIXTURE_DIR:?}/gateway.pem:/run/h01-tls/gateway.pem:ro
+      - ${H02_FIXTURE_DIR:?}/gateway.key:/run/h01-tls/gateway.key:ro
+      - ${H02_FIXTURE_DIR:?}/asr.pem:/run/h01-ca/asr.pem:ro
+      - ${H02_FIXTURE_DIR:?}/public:/run/h021-auth:ro
+      - ${H02_FIXTURE_DIR:?}/subjects.json:/run/h02-auth/subjects.json:ro
+      - ${H02_FIXTURE_DIR:?}/backend_coordinator_a:/run/h01-secrets/backend_coordinator_a:ro
+      - ${H02_FIXTURE_DIR:?}/backend_coordinator_b:/run/h01-secrets/backend_coordinator_b:ro
+      - ${H02_FIXTURE_DIR:?}/backend_human_a:/run/h01-secrets/backend_human_a:ro
+      - ${H02_FIXTURE_DIR:?}/backend_human_b:/run/h01-secrets/backend_human_b:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 48
+    mem_limit: 256m
+    init: true
+
+  hostile-hermes:
+    profiles: [attack]
+    build:
+      context: ../..
+      dockerfile: deploy/h02/Dockerfile.attacker
+    image: ${H02_COMPOSE_PROJECT:?}-hostile:fixture
+    networks: [public_front]
+    volumes:
+      - ${H02_FIXTURE_DIR:?}/gateway.pem:/run/h02/gateway.pem:ro
+      - ${H02_FIXTURE_DIR:?}/untrusted_one_use_proposal:/run/h02/untrusted_one_use_proposal:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
+    init: true
+
+volumes:
+  asr_ledger:
+  gateway_replays:
+
+networks:
+  public_front:
+    internal: false
+  asr_backplane:
+    internal: true
