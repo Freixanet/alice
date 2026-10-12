@@ -79,8 +79,11 @@ compatible; H02.1 alone can select P-256 fixture validation.
    are conservatively paused under ASR-only mode**, even non-shopping
    tasks: their unrestricted native tools cannot reliably be classified
    as read-only from a natural-language request. Running old sessions are
-   stopped at orchestration boundaries; a payment already sent remains
-   uncertain, never implicitly refunded or retried. The marker is **not**
+   sent a stop request at orchestration boundaries and on cold restart.
+   An unconfirmed remote gateway stop remains durably marked pending, with
+   bounded status rechecks on subsequent recovery, **not** deemed stopped.
+   A payment already sent remains uncertain, never implicitly refunded
+   or retried. The marker is **not**
    an OS/terminal sandbox and cannot resist Host A root deliberately deleting
    local files. Credential migration and disabling Hermes' old card vault
    must be handled by independently managed Alice policy before production.

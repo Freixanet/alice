@@ -1438,11 +1438,14 @@ class Engine:
             except Exception:
                 pass  # Keep checkout uncertain; no retry/restart is permitted.
         entry = self._entry()
-        if entry.get("status") == "working":
+        if entry.get("status") in ACTIVE or entry.get("cutover_stop_pending"):
             update(self.home, self.errand_id, status="stuck",
+                   cutover_stop_pending=bool(run_id),
+                   cutover_stop_attempt_at=time.time(),
                    reason=("Alice Secure Runner desactivó el recado anterior de Hermes. "
                            "Si ya se intentó un pago, el resultado es desconocido: "
-                           "comprueba el pedido en la tienda, sin reintentar."))
+                           "comprueba el pedido en la tienda, sin reintentar. "
+                           "La cancelación remota todavía no está verificada."))
         return True
 
     @staticmethod
@@ -1760,8 +1763,38 @@ def ensure_running(home: Path) -> List[str]:
     """After a restart: an errand still ``working`` whose engine is gone continues where it was."""
     started = []
     if legacy_payment_blocked(home):
-        # Existing Hermes engines cannot prove a tool run is read-only.
-        # Fail closed for all old errands, not just shopping keywords.
+        # Hermes gateway runs can survive an Alice plugin/process restart.
+        # Do NOT only suppress local thread recovery: actively request stop
+        # for persisted runs and retain a durable unverified-stop marker for
+        # bounded retry if gateway was unavailable.
+        now = time.time()
+        for entry in listing(home):
+            if entry.get("status") not in ACTIVE and not entry.get("cutover_stop_pending"):
+                continue
+            prior = entry.get("cutover_stop_attempt_at")
+            if prior is not None:
+                try:
+                    if now - float(prior) < 30:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            run_id = entry.get("run_id")
+            stopped = not run_id
+            if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
+                try:
+                    gateway = Gateway(home, entry.get("profile") or "")
+                    gateway.stop(run_id)
+                    # A stop request is NOT a proof of cessation. Only a
+                    # terminal state confirmed by Hermes removes retry flag.
+                    stopped = str(gateway.status(run_id).get("status") or "") in FINISHED
+                except Exception:
+                    stopped = False
+            update(home, entry["id"], status="stuck",
+                   cutover_stop_pending=not stopped,
+                   cutover_stop_attempt_at=now,
+                   reason=("Recado antiguo de Hermes interrumpido por ASR. "
+                           "No vuelvas a enviarlo: si hubo un pago, comprueba "
+                           "independientemente el resultado."))
         return []
     for entry in listing(home):
         if entry.get("status") == "working" and launch(

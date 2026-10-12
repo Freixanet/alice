@@ -55,13 +55,20 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}):
                 self.assertTrue(errands.legacy_payment_blocked(home))
                 pending = {"id": "buy-1", "status": "working",
-                           "offer": {"option_id": "sku-1"}, "request": "Comprar zapatillas"}
+                           "offer": {"option_id": "sku-1"}, "request": "Comprar zapatillas",
+                           "run_id": "still-running-1"}
                 unrelated = {"id": "study-1", "status": "working",
                              "request": "Leer un documento"}
                 with patch.object(errands, "listing", return_value=[pending, unrelated]), \
-                        patch.object(errands, "launch", return_value=True) as launch:
+                        patch.object(errands, "launch", return_value=True) as launch, \
+                        patch.object(errands, "Gateway") as gateway, \
+                        patch.object(errands, "update") as update:
+                    gateway.return_value.status.return_value = {"status": "cancelled"}
                     self.assertEqual(errands.ensure_running(home), [])
                     launch.assert_not_called()
+                    gateway.return_value.stop.assert_called_once_with("still-running-1")
+                    self.assertEqual(update.call_count, 2)
+                    self.assertFalse(update.call_args_list[0].kwargs["cutover_stop_pending"])
                 with patch.object(errands, "get", return_value=pending):
                     self.assertFalse(errands.launch(home, "buy-1"))
                 blocked = errands.start(home, {"task": "Comprar zapatillas"}, offer={"option_id": "sku-1"})
@@ -119,6 +126,39 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             self.assertEqual(stopped, ["running-legacy-1"])
             self.assertEqual(approved, [])
             self.assertEqual(updates[0]["status"], "stuck")
+
+    def test_persisted_remote_stop_is_retried_until_terminal_status_is_attested(self):
+        errands = load("r02_remote_reaper_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-unverified-stop-") as directory:
+            home = Path(directory)
+            entry = {"id": "old-job", "status": "working",
+                     "run_id": "persistent-old-run", "request": "Encárgame pienso"}
+            updates = []
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "listing", return_value=[entry]) as listing, \
+                    patch.object(errands, "Gateway") as gateway, \
+                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
+                                 updates.append(kw)), \
+                    patch.object(errands.time, "time", return_value=1_000):
+                gateway.return_value.stop.return_value = None
+                gateway.return_value.status.return_value = {"status": "running"}
+                self.assertEqual(errands.ensure_running(home), [])
+                self.assertTrue(updates[-1]["cutover_stop_pending"])
+                self.assertEqual(updates[-1]["status"], "stuck")
+                gateway.return_value.stop.assert_called_once_with("persistent-old-run")
+            # A gateway timeout/unconfirmed stop is NOT a terminal receipt.
+            entry = {**entry, "status": "stuck", "cutover_stop_pending": True,
+                     "cutover_stop_attempt_at": 1_000}
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "listing", return_value=[entry]), \
+                    patch.object(errands, "Gateway") as gateway, \
+                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
+                                 updates.append(kw)), \
+                    patch.object(errands.time, "time", return_value=1_031):
+                gateway.return_value.status.return_value = {"status": "cancelled"}
+                self.assertEqual(errands.ensure_running(home), [])
+                gateway.return_value.stop.assert_called_once_with("persistent-old-run")
+                self.assertFalse(updates[-1]["cutover_stop_pending"])
 
 
 if __name__ == "__main__":
