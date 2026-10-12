@@ -65,6 +65,10 @@ def ready():
         except OSError as exc:
             last = type(exc).__name__ + ': ' + str(exc)[:100]
         time.sleep(1)
+    try:
+        check_private_connectivity('readiness-timeout-after-90s')
+    except Exception as exc:
+        print('H01_DIAG_FAILED', type(exc).__name__, flush=True)
     raise RuntimeError('H01 synthetic Alice gateway did not become ready: ' + last)
 
 
@@ -239,9 +243,23 @@ def full_test():
     # generation is never implicitly adopted by a replacement container.
     orphan = job('a')
     step(orphan, 'a', 0, 'search', query='keyboard')
-    check_private_connectivity('before-ASR-restart')
-    docker('restart', 'asr')
-    check_private_connectivity('after-ASR-restart')
+    check_private_connectivity('before-ASR-replacement')
+    old_container = docker('ps', '-q', 'asr').stdout.strip()
+    if not old_container:
+        raise AssertionError('no original ASR container to replace')
+    # A real hosted ASR rollout replaces its entire per-job container,
+    # destroying the browser PID namespace; this is strictly controlled by
+    # Alice's trusted operator, not by Hermes. Prevent a false close ACK from
+    # the NEW process for the old job even if Docker attests old termination.
+    docker('up', '-d', '--force-recreate', '--no-deps', 'asr')
+    new_container = docker('ps', '-q', 'asr').stdout.strip()
+    if new_container == old_container:
+        raise AssertionError('ASR container not replaced; cannot test previous-owner fencing')
+    stale = subprocess.run(['docker', 'inspect', old_container],
+                           capture_output=True, text=True)
+    if stale.returncode == 0 and json.loads(stale.stdout)[0]['State']['Running']:
+        raise AssertionError('prior ASR container still running after replacement')
+    check_private_connectivity('after-ASR-replacement')
     ready()  # authentic private ASR readiness, not merely container Up.
     for _ in range(30):
         s, out = query('/v1/resume', {'job_id': orphan}, actor='a')
