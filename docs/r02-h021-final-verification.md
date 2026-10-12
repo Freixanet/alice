@@ -81,7 +81,12 @@ Produces new disposable keys, signed proposals, wheel-installed images,
 an Alice gateway/ASR and hostile container. Verifies valid one-use proposal,
 body substitution, replay, direct privileged endpoint denial, backend
 bearer-only bypass rejection, idempotent job creation and owner-session
-restoration after ASR recreation. Tears down dedicated containers and
+restoration after ASR recreation. It also drives a complete signed **fictional**
+five-step search/product/cart/quote sequence, synthetic user challenge/consent,
+one confirmed fictitious receipt and rejection of duplicate submission; this
+cross-checks H02.1 authorization rather than assuming H01's older interface
+still works. The synthetic shop remains _inside_ ASR and is not an independent
+merchant receipt or PSP guarantee. Tears down dedicated containers and
 volumes. **All on one Docker VM.**
 
 The RSA TLS test certs are one-day self-signed with explicit SANs, checked

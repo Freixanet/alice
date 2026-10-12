@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import hmac
 import os
 import ssl
 import subprocess
@@ -98,6 +100,54 @@ def simulate_gateway_compromise(token, raw, job):
         print("H021_GATEWAY_COMPROMISE_DENIED " + label, flush=True)
 
 
+def verify_signed_fictional_checkout():
+    """Cross the NEW double-signature boundary for every fake checkout step."""
+    status, created = request("/v1/jobs", {
+        "recipient": "Alice imaginary testing only",
+        "create_request_id": "checkout-verify-only-001"})
+    if status != 200:
+        raise AssertionError("trusted synthetic job create denied")
+    job = created["job_id"]
+    actions = [
+        {"action": "search", "query": "keyboard"},
+        {"action": "read_product", "sku": "FAKE-ALICE-1"},
+        {"action": "select_product", "sku": "FAKE-ALICE-1"},
+        {"action": "add_to_cart", "quantity": 2},
+        {"action": "prepare_checkout"},
+    ]
+    for epoch, action in enumerate(actions):
+        body = {"job_id": job, "proposal": {**action, "epoch": epoch}}
+        status, result = request("/v1/proposals", body, role="proposal", job=job)
+        if status != 200:
+            raise AssertionError("signed fake checkout step rejected: " + action["action"] +
+                                 " HTTP " + str(status))
+    if result.get("checkout", {}).get("amount_minor") != 4998:
+        raise AssertionError("fictional total was not independently checked")
+    status, challenge = request("/v1/challenge", {"job_id": job}, job=job)
+    if status != 200:
+        raise AssertionError("signed Alice challenge denied")
+    # The synthetic USER key exists in B trusted operator fixture only;
+    # gateway receives just a signature for this exact checkout challenge.
+    approved_digest = hmac.new(
+        bytes.fromhex((FIX / "device_hmac_hex").read_text().strip()),
+        json.dumps(challenge, sort_keys=True, separators=(",", ":"),
+                   ensure_ascii=False).encode(), hashlib.sha256).hexdigest()
+    unsigned = {"job_id": job, "signature": "0" * 64}
+    if request("/v1/approve", unsigned, job=job)[0] != 403:
+        raise AssertionError("forged fictional user consent accepted")
+    exact = {"job_id": job, "signature": approved_digest}
+    if request("/v1/approve", exact, job=job)[0] != 200:
+        raise AssertionError("exact fictional user consent rejected")
+    if request("/v1/approve", exact, job=job)[0] != 403:
+        raise AssertionError("approval replay accepted")
+    status, receipt = request("/v1/commit", {"job_id": job}, job=job)
+    if status != 200 or receipt.get("status") != "confirmed_simulated":
+        raise AssertionError("fictional submit not verified")
+    if request("/v1/commit", {"job_id": job}, job=job)[0] != 403:
+        raise AssertionError("duplicate fake checkout dispatched")
+    print("H021_SIGNED_FAKE_CHECKOUT_CONFIRMED_ONCE", flush=True)
+
+
 def main():
     for _ in range(75):
         try:
@@ -138,6 +188,7 @@ def main():
         raise AssertionError("hostile proposal test failed")
     print("H021_HOSTILE_PROBE " + json.dumps(report, sort_keys=True), flush=True)
     simulate_gateway_compromise(token, raw, job)
+    verify_signed_fictional_checkout()
     # Signed resume survives ASR recreation, with the stable paired session.
     legacy.docker("up", "-d", "--force-recreate", "--no-deps", "asr")
     for _ in range(65):
