@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import subprocess
+import sqlite3
 import tempfile
 import threading
 import time
@@ -113,7 +114,7 @@ class DeviceRegistryContractTests(unittest.TestCase):
         self.assertFalse(self.registry.verify(tenant="tenant-a", session="session-a",
                                               challenge=payload, signature="not_base64!"))
 
-    def test_approval_and_revoke_are_serialized_across_sqlite_connections(self):
+    def test_revocation_during_runner_callback_blocks_future_effect(self):
         self.enroll()
         message = b"fictional approval"
         signed = _sign(self.first, message, self.folder)
@@ -124,8 +125,9 @@ class DeviceRegistryContractTests(unittest.TestCase):
         revoked = threading.Event()
         failures = []
 
-        def grant(version):
+        def grant(version, digest):
             self.assertEqual(version, 1)
+            self.assertEqual(digest, __import__("hashlib").sha256(message).hexdigest())
             inside_grant.set()
             if not allow_grant.wait(4):
                 raise AssertionError("timed out waiting for grant release")
@@ -152,7 +154,9 @@ class DeviceRegistryContractTests(unittest.TestCase):
         self.assertTrue(inside_grant.wait(4))
         revocation_thread = threading.Thread(target=revoke)
         revocation_thread.start()
-        self.assertFalse(revoked.wait(0.15), "revoke raced past an unfinished approval")
+        # The grant is committed BEFORE the runner callback, so revocation can
+        # complete during callback. A stale signed grant must never dispatch.
+        self.assertTrue(revoked.wait(4))
         allow_grant.set()
         approval_thread.join(timeout=5)
         revocation_thread.join(timeout=5)
@@ -161,6 +165,63 @@ class DeviceRegistryContractTests(unittest.TestCase):
         self.assertTrue(revoked.is_set())
         self.assertFalse(self.registry.verify(tenant="tenant-a", session="session-a",
                                               challenge=message, signature=signed))
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.guard_effect(
+                tenant="tenant-a", session="session-a", expected_version=1,
+                challenge_digest=__import__("hashlib").sha256(message).hexdigest(),
+                on_valid=lambda: self.fail("revoked device attempted a checkout effect"))
+
+    def test_grant_commit_failure_cannot_publish_runner_approval(self):
+        self.enroll()
+        message = b"exact fictional challenge"
+        signed = _sign(self.first, message, self.folder)
+        invoked = []
+        original = self.registry._db
+
+        class FaultyConnection:
+            def execute(self, command, *args):
+                if command == "COMMIT":
+                    raise sqlite3.OperationalError("injected registry commit failure")
+                return original.execute(command, *args)
+
+        self.registry._db = FaultyConnection()
+        try:
+            with self.assertRaises(sqlite3.OperationalError):
+                self.registry.authorize(
+                    tenant="tenant-a", session="session-a", challenge=message,
+                    signature=signed, on_valid=lambda *_: invoked.append(True))
+        finally:
+            self.registry._db = original
+        self.assertEqual(invoked, [])
+        self.assertIsNone(self.registry._db.execute(
+            "SELECT state FROM device_approval_grants").fetchone())
+
+    def test_effect_admission_commit_failure_cannot_call_merchant(self):
+        self.enroll()
+        message = b"exact fictional checkout"
+        signed = _sign(self.first, message, self.folder)
+        outcome = self.registry.authorize(
+            tenant="tenant-a", session="session-a", challenge=message,
+            signature=signed, on_valid=lambda version, digest: (version, digest))
+        original = self.registry._db
+        class FaultyConnection:
+            def execute(self, command, *args):
+                if command == "COMMIT":
+                    raise sqlite3.OperationalError("injected effect-admission commit failure")
+                return original.execute(command, *args)
+        self.registry._db = FaultyConnection()
+        invoked = []
+        try:
+            with self.assertRaises(sqlite3.OperationalError):
+                self.registry.guard_effect(
+                    tenant="tenant-a", session="session-a",
+                    expected_version=outcome[0], challenge_digest=outcome[1],
+                    on_valid=lambda: invoked.append(True))
+        finally:
+            self.registry._db = original
+        self.assertEqual(invoked, [])
+        self.assertEqual(self.registry._db.execute(
+            "SELECT state FROM device_approval_grants").fetchone()[0], "granted")
 
 
 class DeviceRegistryCheckoutContractTests(unittest.TestCase):

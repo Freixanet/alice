@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import re
 import sqlite3
 import subprocess
@@ -72,6 +73,11 @@ class RevocableP256DeviceConsent:
             "version INTEGER NOT NULL, expires_at INTEGER NOT NULL, "
             "revoked INTEGER NOT NULL DEFAULT 0, "
             "PRIMARY KEY(tenant,session))")
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS device_approval_grants ("
+            "tenant TEXT NOT NULL, session TEXT NOT NULL, "
+            "challenge_digest TEXT NOT NULL, device_version INTEGER NOT NULL, "
+            "state TEXT NOT NULL, PRIMARY KEY(tenant,session,challenge_digest))")
         self._lock = threading.RLock()
         self._clock = clock or time.time
 
@@ -132,11 +138,12 @@ class RevocableP256DeviceConsent:
 
     def authorize(self, *, tenant: str, session: str, challenge: bytes,
                   signature: str, on_valid):
-        """Fence trusted checkout-approval persistence against concurrent revoke.
+        """Commit the verified grant BEFORE persisting the runner approval.
 
-        Holding a SQLite RESERVED writer lock serializes revocation/rotation by
-        *other Alice processes* using this database. This is not proof of user
-        presence or protection against a hostile database administrator.
+        Separate SQLite stores cannot provide one atomic transaction. If grant
+        durability fails, the runner callback NEVER executes. If the callback
+        fails after grant commits, the orphaned grant has no checkout authority:
+        the runner still requires a durable approved job and an exact digest.
         """
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
@@ -147,20 +154,36 @@ class RevocableP256DeviceConsent:
                 key_version = self._db.execute(
                     "SELECT version FROM device_keys WHERE tenant=? AND session=?",
                     (tenant, session)).fetchone()[0]
-                outcome = on_valid(key_version)
+                challenge_digest = hashlib.sha256(challenge).hexdigest()
+                prior = self._db.execute(
+                    "SELECT device_version,state FROM device_approval_grants "
+                    "WHERE tenant=? AND session=? AND challenge_digest=?",
+                    (tenant, session, challenge_digest)).fetchone()
+                if prior is not None:
+                    if prior != (key_version, "granted"):
+                        raise EnrollmentDenied("consent grant already consumed")
+                else:
+                    self._db.execute(
+                        "INSERT INTO device_approval_grants"
+                        "(tenant,session,challenge_digest,device_version,state) "
+                        "VALUES(?,?,?,?,'granted')",
+                        (tenant, session, challenge_digest, key_version))
                 self._db.execute("COMMIT")
-                return outcome
             except BaseException:
-                self._db.execute("ROLLBACK")
+                try:
+                    self._db.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
                 raise
+            return on_valid(key_version, challenge_digest)
 
-    def guard_effect(self, *, tenant: str, session: str, expected_version: int, on_valid):
-        """Fence an already-approved dispatch against subsequent revocation.
+    def guard_effect(self, *, tenant: str, session: str, expected_version: int,
+                     challenge_digest: str, on_valid):
+        """Commit ONE effect admission BEFORE the irreversible merchant call.
 
-        If revocation completed before this reservation, deny without sending.
-        If dispatch began first, revocation waits behind the SQLite lock and
-        cannot falsely claim the already-in-flight operation was prevented.
-        Never imply this undoes a merchant effect already submitted.
+        Revocation after admission cannot undo a merchant effect. Even a crash
+        before the merchant sees anything consumes this grant: fail closed
+        rather than launch a possibly duplicated operation.
         """
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
@@ -173,12 +196,24 @@ class RevocableP256DeviceConsent:
                         or row is None or row[1] or row[0] <= int(self._clock())
                         or row[2] != expected_version):
                     raise EnrollmentDenied("device approval key rotated, revoked or expired")
-                outcome = on_valid()
+                if (not isinstance(challenge_digest, str)
+                        or re.fullmatch(r"[a-f0-9]{64}", challenge_digest) is None):
+                    raise EnrollmentDenied("missing durable device consent grant")
+                updated = self._db.execute(
+                    "UPDATE device_approval_grants SET state='effect_admitted' "
+                    "WHERE tenant=? AND session=? AND challenge_digest=? "
+                    "AND device_version=? AND state='granted'",
+                    (tenant, session, challenge_digest, expected_version)).rowcount
+                if updated != 1:
+                    raise EnrollmentDenied("already consumed or absent device consent grant")
                 self._db.execute("COMMIT")
-                return outcome
             except BaseException:
-                self._db.execute("ROLLBACK")
+                try:
+                    self._db.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
                 raise
+            return on_valid()
 
     def _verify_locked(self, *, tenant: str, session: str, challenge: bytes,
                        signature: str) -> bool:

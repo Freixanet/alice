@@ -18,23 +18,40 @@ import sqlite3
 import ssl
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Any
 
 from .core import ACTION_KEYS, Denied
+from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 
 
 _NAME = re.compile(r"^[a-zA-Z0-9_@.:-]{1,120}$")
 _VISIBLE = frozenset({"epoch", "status", "products", "sku", "name", "description",
                       "currency", "unit_minor", "variants", "variant", "quantity",
                       "cart_ready", "selected"})
+_REDACT = re.compile(r"(?i)(?:https?://[^\s]+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|"
+                     r"\b(?:\d[ -]?){13,19}\b|\b(?:password|secret|bearer|"
+                     r"api.?key|access.?token|cvv|address|recipient)\b)")
 
 
 def _name(value: str) -> str:
     if not isinstance(value, str) or not _NAME.fullmatch(value):
         raise Denied("invalid planner identity")
     return value
+
+
+def _public_text(value: str) -> str:
+    clipped = value[:350]
+    if any(word in clipped.lower() for word in
+           ("carrer ", "calle ", "street ", "avenida ", "avinguda ", "road ",
+            " st,", " st.", " rd,", " rd.", " ship to ", " deliver to ",
+            " apt ", " piso ", "domicilio", " address ", " recipient ")):
+        return "[redacted]"
+    digits = sum(ch.isdigit() for ch in clipped)
+    if digits >= 9:
+        return "[redacted]"
+    return _REDACT.sub("[redacted]", clipped)
 
 
 def _visible(value: Any, depth: int = 0) -> Any:
@@ -46,7 +63,7 @@ def _visible(value: Any, depth: int = 0) -> Any:
     if isinstance(value, list):
         return [_visible(v, depth + 1) for v in value[:10]]
     if isinstance(value, str):
-        return value[:350]
+        return _public_text(value)
     if value is None or type(value) in (bool, int):
         return value
     raise Denied("invalid model observation")
@@ -73,6 +90,16 @@ class PlannerMailbox:
             "epoch INTEGER NOT NULL, nonce TEXT NOT NULL, goal TEXT NOT NULL, "
             "observation TEXT NOT NULL, proposal TEXT, state TEXT NOT NULL, "
             "result_status TEXT, UNIQUE(pair_id,job_id,epoch))")
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS planner_cancellations ("
+            "pair_id TEXT NOT NULL, job_id TEXT NOT NULL, "
+            "PRIMARY KEY(pair_id,job_id))")
+        # Cancellation has a job-wide authority boundary, independent of
+        # WHICH Hermes installation originally obtained proposal access.
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS planner_job_cancellations ("
+            "tenant TEXT NOT NULL, session TEXT NOT NULL, job_id TEXT NOT NULL, "
+            "PRIMARY KEY(tenant,session,job_id))")
 
     def close(self) -> None:
         with self._lock:
@@ -141,6 +168,7 @@ class PlannerMailbox:
         encoded = json.dumps(safe, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(encoded.encode()) > 4096:
             raise Denied("oversized model observation")
+        safe_goal = _public_text(goal)
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
             try:
@@ -150,12 +178,21 @@ class PlannerMailbox:
                 if (not pair or pair[0:2] != (tenant, session) or pair[3]
                         or pair[2] <= int(self._clock())):
                     raise Denied("untrusted or expired Alice pairing")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_cancellations WHERE pair_id=? AND job_id=?",
+                        (pair_id, job_id)).fetchone():
+                    raise Denied("Alice has cancelled this planning job")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_job_cancellations "
+                        "WHERE tenant=? AND session=? AND job_id=?",
+                        (tenant, session, job_id)).fetchone():
+                    raise Denied("this Alice job was cancelled across all pairings")
                 prior = self._db.execute(
                     "SELECT id,goal,observation FROM planner_steps "
                     "WHERE pair_id=? AND job_id=? AND epoch=?",
                     (pair_id, job_id, epoch)).fetchone()
                 if prior:
-                    if (prior[1], prior[2]) != (goal, encoded):
+                    if (prior[1], prior[2]) != (safe_goal, encoded):
                         raise Denied("conflicting planning step")
                     self._db.execute("COMMIT")
                     return prior[0]
@@ -168,7 +205,7 @@ class PlannerMailbox:
                 self._db.execute(
                     "INSERT INTO planner_steps(id,pair_id,job_id,epoch,nonce,goal,observation,state) "
                     "VALUES(?,?,?,?,?,?,?,'pending')",
-                    (step_id, pair_id, job_id, epoch, secrets.token_urlsafe(20), goal, encoded))
+                    (step_id, pair_id, job_id, epoch, secrets.token_urlsafe(20), safe_goal, encoded))
                 self._db.execute("COMMIT")
                 return step_id
             except BaseException:
@@ -205,14 +242,23 @@ class PlannerMailbox:
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
             try:
-                pair_id, _, _ = self._pair(token)
+                pair_id, scope_tenant, scope_session = self._pair(token)
                 row = self._db.execute(
-                    "SELECT nonce,epoch,state,proposal FROM planner_steps WHERE id=? AND pair_id=?",
+                    "SELECT nonce,epoch,state,proposal,job_id FROM planner_steps WHERE id=? AND pair_id=?",
                     (_name(step_id), pair_id)).fetchone()
                 if (not row or not isinstance(nonce, str)
                         or not hmac.compare_digest(row[0], nonce)
                         or row[1] != proposal["epoch"]):
                     raise Denied("wrong or stale planner step")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_cancellations WHERE pair_id=? AND job_id=?",
+                        (pair_id, row[4])).fetchone():
+                    raise Denied("Alice cancelled the planning step")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_job_cancellations "
+                        "WHERE tenant=? AND session=? AND job_id=?",
+                        (scope_tenant, scope_session, row[4])).fetchone():
+                    raise Denied("Alice cancelled this job across all pairings")
                 if row[2] == "pending":
                     updated = self._db.execute(
                         "UPDATE planner_steps SET state='submitted',proposal=? "
@@ -239,6 +285,17 @@ class PlannerMailbox:
                 if (not pair or pair[0:2] != (_name(tenant), _name(session))
                         or pair[2] <= int(self._clock()) or pair[3]):
                     raise Denied("Alice coordinator has wrong tenant/session")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_cancellations WHERE pair_id=? AND job_id=("
+                        "SELECT job_id FROM planner_steps WHERE id=? AND pair_id=?)",
+                        (pair_id, _name(step_id), pair_id)).fetchone():
+                    raise Denied("Alice cancelled the planning job")
+                if self._db.execute(
+                        "SELECT 1 FROM planner_job_cancellations "
+                        "WHERE tenant=? AND session=? AND job_id=("
+                        "SELECT job_id FROM planner_steps WHERE id=? AND pair_id=?)",
+                        (tenant, session, step_id, pair_id)).fetchone():
+                    raise Denied("Alice cancelled this job across all pairings")
                 changed = self._db.execute(
                     "UPDATE planner_steps SET state='claimed' WHERE id=? AND pair_id=? "
                     "AND state='submitted'", (_name(step_id), pair_id)).rowcount
@@ -252,6 +309,47 @@ class PlannerMailbox:
             except BaseException:
                 self._db.execute("ROLLBACK")
                 raise
+
+    def cancel(self, pair_id: str, *, tenant: str, session: str, job_id: str) -> dict[str, Any]:
+        """Trusted Alice-only fence; never expose this method over HTTP.
+
+        A claimed step might already be performing an effect. It remains
+        uncertain and cannot be declared cancelled without trusted inspection.
+        """
+        pair_id, tenant, session, job_id = map(_name, (pair_id, tenant, session, job_id))
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                pair = self._db.execute(
+                    "SELECT tenant,session FROM planner_pairs WHERE id=?",
+                    (pair_id,)).fetchone()
+                if pair != (tenant, session):
+                    raise Denied("wrong Alice cancellation authority")
+                self._db.execute(
+                    "INSERT OR IGNORE INTO planner_cancellations(pair_id,job_id) VALUES(?,?)",
+                    (pair_id, job_id))
+                self._db.execute(
+                    "INSERT OR IGNORE INTO planner_job_cancellations "
+                    "(tenant,session,job_id) VALUES(?,?,?)",
+                    (tenant, session, job_id))
+                claimed = self._db.execute(
+                    "SELECT 1 FROM planner_steps AS step "
+                    "JOIN planner_pairs AS pair ON step.pair_id=pair.id "
+                    "WHERE pair.tenant=? AND pair.session=? AND step.job_id=? "
+                    "AND step.state='claimed' LIMIT 1",
+                    (tenant, session, job_id)).fetchone() is not None
+                self._db.execute(
+                    "UPDATE planner_steps SET state='cancelled' WHERE job_id=? "
+                    "AND pair_id IN (SELECT id FROM planner_pairs "
+                    "WHERE tenant=? AND session=?) "
+                    "AND state IN ('pending','submitted')",
+                    (job_id, tenant, session))
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        return {"status": "inspection_required" if claimed else "cancelled",
+                "effect_may_be_in_flight": claimed}
 
     def acknowledge(self, pair_id: str, *, step_id: str, result_status: str) -> None:
         """Trusted Alice acknowledges only AFTER runner state is durable."""
@@ -270,6 +368,15 @@ class PlannerMailbox:
 def make_handler(mailbox: PlannerMailbox):
     """Separate loopback-only synthetic HTTPS surface; no ASR runner reference."""
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.rfile = HeaderDeadlineReader(self.rfile, self.connection, seconds=3)
+
+        def parse_request(self):
+            accepted = super().parse_request()
+            self.rfile.headers_complete()
+            return accepted
+
         def log_message(self, *_):
             return
 
@@ -304,11 +411,11 @@ def make_handler(mailbox: PlannerMailbox):
                 size = int(self.headers.get("Content-Length", "-1"))
                 if not 2 <= size <= 4096:
                     raise Denied("oversized proposal request")
-                data = json.loads(self.rfile.read(size))
+                data = json.loads(read_body_with_deadline(self, size, seconds=3))
                 if not isinstance(data, dict) or set(data) != {"step_id", "nonce", "proposal"}:
                     raise Denied("invalid proposal schema")
                 self._reply(200, mailbox.submit(self._token(), **data))
-            except (Denied, KeyError, ValueError, TypeError):
+            except (Denied, KeyError, ValueError, TypeError, TimeoutError, OSError):
                 self._reply(403, {"error": "denied"})
 
     return Handler
@@ -318,11 +425,12 @@ class LoopbackPlannerHTTPS:
     """Disposable test transport, not a hosted multi-tenant deployment."""
 
     def __init__(self, mailbox: PlannerMailbox, cert_file: str, key_file: str):
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(mailbox))
+        self.server = LimitedHTTPServer(
+            ("127.0.0.1", 0), make_handler(mailbox), max_connections=8)
         tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         tls.minimum_version = ssl.TLSVersion.TLSv1_2
         tls.load_cert_chain(cert_file, key_file)
-        self.server.socket = tls.wrap_socket(self.server.socket, server_side=True)
+        self.server.tls_context = tls
         self.url = f"https://localhost:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 

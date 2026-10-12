@@ -258,6 +258,51 @@ restart/rotation test passes; the full local Python suite now has **121
 tests PASS, 9 optional Chromium skipped**; focused R02 Hermes **26 PASS**.
 This still cannot prove a live iOS Secure Enclave or production user identity.
 
+### New local recovery/security hardening after e2c8ac0
+
+At exact HEAD `e2c8ac04f065410881d0efcacbd14f9262fdcac4`,
+H01/H02/H02.1 same-host, synthetic HTTPS/Chromium and Quality browser
+passed; Quality **verify failed** because an existing test's registered
+tool-name expectation omitted `alice_secure_plan_remote`. The official
+Hermes suite ran 629 tests, one failed, 22 skipped. The expectation is
+corrected locally, but exact-SHA CI must rerun. Quality iOS was in progress.
+
+Device consent changes in the current worktree now commit an exact
+P-256 grant in the independent device SQLite registry **before** publishing
+AliceRunner approval, and commit consumption of that grant **before** invoking
+the merchant effect callback. Fault-injected registry commit failures
+cannot authorize a charge; a consumed grant never permits automatic retry,
+including when a quote validation fails. These are software fixture
+guarantees, not an attested iOS approval.
+
+Trusted Alice-only proposal cancellation now durably fences pending and
+submitted steps. A step already claimed returns `inspection_required`,
+never a falsely confirmed stop. The outbound model data is bounded and
+heuristically redacted for synthetic URLs/emails/card strings/street phrases;
+**this is NOT a comprehensive private-data filter** and curated product-only
+inputs are required before deployment. The disposable HTTPS mailbox reuses
+H02.1's bounded server, TLS handshake, header and body deadlines; it
+remains loopback-only and is not a production OS or network isolation proof.
+
+An independent reviewer reproduced a cancellation bypass across two
+legitimate Hermes pairings for the same tenant/session/job. The new
+durable job-level cancellation record now blocks every pairing, even a
+fresh installation, while leaving any claimed effect pending inspection.
+The negative test covers a second pairing after the cancellation and
+another synthetic personal-data leak case with a street abbreviation
+and nine-digit phone. These patches remain local until the next SHA.
+After these additions the complete local repository suite ran **127 tests,
+9 optional Chromium omitted, no failures**, and focused R02 plugin tests
+ran **26 PASS**. The complete official Hermes suite and iOS build remain
+separate GitHub CI requirements for the forthcoming SHA.
+
+Local verification of the changed Python repository: **126 tests,
+9 optional Chromium skipped, no failures**; mailbox **11 PASS**, device
+registry **8 PASS**, focused R02 Hermes plugin **26 PASS**, whitespace
+PASS. General Hermes tests run directly on this Mac lack official Hermes
+modules and are not a validated regression or passing suite. New exact-SHA
+Quality/iOS and official Hermes CI are still required before release claims.
+
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |

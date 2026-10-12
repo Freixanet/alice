@@ -129,3 +129,21 @@ class PairedRemoteCoordinator:
         self._mailbox.acknowledge(
             self._pair_id, step_id=step_id, result_status=result["status"])
         return result
+
+    def cancel(self) -> dict[str, Any]:
+        """Trusted Alice cancellation. Never infer an in-flight step stopped."""
+        outcome = self._mailbox.cancel(
+            self._pair_id, tenant=self._tenant, session=self._session,
+            job_id=self.job_id)
+        if outcome["effect_may_be_in_flight"]:
+            return outcome
+        state = self._runner.resume_job(
+            self.job_id, tenant=self._tenant, session=self._session)
+        if state["status"] == "stopped":
+            return {"status": "stopped", "effect_may_be_in_flight": False}
+        if state["status"] not in ("researching", "selecting", "cart_ready"):
+            return {"status": "inspection_required", "effect_may_be_in_flight": True}
+        stopped = self._runner.propose(
+            self.job_id, tenant=self._tenant, session=self._session,
+            proposal={"action": "stop", "epoch": state["epoch"]})
+        return {"status": stopped["status"], "effect_may_be_in_flight": False}

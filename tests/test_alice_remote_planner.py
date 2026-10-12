@@ -297,6 +297,96 @@ class PlannerMailboxHTTPSContractTests(unittest.TestCase):
             self.pair_id, tenant="tenant-a", session="session-a", step_id=step)
         self.assertIn(claimed["proposal"]["query"], ("keyboard", "headphones"))
 
+    def test_cancel_pending_or_submitted_blocks_all_future_proposals(self):
+        controller = PairedRemoteCoordinator(
+            self.runner, self.mailbox, tenant="tenant-a", session="session-a",
+            pair_id=self.pair_id, goal="Research a fictional keyboard",
+            recipient="Fictional delivery", existing_job_id=self.job["job_id"])
+        step_id = controller.stage()
+        pending = self.mailbox.pending(self.token)
+        self.mailbox.submit(
+            self.token, step_id=step_id, nonce=pending["nonce"],
+            proposal={"action": "search", "query": "keyboard", "epoch": 0})
+        self.assertEqual(controller.cancel(),
+                         {"status": "stopped", "effect_may_be_in_flight": False})
+        self.assertEqual(self.mailbox.pending(self.token)["status"], "idle")
+        with self.assertRaises(Denied):
+            self.mailbox.claim(self.pair_id, tenant="tenant-a",
+                               session="session-a", step_id=step_id)
+        with self.assertRaises(Denied):
+            self.mailbox.submit(
+                self.token, step_id=step_id, nonce=pending["nonce"],
+                proposal={"action": "search", "query": "keyboard", "epoch": 0})
+        with self.assertRaises(Denied):
+            controller.stage()
+        self.assertEqual(self.fixture.store.submit_attempts, 0)
+
+    def test_cancel_after_claim_preserves_uncertainty_without_runner_stop(self):
+        controller = PairedRemoteCoordinator(
+            self.runner, self.mailbox, tenant="tenant-a", session="session-a",
+            pair_id=self.pair_id, goal="Research a fictional keyboard",
+            recipient="Fictional delivery", existing_job_id=self.job["job_id"])
+        step_id = controller.stage()
+        pending = self.mailbox.pending(self.token)
+        self.mailbox.submit(
+            self.token, step_id=step_id, nonce=pending["nonce"],
+            proposal={"action": "search", "query": "keyboard", "epoch": 0})
+        self.mailbox.claim(self.pair_id, tenant="tenant-a",
+                           session="session-a", step_id=step_id)
+        self.assertEqual(controller.cancel(),
+                         {"status": "inspection_required", "effect_may_be_in_flight": True})
+        self.assertEqual(self.runner.resume_job(
+            self.job["job_id"], tenant="tenant-a", session="session-a")["status"], "researching")
+        reopened = PlannerMailbox(Path(self.tmp.name) / "planner.sqlite3")
+        try:
+            with self.assertRaises(Denied):
+                reopened.claim(self.pair_id, tenant="tenant-a",
+                               session="session-a", step_id=step_id)
+            with self.assertRaises(Denied):
+                reopened.publish(self.pair_id, tenant="tenant-a", session="session-a",
+                                 job_id=self.job["job_id"], epoch=0, goal="safe",
+                                 observation={"epoch": 0})
+            second_pair = reopened.create_pair(
+                tenant="tenant-a", session="session-a", account="alice-owner",
+                installation="disposable-hermes-2")
+            with self.assertRaises(Denied):
+                reopened.publish(
+                    second_pair["pair_id"], tenant="tenant-a", session="session-a",
+                    job_id=self.job["job_id"], epoch=0, goal="fictional keyboard",
+                    observation={"epoch": 0})
+        finally:
+            reopened.close()
+
+    def test_redacted_goal_and_product_observation_never_reach_hermes(self):
+        step_id = self.mailbox.publish(
+            self.pair_id, tenant="tenant-a", session="session-a",
+            job_id=self.job["job_id"], epoch=0,
+            goal="Find keyboard; deliver to Carrer Major 22; email private@example.com",
+            observation={"epoch": 0, "status": "researching",
+                         "description": "Payment card 4111 1111 1111 1111 at https://merchant.test",
+                         "products": [{"sku": "FAKE-ALICE-1",
+                                       "name": "Ship to Calle Mayor 22, private@example.com"}],
+                         "recipient": "Private delivery address"})
+        pending = self.mailbox.pending(self.token)
+        encoded = json.dumps(pending)
+        self.assertEqual(pending["step_id"], step_id)
+        for leaked in ("private@example.com", "4111 1111 1111 1111",
+                       "https://merchant.test", "Private delivery address",
+                       "Carrer Major 22", "Calle Mayor 22"):
+            self.assertNotIn(leaked, encoded)
+        self.assertIn("[redacted]", encoded)
+
+    def test_other_address_and_phone_variants_fail_closed_before_hermes(self):
+        self.mailbox.publish(
+            self.pair_id, tenant="tenant-a", session="session-a",
+            job_id=self.job["job_id"], epoch=0,
+            goal="Find gadget ship to 12 Baker St, call +34 612345678",
+            observation={"epoch": 0, "status": "researching",
+                         "description": "Deliver to 12 Baker St, phone +34 612345678"})
+        received = json.dumps(self.mailbox.pending(self.token))
+        self.assertNotIn("12 Baker St", received)
+        self.assertNotIn("612345678", received)
+
 
 if __name__ == "__main__":
     unittest.main()

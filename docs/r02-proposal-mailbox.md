@@ -36,6 +36,9 @@ No operator is instructed to modify their personal Hermes installation.
    no automatic duplicate cart action or checkout is issued.
 6. Rotate, expiry or revocation of proposal credentials deny further access
    or claims. SQLite transactions serialize relevant writes across processes.
+7. Alice can durably cancel a tenant/session/job across all paired Hermes
+   installations. Pending submissions are revoked; an already-claimed
+   effect remains inspection_required rather than falsely stopped.
 
 ## Evidence and explicit limitations
 
@@ -51,5 +54,8 @@ approval was exercised.
 enrollment, independently administered host, TLS/rate-limit/OS egress policy,
 real Hermes device pairing and network deployment, iOS hardware signing,
 multi-host attacks, real merchant certification, distribution, and recovery
-operations. The synthetic loopback HTTP server lacks production deadlines,
-quotas, and process-level tenant separation; do not expose it publicly.
+operations. The loopback-only HTTPS service reuses H02.1's bounded
+TLS/header/body deadlines and connection limit, but does not provide
+production per-source quotas, network firewall or process tenant isolation.
+Do not expose it publicly. Its free-text redaction is heuristic, not a
+comprehensive personal-data guarantee.
