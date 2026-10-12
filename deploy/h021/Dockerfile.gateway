@@ -1,0 +1,20 @@
+FROM python:3.11-slim AS wheel
+WORKDIR /src
+COPY pyproject.toml setup.py ./
+COPY alice_secure_runner ./alice_secure_runner
+RUN python -m pip wheel --no-deps -w /dist .
+
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=wheel /dist /dist
+RUN python -m pip install --no-index --find-links=/dist alice-secure-runner-prototype \
+    && rm -rf /dist \
+    && groupadd -g 12002 alice-h02 \
+    && useradd -u 12002 -g 12002 -s /usr/sbin/nologin alice-h02 \
+    && mkdir -p /var/lib/h02 \
+    && chown 12002:12002 /var/lib/h02
+USER 12002:12002
+ENV PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+WORKDIR /tmp
+CMD ["python", "-m", "alice_secure_runner.h02_gateway"]

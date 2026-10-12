@@ -1,0 +1,35 @@
+name: R02 H02.1 Host Boundary Preparation (NOT two-host proof)
+
+on:
+  pull_request:
+    paths:
+      - "alice_secure_runner/**"
+      - "deploy/h021/**"
+      - "scripts/h021_*.py"
+      - "scripts/h021_*.sh"
+      - "scripts/verify-r02-h021-docker.sh"
+      - "tests/test_h021_*.py"
+      - "pyproject.toml"
+      - "setup.py"
+      - ".github/workflows/r02-h021-host-boundary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-only-boundary-synthetic:
+    name: H021 Ed25519/ASR independent verification — single Docker host
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reject external payment/runtime configuration
+        run: |
+          test -z "${H021_EXTERNAL_RUN_APPROVED:-}"
+          test -z "${HERMES_PERSONAL_HOME:-}"
+          test -z "${REAL_PAYMENT_ENDPOINT:-}"
+          docker info >/dev/null
+          openssl version
+      - name: Verify clean wheel, signed authorization and adversarial fixture
+        run: bash scripts/verify-r02-h021-docker.sh

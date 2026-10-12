@@ -14,15 +14,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .h02_identity import InvalidCapability, Keyring, ReplayLedger, ROLE_PATHS
+from .h021_crypto import PublicVerifier
 
 MAX_BODY = 16384
 BACKEND_ORIGIN = "https://asr:8443"  # fixed Docker-internal origin; never user-controlled
 
 
 class H02Gateway:
-    def __init__(self, *, keyring: Keyring, ledger: ReplayLedger,
+    def __init__(self, *, keyring: Keyring | PublicVerifier, ledger: ReplayLedger,
                  assignments: dict, backend: dict, ca_file: str):
         self.keyring = keyring
+        self.verify_only = isinstance(keyring, PublicVerifier)
         self.ledger = ledger
         # Alice operator-provisioned subject -> actor mapping; neither model
         # nor caller JSON chooses which backend Alice identity is used.
@@ -55,7 +57,8 @@ class H02Gateway:
         self.ledger.consume(claims)
         return principal["actor"], claims["role"], obj
 
-    def forward(self, actor: str, role: str, path: str, obj: dict):
+    def forward(self, actor: str, role: str, path: str, obj: dict,
+                *, raw_body: bytes | None = None, signed_token: str | None = None):
         scope = "human" if role == "human" else "coordinator"
         token = self.backend[actor][scope]
         data = dict(obj)
@@ -64,10 +67,20 @@ class H02Gateway:
         if path == "/v1/proposals" and set(data) != {"tenant", "session", "job_id", "proposal"}:
             raise InvalidCapability("unexpected proposal shape")
         private_path = "/v1/propose" if path == "/v1/proposals" else path
-        payload = json.dumps(data, separators=(",", ":"), allow_nan=False).encode()
+        if self.verify_only:
+            # Independent ASR guard verifies the EXACT original bytes and the
+            # same signature again. Gateway cannot alter tenant, role, job or
+            # body and cannot mint an OWNER/HUMAN signature when compromised.
+            if raw_body is None or signed_token is None:
+                raise InvalidCapability("H02.1 requires signed raw body")
+            payload = raw_body
+        else:
+            payload = json.dumps(data, separators=(",", ":"), allow_nan=False).encode()
         req = urllib.request.Request(BACKEND_ORIGIN + private_path, data=payload,
                                      method="POST", headers={
                                          "Authorization": "Bearer " + token,
+                                         **({"X-Alice-H021-Capability": signed_token}
+                                            if self.verify_only else {}),
                                          "Content-Type": "application/json"})
         try:
             with self.opener.open(req, timeout=10) as response:
@@ -119,7 +132,10 @@ def make_handler(gateway: H02Gateway):
                     raise InvalidCapability("truncated request")
                 actor, role, obj = gateway.authorize(
                     self.headers.get("Authorization", ""), self.path, raw)
-                status, result = gateway.forward(actor, role, self.path, obj)
+                status, result = gateway.forward(
+                    actor, role, self.path, obj, raw_body=raw,
+                    signed_token=(self.headers.get("Authorization", "")[len("Alice-H02 "):]
+                                  if gateway.verify_only else None))
                 self.reply(status, result)
             except (InvalidCapability, ValueError, KeyError, TypeError):
                 self.reply(403, {"error": "denied"})
@@ -141,7 +157,9 @@ def fixture_secret(name: str) -> str:
 def main():
     if os.environ.get("H02_SYNTHETIC_ONLY") != "yes":
         raise SystemExit("H02 REFUSED: synthetic independent-host proof only")
-    keyring = Keyring.load("/run/h02-auth/keyring.json")
+    keyring = (PublicVerifier.load("/run/h021-auth/public.json")
+               if os.environ.get("H021_VERIFY_ONLY") == "yes" else
+               Keyring.load("/run/h02-auth/keyring.json"))
     assignments = json.loads(Path("/run/h02-auth/subjects.json").read_text())
     backend = {name: {"coordinator": fixture_secret("backend_coordinator_" + name),
                       "human": fixture_secret("backend_human_" + name)}

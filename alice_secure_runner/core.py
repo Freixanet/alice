@@ -163,6 +163,9 @@ class AliceRunner:
             self.__db = sqlite3.connect(str(ledger_path), check_same_thread=False, isolation_level=None)
             self.__db.execute("CREATE TABLE IF NOT EXISTS authorizations (checkout_id TEXT PRIMARY KEY, digest TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT)")
             self.__db.execute("CREATE TABLE IF NOT EXISTS jobs (job_id TEXT PRIMARY KEY, state_json TEXT NOT NULL)")
+            # Opt-in H02.1 idempotent *creation* only. Existing H01 callers
+            # without create_request_id preserve the exact old contract.
+            self.__db.execute("CREATE TABLE IF NOT EXISTS job_creations (tenant TEXT NOT NULL, session TEXT NOT NULL, request_id TEXT NOT NULL, recipient_digest TEXT NOT NULL, job_id TEXT NOT NULL UNIQUE, PRIMARY KEY (tenant, session, request_id))")
             self._recover_jobs()
         except Exception:
             if hasattr(self, "_AliceRunner__db"):
@@ -234,14 +237,46 @@ class AliceRunner:
                 self.__owner.close()
                 self.__owner = None
 
-    def new_job(self, tenant: str, session: str, recipient: str) -> dict[str, Any]:
+    def new_job(self, tenant: str, session: str, recipient: str,
+                *, create_request_id: str | None = None) -> dict[str, Any]:
         if not all(isinstance(v, str) and 0 < len(v) <= 120 for v in (tenant, session, recipient)):
             raise Denied("invalid trusted identity/recipient")
-        job = Job(secrets.token_urlsafe(16), tenant, session, recipient)
+        if create_request_id is not None and (
+                not isinstance(create_request_id, str) or
+                not 12 <= len(create_request_id) <= 120 or
+                not all(c.isascii() and (c.isalnum() or c in "_-") for c in create_request_id)):
+            raise Denied("invalid idempotent creation identifier")
         with self.__lock:
-            self.__jobs[job.id] = job
-            self._persist_job(job)
-        return {"job_id": job.id, "epoch": 0, "status": job.state}
+            if create_request_id is None:
+                job = Job(secrets.token_urlsafe(16), tenant, session, recipient)
+                self.__jobs[job.id] = job
+                self._persist_job(job)
+            else:
+                digest = hashlib.sha256(recipient.encode("utf-8")).hexdigest()
+                self.__db.execute("BEGIN IMMEDIATE")
+                try:
+                    row = self.__db.execute(
+                        "SELECT recipient_digest,job_id FROM job_creations WHERE tenant=? AND session=? AND request_id=?",
+                        (tenant, session, create_request_id)).fetchone()
+                    if row:
+                        if row[0] != digest:
+                            raise Denied("idempotency key reused with changed recipient")
+                        job = self._job(row[1], tenant, session)
+                    else:
+                        job = Job(secrets.token_urlsafe(16), tenant, session, recipient)
+                        self._persist_job(job)
+                        self.__db.execute(
+                            "INSERT INTO job_creations(tenant,session,request_id,recipient_digest,job_id) VALUES(?,?,?,?,?)",
+                            (tenant, session, create_request_id, digest, job.id))
+                    self.__db.execute("COMMIT")
+                    if row is None:
+                        # Never expose a non-durable phantom job in memory if
+                        # COMMIT failed (disk full/interrupted transaction).
+                        self.__jobs[job.id] = job
+                except BaseException:
+                    self.__db.execute("ROLLBACK")
+                    raise
+        return {"job_id": job.id, "epoch": job.epoch, "status": job.state}
 
     def _job(self, job_id: str, tenant: str, session: str) -> Job:
         job = self.__jobs.get(job_id)
