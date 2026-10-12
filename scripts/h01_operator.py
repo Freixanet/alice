@@ -1,0 +1,225 @@
+"""H01 disposable Linux Docker lab coordinator and synthetic Alice user.
+
+Reproducible real network/PID/mount boundary tests. NO production services.
+Controls Docker only as trusted TEST OPERATOR, never from Hermes container.
+"""
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import os
+import ssl
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+BASE = Path(__file__).resolve().parents[1]
+COMPOSE = ['docker', 'compose', '-f', str(BASE / 'deploy/h01/compose.yaml')]
+FIXTURE = Path(os.environ['H01_FIXTURE_DIR'])
+URL = 'https://127.0.0.1:38443'
+
+
+def token(name):
+    return (FIXTURE / name).read_text().strip()
+
+
+def docker(*args, check=True, capture=True):
+    return subprocess.run([*COMPOSE, *args], check=check, text=True,
+                          capture_output=capture, timeout=180)
+
+
+def query(path, obj=None, role='owner', actor='a', timeout=15):
+    ctx = ssl.create_default_context(cafile=str(FIXTURE / 'gateway.pem'))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                         urllib.request.HTTPSHandler(context=ctx))
+    headers = {'Authorization': 'Bearer ' + token(role + '_' + actor)}
+    method = 'POST' if obj is not None else 'GET'
+    data = json.dumps(obj, separators=(',', ':')).encode() if obj is not None else None
+    req = urllib.request.Request(URL + path, data=data, method=method, headers=headers)
+    try:
+        with opener.open(req, timeout=timeout) as response:
+            return response.status, json.load(response)
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
+def require(name, status, result, wanted):
+    if status != wanted:
+        raise AssertionError(f'{name}: expected HTTP {wanted}, got {status}: {result}')
+    return result
+
+
+def ready():
+    for _ in range(90):
+        try:
+            if query('/health')[0] == 200:
+                return
+        except OSError:
+            pass
+        time.sleep(1)
+    raise RuntimeError('H01 synthetic Alice gateway did not become ready')
+
+
+def job(actor='a'):
+    for _ in range(60):
+        try:
+            s, out = query('/v1/jobs', {'recipient': 'Fictional delivery'}, actor=actor)
+            if s == 200:
+                return out['job_id']
+        except OSError:
+            pass
+        time.sleep(.5)
+    raise AssertionError('Alice gateway could not create a job on private ASR')
+
+
+def step(job_id, actor, epoch, action, **kwargs):
+    s, out = query('/v1/proposals', {'job_id': job_id,
+                                    'proposal': {'action': action, 'epoch': epoch, **kwargs}},
+                   role='proposal', actor=actor)
+    return require('typed-proposal:' + action, s, out, 200)
+
+
+def plan_from_empty(job_id, actor='a'):
+    step(job_id, actor, 0, 'search', query='keyboard')
+    return plan_from_search(job_id, actor)
+
+
+def plan_from_search(job_id, actor='a'):
+    step(job_id, actor, 1, 'read_product', sku='FAKE-ALICE-1')
+    step(job_id, actor, 2, 'select_product', sku='FAKE-ALICE-1')
+    step(job_id, actor, 3, 'add_to_cart', quantity=2)
+    return step(job_id, actor, 4, 'prepare_checkout')
+
+
+def approve(job_id, actor='a'):
+    s, challenge = query('/v1/challenge', {'job_id': job_id}, actor=actor)
+    require('challenge', s, challenge, 200)
+    digest = hmac.new(bytes.fromhex(token('device_hmac_hex')),
+                      json.dumps(challenge, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode(),
+                      hashlib.sha256).hexdigest()
+    # Negative controls: a forged signature is not a privileged authorization.
+    s, out = query('/v1/approve', {'job_id': job_id, 'signature': '0' * 64}, actor=actor)
+    require('forged-approval-denied', s, out, 403)
+    s, out = query('/v1/approve', {'job_id': job_id, 'signature': digest}, actor=actor)
+    require('exact-user-approval', s, out, 200)
+    s, out = query('/v1/approve', {'job_id': job_id, 'signature': digest}, actor=actor)
+    require('replayed-approval-denied', s, out, 403)
+
+
+def inspect_dispatch(job_id):
+    code = ("import sqlite3; db=sqlite3.connect('/var/lib/h01/state.sqlite3'); "
+            "row=db.execute('SELECT state_json FROM jobs WHERE job_id=?',(__import__('sys').argv[1],)).fetchone(); "
+            "print(__import__('json').loads(row[0])['state'] if row else 'MISSING')")
+    r = docker('exec', '-T', 'asr', '/opt/asr-python/bin/python', '-c', code, job_id, check=False)
+    return r.stdout.strip() if r.returncode == 0 else 'UNAVAILABLE'
+
+
+def full_test():
+    ready()
+    evidence = []
+    a = job('a')
+    b = job('b')
+    # The operator knows the ASR private IP and deliberately hands only the IP
+    # to hostile Hermes for a real failed direct-TCP attempt.
+    asr_container = docker('ps', '-q', 'asr').stdout.strip()
+    ip = subprocess.check_output(['docker', 'inspect', '-f',
+        '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', asr_container], text=True).strip()
+    if not ip:
+        raise RuntimeError('missing real ASR backplane IP: cannot claim isolation')
+    attacker = docker('--profile', 'attack', 'run', '--rm', '--no-deps',
+                      '-e', 'H01_ASR_BACKPLANE_IP=' + ip,
+                      '-e', 'H01_BROWSER_JOB_ID=' + a, 'hostile-hermes')
+    output = json.loads(attacker.stdout.strip().splitlines()[-1])
+    if not output['passed']:
+        raise AssertionError('hostile Hermes attack succeeded: ' + json.dumps(output['failed']))
+    evidence.append({'phase': 'hostile-hermes-real-container', 'checks': len(output['checks']),
+                     'failed': output['failed']})
+
+    # Alice B's valid owner token cannot read/commit Alice A's known job.
+    for path in ('/v1/resume', '/v1/challenge', '/v1/commit', '/v1/human-handoff'):
+        s, out = query(path, {'job_id': a}, actor='b')
+        require('cross-tenant:' + path, s, out, 403)
+    result = plan_from_search(a)
+    if result['checkout']['amount_minor'] != 4998:
+        raise AssertionError('fictional checkout price drift')
+    approve(a)
+    s, out = query('/v1/commit', {'job_id': a}, actor='a')
+    require('approved fictitious commit', s, out, 200)
+    if out['status'] != 'confirmed_simulated':
+        raise AssertionError('unverified fake order')
+    s, out = query('/v1/commit', {'job_id': a}, actor='a')
+    require('no repeat commit', s, out, 403)
+    evidence.append({'phase': 'alice-trusted-approval-and-once-only',
+                     'amount_minor': 4998, 'submitted_fictional_count': 1})
+
+    # A real Browser-owned job survives in SQLite but its *prior owner*
+    # generation is never implicitly adopted by a replacement container.
+    orphan = job('a')
+    step(orphan, 'a', 0, 'search', query='keyboard')
+    docker('restart', 'asr')
+    for _ in range(30):
+        s, out = query('/v1/resume', {'job_id': orphan}, actor='a')
+        if s == 200:
+            break
+        time.sleep(1)
+    require('resumed-orphan', s, out, 200)
+    s, out = query('/v1/proposals', {'job_id': orphan,
+                                     'proposal': {'action': 'search', 'epoch': 1, 'query': 'keyboard'}},
+                   role='proposal', actor='a')
+    require('orphan-action-denied', s, out, 403)
+    s, out = query('/v1/human-handoff', {'job_id': orphan}, actor='a')
+    require('unfenced-orphan-handoff-denied', s, out, 403)
+    evidence.append({'phase': 'browser-generation-crash-fence', 'prior_browser_reuse': 'denied'})
+
+    # To test the irreversible dispatch race we use ONLY the fake merchant's
+    # deliberate delay. The operator can kill a container; Hermes never can.
+    os.environ['H01_FAULT_COMMIT_DELAY'] = '15'
+    docker('up', '-d', '--force-recreate', '--no-deps', 'asr')
+    ready()
+    crash = job('a')
+    plan_from_empty(crash)
+    approve(crash)
+    result = {}
+
+    def submit():
+        try:
+            result['http'] = query('/v1/commit', {'job_id': crash}, actor='a', timeout=25)
+        except Exception as exc:
+            result['transport'] = type(exc).__name__
+
+    thread = threading.Thread(target=submit)
+    thread.start()
+    for _ in range(80):
+        if inspect_dispatch(crash) == 'dispatching':
+            break
+        time.sleep(.15)
+    else:
+        raise AssertionError('durable dispatching not observed; cannot test crash')
+    docker('kill', '-s', 'SIGKILL', 'asr')
+    thread.join(timeout=25)
+    os.environ['H01_FAULT_COMMIT_DELAY'] = '0'
+    docker('up', '-d', '--force-recreate', '--no-deps', 'asr')
+    ready()
+    s, out = query('/v1/resume', {'job_id': crash}, actor='a')
+    require('resume-after-kill', s, out, 200)
+    if out['status'] != 'unknown':
+        raise AssertionError('dispatching not reconciled to UNKNOWN: ' + str(out))
+    s, out = query('/v1/commit', {'job_id': crash}, actor='a')
+    require('no-uncertain-payment-retry', s, out, 403)
+    evidence.append({'phase': 'sigkill-during-fake-dispatch',
+                     'recovered_state': 'unknown', 'automatic_retries': 0})
+    print(json.dumps({'H01': 'DOCKER_BOUNDARY_FIXTURE_ONLY', 'passed': True,
+                      'tests': evidence, 'os_isolation_from_docker_host_admin': 'UNVERIFIED',
+                      'hermes_real_plugin_host': 'UNVERIFIED',
+                      'real_money': False}, sort_keys=True))
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2 or sys.argv[1] != 'e2e':
+        raise SystemExit('usage: h01_operator.py e2e')
+    full_test()

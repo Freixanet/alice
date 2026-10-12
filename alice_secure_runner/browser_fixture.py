@@ -36,6 +36,8 @@ class BrowserFixtureReadAdapter(FictionalHTTPSAdapter):
                "ALICE_TEST_PLAYWRIGHT_MODULE": str(Path(playwright_module).resolve()),
                "ALICE_FIXTURE_ORIGIN": origin,
                "ALICE_FIXTURE_BROWSER_READ_TOKEN": browser_read_token}
+        if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
+            env["PLAYWRIGHT_BROWSERS_PATH"] = os.environ["PLAYWRIGHT_BROWSERS_PATH"]
         if chrome_path:
             env["ALICE_TEST_CHROME_PATH"] = chrome_path
         self._lock = threading.RLock()
