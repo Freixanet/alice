@@ -67,9 +67,11 @@ machines in **one Hermes-administrated account do not qualify**.
    proxy, DNS resolution policy and network firewall.
 6. `h021_transport.py`: bounded 24-connection HTTP admission **before**
    spawning handler threads, TLS handshakes in admitted workers rather than
-   blocking the only accept loop, and absolute five-second request-header and
-   request-body deadlines. A test with an idle TCP client and a concurrent
-   verified TLS request passes locally. These fixture-level protections
+   blocking the only accept loop, and absolute five-second TLS-handshake,
+   request-header and request-body deadlines. Regression tests check an idle
+   TCP client alongside a valid TLS request, an absolute trickle-handshake
+   deadline and recovery after all available TLS slots were occupied. These
+   fixture-level protections
    limit, but do **not** eliminate, denial-of-service; production requires
    an independently configured reverse proxy with connection and per-source
    rate limits, request budgets and load-tested cloud firewall behavior.

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import socket
 import ssl
+import select
 import threading
 import time
 from http.server import ThreadingHTTPServer
@@ -52,13 +53,40 @@ class LimitedHTTPServer(ThreadingHTTPServer):
             request.settimeout(5.0)
             if isinstance(request, ssl.SSLSocket):
                 try:
-                    request.do_handshake()
+                    handshake_with_deadline(request)
                 except (ssl.SSLError, OSError, TimeoutError):
                     self.shutdown_request(request)
                     return
             return super().process_request_thread(request, client_address)
         finally:
             self._slots.release()
+
+
+def handshake_with_deadline(request: ssl.SSLSocket, *, seconds: float = 5.0) -> None:
+    """Absolute monotonic deadline for TLS, even with trickled SSL records.
+
+    A per-recv socket timeout alone is insufficient: a hostile peer can drip
+    handshake bytes every few seconds and occupy every admitted TLS slot.
+    """
+    until = time.monotonic() + seconds
+    request.setblocking(False)
+    try:
+        while True:
+            if time.monotonic() >= until:
+                raise TimeoutError("absolute TLS handshake deadline exceeded")
+            try:
+                request.do_handshake()
+                return
+            except ssl.SSLWantReadError:
+                read, write = [request], []
+            except ssl.SSLWantWriteError:
+                read, write = [], [request]
+            remaining = until - time.monotonic()
+            if remaining <= 0 or not any(select.select(read, write, [], remaining)[:2]):
+                raise TimeoutError("absolute TLS handshake deadline exceeded")
+    finally:
+        request.setblocking(True)
+        request.settimeout(5.0)
 
 
 def read_body_with_deadline(handler, size: int, *, seconds: float = 5.0) -> bytes:
