@@ -64,6 +64,10 @@ It is NOT separate control-plane isolation between gateway and ASR.
   only one expiring proposal token and synthetic test CA. It attempts valid
   proposal, replay, body mutation, direct privileged action, and optional
   private ASR/CDP TCP. **A same-host container run is not a two-VM test.**
+- The Docker operator checks sampled real outbound TCP connections from ASR
+  to public IPv4/IPv6 and metadata IPv4/IPv6 addresses. Rejections only
+  establish those specific routes under the Linux fixture, **not** a complete
+  DNS/UDP/WebRTC/browser destination allowlist.
 
 ### Local / hosted CI synthetic test
 

@@ -86,6 +86,28 @@ def verify_policy():
     return private_ip
 
 
+def verify_sampled_asr_egress():
+    """Real socket connect from ASR's netns; samples, NOT a full allowlist."""
+    code = (
+        "import json,socket;result={};"
+        "targets=[('public_ipv4','1.1.1.1',443),"
+        "('metadata_ipv4','169.254.169.254',80),"
+        "('public_ipv6','2606:4700:4700::1111',443),"
+        "('metadata_ipv6','fd00:ec2::254',80)];"
+        "\nfor name,host,port in targets:\n"
+        " try:\n"
+        "  sock=socket.create_connection((host,port),timeout=2);sock.close();result[name]=False\n"
+        " except OSError:\n"
+        "  result[name]=True\n"
+        "print(json.dumps(result))"
+    )
+    report = docker("exec", "-T", "asr", "/opt/asr-python/bin/python", "-c", code)
+    result = json.loads(report.stdout.strip())
+    if set(result) != {"public_ipv4", "metadata_ipv4", "public_ipv6", "metadata_ipv6"} or not all(result.values()):
+        raise AssertionError("private ASR unexpectedly reached a sampled public/metadata destination")
+    print("H02_ASR_OUTBOUND_SAMPLES " + json.dumps(result, sort_keys=True), flush=True)
+
+
 def main():
     for _ in range(80):
         try:
@@ -108,6 +130,7 @@ def main():
     token_path.write_text("Alice-H02 " + token)
     ip = verify_policy()
     print("H02_ALICE_OPERATOR_PRIVATE_POLICY_VERIFIED", flush=True)
+    verify_sampled_asr_egress()
     result = docker("--profile", "attack", "run", "--rm", "--no-deps",
                     "hostile-hermes", "python", "/h02_remote_probe.py",
                     "--gateway", "https://gateway:8443",
