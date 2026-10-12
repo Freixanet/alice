@@ -35,7 +35,9 @@ services:
     image: alice-h01-fictional-gateway:local
     environment:
       H01_SYNTHETIC_ONLY: "yes"
-    networks: [asr_backplane, hermes_front]
+    # Distinct CI operator bridge permits ONLY the GitHub runner to call the
+    # loopback-published API; Hermes is not attached to this routable bridge.
+    networks: [operator_front, asr_backplane, hermes_front]
     ports: ["127.0.0.1:38443:8443"]
     volumes:
       - ${H01_FIXTURE_DIR:?}/gateway.pem:/run/h01-tls/gateway.pem:ro
@@ -85,6 +87,9 @@ volumes:
   asr_ledger:
 
 networks:
+  operator_front:
+    # Ordinary bridge for a loopback-only CI operator port. No ASR/Hermes.
+    internal: false
   hermes_front:
     internal: true
   asr_backplane:

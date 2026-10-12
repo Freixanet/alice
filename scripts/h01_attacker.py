@@ -35,6 +35,7 @@ def main():
 
     for target in ('/run/h01-secrets/backend_coordinator_a',
                    '/run/h01-secrets/device_hmac_hex',
+                   '/var/run/docker.sock',
                    '/var/lib/h01/state.sqlite3',
                    '/home/alice-h01/.cache/ms-playwright'):
         try:
@@ -49,6 +50,20 @@ def main():
         k not in env for k in ('device_hmac_hex', 'backend_coordinator_a',
                                'ALICE_FIXTURE_BROWSER_READ_TOKEN')),
                      'method': 'process_environment_separation'})
+    caps = None
+    for line in Path('/proc/self/status').read_text().splitlines():
+        if line.startswith('CapEff:'):
+            caps = line.partition(':')[2].strip()
+    evidence.append({'name': 'unprivileged_uid_and_capabilities',
+                     'blocked': os.geteuid() == 12003 and caps is not None and int(caps, 16) == 0,
+                     'method': 'actual_kernel_uid_and_CapEff'})
+    try:
+        Path('/etc/h01-evil-write').write_text('attack')
+        root_writable = True
+    except OSError:
+        root_writable = False
+    evidence.append({'name': 'read_only_container_rootfs', 'blocked': not root_writable,
+                     'method': 'actual_filesystem_write'})
     # The trusted operator supplies the ACTUAL host PID of ASR. These reads
     # would succeed on a shared-user, shared-/proc arrangement and must be
     # impossible from the separate unprivileged Hermes PID namespace.

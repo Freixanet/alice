@@ -51,7 +51,11 @@ something a same-host Docker test can prove by itself.
    independent mount/PID/network namespaces, read-only root filesystems,
    `cap_drop: ALL`, no-new-privileges, PID/memory/CPU limits and no host,
    privileged, Docker-socket or shared browser mounts. ASR has **no public
-   published port**. Both Docker networks are `internal: true`.
+   published port**. The **Hermes and ASR bridges** are `internal: true`.
+   A third `operator_front` bridge provides the CI operator's
+   **127.0.0.1-only** published gateway connection and is NOT attached to
+   either the hostile Hermes or private ASR container. This is not equivalent
+   to a real cloud firewall or ingress identity policy.
 3. Gateway receives Hermes **proposal-only** bearer and an Alice **owner**
    synthetic bearer in separate roles; only Alice-owned owner role can request
    approve/commit. Synthetic identity is server-side, not user-supplied JSON.

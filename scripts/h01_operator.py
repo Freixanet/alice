@@ -55,14 +55,17 @@ def require(name, status, result, wanted):
 
 
 def ready():
+    last = 'no response'
     for _ in range(90):
         try:
-            if query('/health')[0] == 200:
+            status, payload = query('/health')
+            last = 'HTTP ' + str(status) + ' ' + str(payload.get('status', ''))[:50]
+            if status == 200:
                 return
-        except OSError:
-            pass
+        except OSError as exc:
+            last = type(exc).__name__ + ': ' + str(exc)[:100]
         time.sleep(1)
-    raise RuntimeError('H01 synthetic Alice gateway did not become ready')
+    raise RuntimeError('H01 synthetic Alice gateway did not become ready: ' + last)
 
 
 def job(actor='a'):
@@ -119,9 +122,40 @@ def inspect_dispatch(job_id):
     return r.stdout.strip() if r.returncode == 0 else 'UNAVAILABLE'
 
 
+def verify_live_container_policy():
+    checks = []
+    for service in ('asr', 'gateway'):
+        container_id = docker('ps', '-q', service).stdout.strip()
+        if not container_id:
+            raise AssertionError('required isolated container not running: ' + service)
+        raw = subprocess.check_output(['docker', 'inspect', container_id], text=True)
+        item = json.loads(raw)[0]
+        hc, config = item['HostConfig'], item['Config']
+        assert hc['ReadonlyRootfs'] is True, service + ': filesystem writable'
+        assert not hc['Privileged'], service + ': privileged container'
+        assert not hc.get('PidMode') or hc['PidMode'] != 'host', service + ': shared PID namespace'
+        assert hc.get('NetworkMode') != 'host', service + ': host network'
+        assert 'ALL' in (hc.get('CapDrop') or []), service + ': capabilities not dropped'
+        assert str(config.get('User')) in ('12001:12001', '12002:12002'), service + ': root user'
+        mounts = [mount['Destination'] for mount in item.get('Mounts', [])]
+        assert '/var/run/docker.sock' not in mounts, service + ': Docker socket mounted'
+        nets = tuple(sorted(item['NetworkSettings']['Networks']))
+        expected = (('asr_backplane',) if service == 'asr' else
+                    ('asr_backplane', 'hermes_front', 'operator_front'))
+        assert all(name.endswith('_' + suffix) for name, suffix in zip(nets, expected)), (service, nets)
+        if service == 'asr':
+            published = item['NetworkSettings'].get('Ports') or {}
+            assert not any(bindings for bindings in published.values()), 'ASR published on host port'
+        checks.append({'service': service, 'user': config.get('User'),
+                       'readonly': True, 'cap_drop_all': True, 'separate_pid': True,
+                       'networks': list(expected), 'docker_socket': False})
+    return checks
+
+
 def full_test():
     ready()
     evidence = []
+    evidence.append({'phase': 'actual-docker-inspect', 'config': verify_live_container_policy()})
     a = job('a')
     b = job('b')
     # The operator knows the ASR private IP and deliberately hands only the IP
