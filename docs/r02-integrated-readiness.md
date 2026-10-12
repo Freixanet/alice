@@ -81,7 +81,11 @@ compatible; H02.1 alone can select P-256 fixture validation.
    as read-only from a natural-language request. Running old sessions are
    sent a stop request at orchestration boundaries and on cold restart.
    An unconfirmed remote gateway stop remains durably marked pending, with
-   bounded status rechecks on subsequent recovery, **not** deemed stopped.
+   bounded status rechecks on recovery and a best-effort 30-second daemon
+   reaper in the long-lived official Hermes plugin process, **not** deemed
+   stopped. If Hermes itself is dead or hostile, its reaper cannot prove
+   cessation: operator inspection and independently managed Alice credential
+   revocation remain mandatory.
    A payment already sent remains uncertain, never implicitly refunded
    or retried. The marker is **not**
    an OS/terminal sandbox and cannot resist Host A root deliberately deleting

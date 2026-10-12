@@ -1815,6 +1815,16 @@ def _register_task_tools(ctx) -> None:
     errands = _errands()
     errands.card_rules = _card_rules
     _keep_errand_tools_visible()
+    # A cutover marker survives a lost environment flag. Arm a best-effort
+    # in-process stop/reconciliation reaper at official plugin startup;
+    # never restart or authorize old Hermes native-tool runs.
+    try:
+        from hermes_constants import get_hermes_home
+        errands.arm_cutover_reaper(Path(get_hermes_home()))
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Alice R02 legacy stop recovery requires operator inspection",
+            exc_info=False)
 
     # Exactly ONE registration path; the previous permissive tool schema
     # omitted the explicit state and could plan UNKNOWN/cancelled jobs.

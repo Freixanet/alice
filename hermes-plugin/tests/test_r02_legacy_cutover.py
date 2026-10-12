@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -64,7 +65,7 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                         patch.object(errands, "Gateway") as gateway, \
                         patch.object(errands, "update") as update:
                     gateway.return_value.status.return_value = {"status": "cancelled"}
-                    self.assertEqual(errands.ensure_running(home), [])
+                    self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
                     launch.assert_not_called()
                     gateway.return_value.stop.assert_called_once_with("still-running-1")
                     self.assertEqual(update.call_count, 2)
@@ -96,7 +97,8 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
                     patch.object(errands, "get", return_value=entry), \
                     patch.object(errands, "update", side_effect=lambda *_a, **kw:
-                                 updates.append(kw)):
+                                 updates.append(kw)), \
+                    patch.object(errands, "arm_cutover_reaper"):
                 self.assertEqual(engine.run(), "stuck")
             self.assertEqual(stopped, ["running-legacy-1"])
             self.assertEqual(updates[0]["status"], "stuck")
@@ -120,7 +122,8 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
                     patch.object(errands, "get", return_value=entry), \
                     patch.object(errands, "update", side_effect=lambda *_a, **kw:
-                                 updates.append(kw)):
+                                 updates.append(kw)), \
+                    patch.object(errands, "arm_cutover_reaper"):
                 self.assertEqual(engine._wait_run("running-legacy-1")["status"], "cancelled")
             self.assertEqual(statuses, ["running-legacy-1"])
             self.assertEqual(stopped, ["running-legacy-1"])
@@ -142,7 +145,7 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                     patch.object(errands.time, "time", return_value=1_000):
                 gateway.return_value.stop.return_value = None
                 gateway.return_value.status.return_value = {"status": "running"}
-                self.assertEqual(errands.ensure_running(home), [])
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
                 self.assertTrue(updates[-1]["cutover_stop_pending"])
                 self.assertEqual(updates[-1]["status"], "stuck")
                 gateway.return_value.stop.assert_called_once_with("persistent-old-run")
@@ -156,9 +159,34 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                                  updates.append(kw)), \
                     patch.object(errands.time, "time", return_value=1_031):
                 gateway.return_value.status.return_value = {"status": "cancelled"}
-                self.assertEqual(errands.ensure_running(home), [])
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
                 gateway.return_value.stop.assert_called_once_with("persistent-old-run")
                 self.assertFalse(updates[-1]["cutover_stop_pending"])
+
+    def test_live_cutover_reaper_retries_without_process_restart(self):
+        errands = load("r02_scheduler_guarded_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-periodic-stop-") as directory:
+            home = Path(directory)
+            ticks = []
+            observed = threading.Event()
+
+            def scheduled(path, *, arm_reaper=True):
+                self.assertEqual(path.resolve(), home.resolve())
+                self.assertFalse(arm_reaper)
+                ticks.append(1)
+                if len(ticks) >= 2:
+                    observed.set()
+                return []
+
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "ensure_running", side_effect=scheduled):
+                try:
+                    self.assertTrue(errands.arm_cutover_reaper(home, interval=0.02))
+                    self.assertFalse(errands.arm_cutover_reaper(home, interval=0.02))
+                    self.assertTrue(observed.wait(timeout=1.0))
+                finally:
+                    errands.stop_cutover_reaper(home)
+            self.assertGreaterEqual(len(ticks), 2)
 
 
 if __name__ == "__main__":

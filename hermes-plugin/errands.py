@@ -1432,6 +1432,7 @@ class Engine:
         """
         if not legacy_payment_blocked(self.home):
             return False
+        arm_cutover_reaper(self.home)
         if run_id:
             try:
                 self.gateway.stop(run_id)
@@ -1693,6 +1694,57 @@ class Engine:
 
 _threads: Dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
+_cutover_reapers: Dict[str, Tuple[threading.Thread, threading.Event]] = {}
+_cutover_reapers_lock = threading.Lock()
+
+
+def arm_cutover_reaper(home: Path, *, interval: float = 30.0) -> bool:
+    """Start a bounded ASR-only legacy-stop retry loop in this Hermes process.
+
+    It NEVER starts a Hermes shopping run or grants checkout authority.
+    Durability is in each errand's cutover_stop_pending record; the thread
+    is best-effort process-local availability, not a host-root isolation
+    guarantee or evidence of a stopped remote effect.
+    """
+    home = Path(home).resolve()
+    if not legacy_payment_blocked(home):
+        return False
+    if not 0 < interval <= 60:
+        raise ValueError("invalid cutover recovery interval")
+    key = str(home)
+    with _cutover_reapers_lock:
+        previous = _cutover_reapers.get(key)
+        if previous is not None and previous[0].is_alive():
+            return False
+        stopping = threading.Event()
+
+        def reaper():
+            while not stopping.is_set():
+                try:
+                    ensure_running(home, arm_reaper=False)
+                except Exception:
+                    # Retry from the durable ledger later. Never restart an
+                    # old session to hide a transient gateway failure.
+                    pass
+                if stopping.wait(interval):
+                    return
+
+        worker = threading.Thread(
+            target=reaper, name="alice-r02-legacy-stop-reaper", daemon=True)
+        _cutover_reapers[key] = (worker, stopping)
+        worker.start()
+        return True
+
+
+def stop_cutover_reaper(home: Path) -> None:
+    """Test/process-shutdown helper; does not restore legacy authorizations."""
+    with _cutover_reapers_lock:
+        registered = _cutover_reapers.pop(str(Path(home).resolve()), None)
+    if registered is not None:
+        worker, stopping = registered
+        stopping.set()
+        if worker is not threading.current_thread():
+            worker.join(timeout=3)
 
 
 def prepare_browser(home: Path) -> bool:
@@ -1759,10 +1811,12 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
     return True
 
 
-def ensure_running(home: Path) -> List[str]:
+def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
     """After a restart: an errand still ``working`` whose engine is gone continues where it was."""
     started = []
     if legacy_payment_blocked(home):
+        if arm_reaper:
+            arm_cutover_reaper(home)
         # Hermes gateway runs can survive an Alice plugin/process restart.
         # Do NOT only suppress local thread recovery: actively request stop
         # for persisted runs and retain a durable unverified-stop marker for

@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import sys
+import tempfile
 import unittest
 from contextlib import ExitStack
 from pathlib import Path
@@ -50,6 +52,14 @@ class PlannerRegistrationTests(unittest.TestCase):
         blocked = json.loads(registered["alice_secure_plan"]["handler"](
             {"goal": "Search keyboards", "epoch": 0, "observations": [], "state": "active"}))
         self.assertEqual(blocked["status"], "denied")
+
+    def test_official_plugin_initialization_arms_reaper_without_dashboard_poll(self):
+        with tempfile.TemporaryDirectory(prefix="alice-r02-register-startup-") as root, \
+                patch.dict(sys.modules, {"hermes_constants": SimpleNamespace(get_hermes_home=lambda: root)}), \
+                patch.object(self.plugin, "_errands") as errands:
+            ctx = SimpleNamespace(register_tool=lambda **_kw: None)
+            self.plugin._register_task_tools(ctx)
+            errands.return_value.arm_cutover_reaper.assert_called_once_with(Path(root))
 
     def test_complete_plugin_registration_cannot_duplicate_secure_planner(self):
         registered = {}
