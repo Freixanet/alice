@@ -21,10 +21,11 @@ enum SecureRunnerDeviceSigner {
     /// Scope is never chosen by an agent or a QR code. The future Alice IdP
     /// must validate account, tenant and installation before key enrollment.
     private static func tag(
-        tenant: String, account: String, installation: String
+        tenant: String, session: String, account: String,
+        installation: String, generation: Int
     ) throws -> Data {
-        let values = [tenant, account, installation]
-        guard values.allSatisfy({
+        let values = [tenant, session, account, installation]
+        guard (1...1_000_000).contains(generation), values.allSatisfy({
             !$0.isEmpty && $0.utf8.count <= 120
                 && $0.utf8.allSatisfy {
                     (48...57).contains($0) || (65...90).contains($0)
@@ -34,7 +35,8 @@ enum SecureRunnerDeviceSigner {
         }) else {
             throw Failure.invalidScope
         }
-        let raw = values.joined(separator: "|").data(using: .utf8)!
+        let raw = (values + ["key-v\(generation)"]).joined(separator: "|")
+            .data(using: .utf8)!
         let digest = SHA256.hash(data: raw)
         return Data("com.freixanet.alice.r02.".utf8) + Data(digest)
     }
@@ -87,9 +89,12 @@ enum SecureRunnerDeviceSigner {
     /// Only an explicit, separately authenticated device-enrollment flow
     /// should invoke this. There is no private-key export or software fallback.
     static func publicKeyForEnrollment(
-        tenant: String, account: String, installation: String
+        tenant: String, session: String, account: String,
+        installation: String, generation: Int = 1
     ) throws -> String {
-        let keyTag = try tag(tenant: tenant, account: account, installation: installation)
+        let keyTag = try tag(
+            tenant: tenant, session: session, account: account, installation: installation,
+            generation: generation)
         if let current = try existingKey(tag: keyTag) {
             return try pem(for: current)
         }
@@ -122,16 +127,43 @@ enum SecureRunnerDeviceSigner {
     static func signValidatedConsent(
         checkoutData: Data, challengeData: Data,
         tenant: String, session: String, jobID: String,
-        account: String, installation: String, now: Int
+        account: String, installation: String,
+        deviceKeyVersion: Int, now: Int
     ) throws -> String {
         let bytes = try SecureRunnerApprovalContract.checkedChallengeBytes(
             checkoutData: checkoutData, challengeData: challengeData,
             expectedJobID: jobID, expectedTenant: tenant,
             expectedSession: session, now: now)
-        let keyTag = try tag(tenant: tenant, account: account, installation: installation)
+        let keyTag = try tag(tenant: tenant, session: session, account: account,
+                             installation: installation, generation: deviceKeyVersion)
         guard let privateKey = try existingKey(tag: keyTag) else {
             throw Failure.keyNotEnrolled
         }
+        return try signProtected(bytes, key: privateKey)
+    }
+
+    /// Before enrollment, prove control of the exact *new* public key. The
+    /// challenge's account/installation and key digest are Alice-trusted
+    /// inputs; the plugin cannot propose an enrollment or key rotation.
+    static func signValidatedEnrollmentProof(
+        challengeData: Data,
+        tenant: String, session: String, account: String,
+        installation: String, generation: Int, now: Int
+    ) throws -> String {
+        let keyTag = try tag(tenant: tenant, session: session, account: account,
+                             installation: installation, generation: generation)
+        guard let privateKey = try existingKey(tag: keyTag) else {
+            throw Failure.keyNotEnrolled
+        }
+        let publicPEM = try pem(for: privateKey)
+        let checked = try SecureRunnerEnrollmentContract.checkedProofBytes(
+            challengeData: challengeData, publicKeyPEM: publicPEM,
+            tenant: tenant, session: session, account: account,
+            installation: installation, generation: generation, now: now)
+        return try signProtected(checked, key: privateKey)
+    }
+
+    private static func signProtected(_ bytes: Data, key privateKey: SecKey) throws -> String {
         guard SecKeyIsAlgorithmSupported(
             privateKey, .sign, .ecdsaSignatureMessageX962SHA256
         ) else {

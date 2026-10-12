@@ -11,7 +11,9 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import re
+import secrets
 import sqlite3
 import subprocess
 import tempfile
@@ -54,6 +56,32 @@ def _validated_public_key(pem: str) -> str:
     return pem
 
 
+def _proof_signature_valid(pem: str, challenge: bytes, signature: str) -> bool:
+    if (not isinstance(challenge, bytes) or not 1 <= len(challenge) <= 8192
+            or not isinstance(signature, str) or _SIGNATURE.fullmatch(signature) is None):
+        return False
+    try:
+        decoded = base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
+    except (ValueError, binascii.Error):
+        return False
+    if not 64 <= len(decoded) <= 80:
+        return False
+    try:
+        with tempfile.TemporaryDirectory(prefix="alice-device-proof-") as folder:
+            key, payload, signed = (
+                Path(folder) / "public.pem", Path(folder) / "challenge", Path(folder) / "signature")
+            key.write_text(pem, encoding="ascii")
+            payload.write_bytes(challenge)
+            signed.write_bytes(decoded)
+            result = subprocess.run(
+                ["openssl", "dgst", "-sha256", "-verify", str(key),
+                 "-signature", str(signed), str(payload)],
+                capture_output=True, timeout=5, check=False)
+        return result.returncode == 0
+    except (OSError, UnicodeError, subprocess.TimeoutExpired):
+        return False
+
+
 class RevocableP256DeviceConsent:
     """Public-key verifier with single-active-key-per-(tenant, session) policy.
 
@@ -78,12 +106,108 @@ class RevocableP256DeviceConsent:
             "tenant TEXT NOT NULL, session TEXT NOT NULL, "
             "challenge_digest TEXT NOT NULL, device_version INTEGER NOT NULL, "
             "state TEXT NOT NULL, PRIMARY KEY(tenant,session,challenge_digest))")
+        self._db.execute(
+            "CREATE TABLE IF NOT EXISTS device_enrollment_challenges ("
+            "nonce TEXT PRIMARY KEY, tenant TEXT NOT NULL, session TEXT NOT NULL, "
+            "account TEXT NOT NULL, installation TEXT NOT NULL, "
+            "public_pem TEXT NOT NULL, operation TEXT NOT NULL, "
+            "expected_version INTEGER NOT NULL, key_expires_at INTEGER NOT NULL, "
+            "expires_at INTEGER NOT NULL, state TEXT NOT NULL)")
         self._lock = threading.RLock()
         self._clock = clock or time.time
 
     def close(self) -> None:
         with self._lock:
             self._db.close()
+
+    @staticmethod
+    def _enrollment_payload(row: tuple) -> dict:
+        nonce, tenant, session, account, installation, pem, operation, version, _, expires, _ = row
+        return {
+            "purpose": "alice-r02-device-enroll-v1",
+            "tenant": tenant, "session": session, "account": account,
+            "installation": installation,
+            "public_key_sha256": hashlib.sha256(pem.encode("ascii")).hexdigest(),
+            "operation": operation, "expected_version": version,
+            "nonce": nonce, "expires_at": expires,
+        }
+
+    def begin_proven_enrollment(self, *, tenant: str, session: str,
+                                account: str, installation: str, public_pem: str,
+                                key_expires_at: int, operation: str = "enroll",
+                                expected_version: int = 0) -> dict:
+        """Trusted Alice administrator issues a short-lived exact-key challenge.
+
+        Neither Hermes nor a model may initiate this; external Alice account
+        authentication is a separate, still-unimplemented release gate.
+        No private signing material is copied to Alice.
+        """
+        identities = tuple(map(_identity, (tenant, session, account, installation)))
+        pem = _validated_public_key(public_pem)
+        now = int(self._clock())
+        if (operation not in ("enroll", "rotate")
+                or type(expected_version) is not int
+                or (operation == "enroll" and expected_version != 0)
+                or (operation == "rotate" and expected_version < 1)
+                or type(key_expires_at) is not int
+                or not now < key_expires_at <= now + 31_536_000):
+            raise EnrollmentDenied("invalid enrollment scope, operation or key lifetime")
+        nonce = secrets.token_urlsafe(24)
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO device_enrollment_challenges VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                (nonce, *identities, pem, operation, expected_version,
+                 key_expires_at, now + 180, "pending"))
+            row = self._db.execute(
+                "SELECT * FROM device_enrollment_challenges WHERE nonce=?",
+                (nonce,)).fetchone()
+        return self._enrollment_payload(row)
+
+    def complete_proven_enrollment(self, challenge: dict, signature: str) -> int:
+        """Verify exact key-possession proof and atomically enroll/rotate once."""
+        if (not isinstance(challenge, dict) or set(challenge) != {
+                "purpose", "tenant", "session", "account", "installation",
+                "public_key_sha256", "operation", "expected_version",
+                "nonce", "expires_at"}):
+            raise EnrollmentDenied("invalid enrollment response")
+        nonce = challenge.get("nonce")
+        if not isinstance(nonce, str) or not _SIGNATURE.fullmatch(nonce):
+            raise EnrollmentDenied("invalid enrollment nonce")
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._db.execute(
+                    "SELECT * FROM device_enrollment_challenges WHERE nonce=?",
+                    (nonce,)).fetchone()
+                if (row is None or row[-1] != "pending"
+                        or row[-2] <= int(self._clock())
+                        or self._enrollment_payload(row) != challenge):
+                    raise EnrollmentDenied("unknown, stale or modified enrollment challenge")
+                message = json.dumps(
+                    challenge, sort_keys=True, separators=(",", ":"),
+                    ensure_ascii=False).encode("utf-8")
+                if not _proof_signature_valid(row[5], message, signature):
+                    raise EnrollmentDenied("device does not control the proposed public key")
+                scope = dict(tenant=row[1], session=row[2], account=row[3],
+                             installation=row[4], public_pem=row[5],
+                             expires_at=row[8])
+                if row[6] == "enroll":
+                    version = self.enroll(**scope)
+                else:
+                    version = self.rotate(expected_version=row[7], **scope)
+                changed = self._db.execute(
+                    "UPDATE device_enrollment_challenges SET state='consumed' "
+                    "WHERE nonce=? AND state='pending'", (nonce,)).rowcount
+                if changed != 1:
+                    raise EnrollmentDenied("enrollment proof replay")
+                self._db.execute("COMMIT")
+                return version
+            except BaseException:
+                try:
+                    self._db.execute("ROLLBACK")
+                except sqlite3.Error:
+                    pass
+                raise
 
     def enroll(self, *, tenant: str, session: str, account: str, installation: str,
                public_pem: str, expires_at: int) -> int:
@@ -221,12 +345,6 @@ class RevocableP256DeviceConsent:
                 or not isinstance(challenge, bytes) or len(challenge) > 8192
                 or not isinstance(signature, str) or not _SIGNATURE.fullmatch(signature)):
             return False
-        try:
-            sig = base64.urlsafe_b64decode(signature + "=" * (-len(signature) % 4))
-        except (ValueError, binascii.Error):
-            return False
-        if not 64 <= len(sig) <= 80:
-            return False
         # Serialization against enrollment/rotation/revocation in this process.
         # External administrative calls must use the same SQLite trusted domain.
         row = self._db.execute(
@@ -234,18 +352,4 @@ class RevocableP256DeviceConsent:
             "WHERE tenant=? AND session=?", (tenant, session)).fetchone()
         if row is None or row[2] or row[1] <= int(self._clock()):
             return False
-        try:
-            with tempfile.TemporaryDirectory(prefix="alice-verify-device-") as folder:
-                key = Path(folder) / "public.pem"
-                message = Path(folder) / "challenge"
-                signed = Path(folder) / "signature"
-                key.write_text(row[0], encoding="ascii")
-                message.write_bytes(challenge)
-                signed.write_bytes(sig)
-                check = subprocess.run(
-                    ["openssl", "dgst", "-sha256", "-verify", str(key),
-                     "-signature", str(signed), str(message)],
-                    capture_output=True, timeout=5, check=False)
-        except (OSError, UnicodeError, subprocess.TimeoutExpired):
-            return False
-        return check.returncode == 0
+        return _proof_signature_valid(row[0], challenge, signature)

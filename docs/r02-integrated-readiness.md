@@ -366,6 +366,37 @@ handler denial and unload them. The bare Mac without official Hermes reports
 valid installed-context evidence. It does not contact a configured model or
 Hermes gateway or install anything into the person's home.
 
+### Account-scoped device key possession (next candidate, uncommitted during test)
+
+The existing `RevocableP256DeviceConsent` registry now offers a trusted
+administrator-only, SQLite-persisted, one-use, 180-second challenge for first
+device enrollment and versioned key rotation. The challenge binds the exact
+tenant, session, Alice account, named Hermes installation, proposed public
+key digest, nonce and expected version; completing it requires an exact
+P-256 signature by the **new key**. Stale, modified, replayed, wrongly
+signed, and concurrent duplicate challenges are rejected, including across
+independent SQLite connections. This proves possession of a software test
+key, **not** that an Alice account or person was authenticated.
+
+The parallel Swift `SecureRunnerEnrollmentContract` validates and canonically
+serializes exactly this server challenge. The existing
+`SecureRunnerDeviceSigner` now uses a session- and version-specific
+Secure Enclave Keychain tag, refuses silent software fallback and exposes
+only narrowly checked signatures of enrollment proofs and exact fictional
+checkout challenges. The new code is **not connected to a public enrollment
+API or UI**; no keys were generated on a personal device and biometric
+presence remains unverified.
+
+On the source with these local changes: repo Python **132 tests PASS (9
+optional Chromium skipped)**; selected R02 plugin **27 tests (1 skipped,
+0 failed)**; focused key registry **11 PASS**; Swift production models and
+signer typecheck on this Mac, a standalone Swift contract executable checks
+accepted/mutated synthetic enrollment, Swift XCTest files parse correctly.
+**Local Swift XCTest was not executed** (no simulator/XCTest module in the
+available standalone command), and the prior green GitHub iOS CI on
+`d4c5d9b` does **not** cover this newer Swift code. A new exact-SHA CI
+run is required after publication.
+
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |

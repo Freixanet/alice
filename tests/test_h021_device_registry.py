@@ -54,6 +54,96 @@ class DeviceRegistryContractTests(unittest.TestCase):
             installation="installation-a", public_pem=self.first_public,
             expires_at=self.now + 3600)
 
+    def test_exact_key_possession_required_for_first_enrollment(self):
+        challenge = self.registry.begin_proven_enrollment(
+            tenant="tenant-a", session="session-a", account="owner-a",
+            installation="installation-a", public_pem=self.first_public,
+            key_expires_at=self.now + 3600)
+        self.assertEqual(challenge["purpose"], "alice-r02-device-enroll-v1")
+        malicious = _sign(self.second, _canonical(challenge), self.folder)
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(challenge, malicious)
+        modified = {**challenge, "account": "attacker"}
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(
+                modified, _sign(self.first, _canonical(modified), self.folder))
+        legitimate = _sign(self.first, _canonical(challenge), self.folder)
+        self.assertEqual(self.registry.complete_proven_enrollment(challenge, legitimate), 1)
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(challenge, legitimate)
+        self.assertTrue(self.registry.verify(
+            tenant="tenant-a", session="session-a",
+            challenge=b"fixture approval", signature=_sign(
+                self.first, b"fixture approval", self.folder)))
+        persisted = RevocableP256DeviceConsent(self.path, clock=lambda: self.now)
+        try:
+            with self.assertRaises(EnrollmentDenied):
+                persisted.complete_proven_enrollment(challenge, legitimate)
+        finally:
+            persisted.close()
+
+    def test_proven_key_rotation_and_expired_challenge_fail_closed(self):
+        initial = self.registry.begin_proven_enrollment(
+            tenant="tenant-a", session="session-a", account="owner-a",
+            installation="installation-a", public_pem=self.first_public,
+            key_expires_at=self.now + 3600)
+        self.registry.complete_proven_enrollment(
+            initial, _sign(self.first, _canonical(initial), self.folder))
+        proposed = self.registry.begin_proven_enrollment(
+            tenant="tenant-a", session="session-a", account="owner-a",
+            installation="installation-a", public_pem=self.second_public,
+            operation="rotate", expected_version=1,
+            key_expires_at=self.now + 7200)
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(
+                proposed, _sign(self.first, _canonical(proposed), self.folder))
+        self.assertEqual(self.registry.complete_proven_enrollment(
+            proposed, _sign(self.second, _canonical(proposed), self.folder)), 2)
+        self.assertFalse(self.registry.verify(
+            tenant="tenant-a", session="session-a",
+            challenge=b"old", signature=_sign(self.first, b"old", self.folder)))
+        self.assertTrue(self.registry.verify(
+            tenant="tenant-a", session="session-a",
+            challenge=b"new", signature=_sign(self.second, b"new", self.folder)))
+        expired = self.registry.begin_proven_enrollment(
+            tenant="tenant-b", session="session-b", account="owner-b",
+            installation="installation-b", public_pem=self.first_public,
+            key_expires_at=self.now + 3600)
+        self.now += 181
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(
+                expired, _sign(self.first, _canonical(expired), self.folder))
+
+    def test_parallel_proven_enrollment_consumes_once_across_connections(self):
+        challenge = self.registry.begin_proven_enrollment(
+            tenant="tenant-a", session="session-a", account="owner-a",
+            installation="installation-a", public_pem=self.first_public,
+            key_expires_at=self.now + 3600)
+        signed = _sign(self.first, _canonical(challenge), self.folder)
+        second_registry = RevocableP256DeviceConsent(
+            self.path, clock=lambda: self.now)
+        self.addCleanup(second_registry.close)
+        barrier = threading.Barrier(3)
+        outcomes = []
+
+        def confirm(registry):
+            barrier.wait()
+            try:
+                outcomes.append(("accepted", registry.complete_proven_enrollment(
+                    challenge, signed)))
+            except EnrollmentDenied:
+                outcomes.append(("denied", None))
+
+        workers = [threading.Thread(target=confirm, args=(registry,))
+                   for registry in (self.registry, second_registry)]
+        for worker in workers:
+            worker.start()
+        barrier.wait()
+        for worker in workers:
+            worker.join(timeout=5)
+        self.assertFalse(any(worker.is_alive() for worker in workers))
+        self.assertEqual(sorted(item[0] for item in outcomes), ["accepted", "denied"])
+
     def test_identity_tenant_session_key_rotation_and_revoke(self):
         self.assertEqual(self.enroll(), 1)
         payload = b'{"fictional":"exact checkout consent"}'

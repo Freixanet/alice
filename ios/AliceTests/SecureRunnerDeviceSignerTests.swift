@@ -7,9 +7,11 @@ final class SecureRunnerDeviceSignerTests: XCTestCase {
     @MainActor
     func testInvalidPairingScopeFailsWithoutCreatingAKey() {
         XCTAssertThrowsError(try SecureRunnerDeviceSigner.publicKeyForEnrollment(
-            tenant: "fixture-tenant", account: "fixture-account",
+            tenant: "fixture-tenant", session: "fixture-session",
+            account: "fixture-account",
             installation: "../untrusted-path"))
         XCTAssertThrowsError(try SecureRunnerDeviceSigner.publicKeyForEnrollment(
-            tenant: "", account: "fixture-account", installation: "fixture-install"))
+            tenant: "", session: "fixture-session",
+            account: "fixture-account", installation: "fixture-install"))
     }
 }
