@@ -207,7 +207,9 @@ def failure(text: Any) -> Optional[str]:
 
 def open_payment(home: Path, session: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """This conversation's payment still waiting for its outcome, within the hour."""
-    if os.environ.get("ALICE_R02_ASR_ONLY") == "yes":
+    marker = Path(home) / ".alice" / "r02-asr-only-v1"
+    if (os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+            or marker.exists() or marker.is_symlink()):
         return None
     now = now or time.time()
     for entry in reversed(_read(_ledger(home))):

@@ -75,17 +75,6 @@ def legacy_payment_blocked(home: Path | None = None) -> bool:
     return enabled or marker.is_symlink() or marker.exists()
 
 
-def legacy_purchase_errand(entry: Dict[str, Any] | None) -> bool:
-    """Conservative legacy purchase identification for restart/launch fencing."""
-    if not isinstance(entry, dict):
-        return False
-    if any(entry.get(field) for field in ("offer", "checkout", "card_origin", "card_request",
-                                         "payment", "receipt")):
-        return True
-    task = str(entry.get("request") or entry.get("task") or "")[:1500]
-    return bool(re.search(r"(?i)\b(?:comprar|compra|pedido|pagar|pago|buy|purchase|checkout|pay|payment|order)\b", task))
-
-
 LEGACY_DISABLED = "El pago con el navegador compartido de Hermes está desactivado para Alice Secure Runner."
 STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "needs_login", "done", "stuck", "stopped", "denied")
 ACTIVE = ("working", "needs_approval", "needs_input", "needs_card", "needs_login")
@@ -718,9 +707,10 @@ def same_amount(a: Any, b: Any) -> bool:
     return _money().same(a, b)
 
 
-def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Optional[float] = None) -> Optional[Dict[str, Any]]:
+def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Optional[float] = None,
+                      *, home: Path | None = None) -> Optional[Dict[str, Any]]:
     """The errand's checkout the person approved, still fresh, for this shop (any shop when blank)."""
-    if legacy_payment_blocked():
+    if legacy_payment_blocked(home):
         return None
     now = now or time.time()
     checkout = (entry or {}).get("checkout")
@@ -807,7 +797,7 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         host = shop(card_fill_site or "")
         banks = {shop(g) for g in gateways}
         candidates = {host, shop(merchant_site)} - {""}
-        fresh = approved_checkout(entry, now=now)
+        fresh = approved_checkout(entry, now=now, home=home)
         ok = fresh is not None and (fresh.get("site") in candidates or host in banks)
     else:
         # A checkout approval belongs to that merchant, not whichever browser
@@ -816,7 +806,7 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         purchase_offer = bool((entry or {}).get("offer"))
         page_shop = shop(active_url) if active_url else ""
         ok = (not purchase_offer or bool(page_shop)) and approved_checkout(
-            entry, site=page_shop if purchase_offer else "", now=now) is not None
+            entry, site=page_shop if purchase_offer else "", now=now, home=home) is not None
     if ok:
         return None
     return {"action": "block", "message": (
@@ -1434,6 +1424,27 @@ class Engine:
     def _entry(self) -> Dict[str, Any]:
         return get(self.home, self.errand_id) or {}
 
+    def _cutover_fence(self, *, run_id: str | None = None) -> bool:
+        """Stop an old Hermes run at each safe orchestration boundary.
+
+        Hermes may already have reached an external merchant when cancelled:
+        stopping its session is NOT proof the transaction did not occur.
+        """
+        if not legacy_payment_blocked(self.home):
+            return False
+        if run_id:
+            try:
+                self.gateway.stop(run_id)
+            except Exception:
+                pass  # Keep checkout uncertain; no retry/restart is permitted.
+        entry = self._entry()
+        if entry.get("status") == "working":
+            update(self.home, self.errand_id, status="stuck",
+                   reason=("Alice Secure Runner desactivó el recado anterior de Hermes. "
+                           "Si ya se intentó un pago, el resultado es desconocido: "
+                           "comprueba el pedido en la tienda, sin reintentar."))
+        return True
+
     @staticmethod
     def _waiting(entry: Dict[str, Any]) -> bool:
         try:
@@ -1444,8 +1455,13 @@ class Engine:
     def _answer_approval(self, run_id: str, approval: Dict[str, Any]) -> None:
         entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
+        if legacy_payment_blocked(self.home):
+            # Never let an already-running legacy Hermes model inherit ASR
+            # authority; a missed stop is NOT evidence the payment was undone.
+            self.gateway.approve(run_id, "deny", request_id)
+            return
         if is_payment_consent(approval):
-            checkout = approved_checkout(entry)
+            checkout = approved_checkout(entry, home=self.home)
             accepted = self.gateway.approve(run_id, "once" if checkout else "deny", request_id)
             if checkout and accepted:
                 _consume_surviving_checkout_approval(self.home, self.errand_id, run_id, checkout)
@@ -1462,6 +1478,8 @@ class Engine:
     def _wait_run(self, run_id: str) -> Dict[str, Any]:
         seen, since = None, time.time()
         while True:
+            if self._cutover_fence(run_id=run_id):
+                return {"status": "cancelled"}
             if self._entry().get("status") == "stopped":
                 self.gateway.stop(run_id)
                 return {"status": "cancelled"}
@@ -1495,6 +1513,8 @@ class Engine:
         entry = self._entry()
         if not entry:
             return "missing"
+        if self._cutover_fence(run_id=entry.get("run_id")):
+            return "stuck"
         text = message or brief(entry)
         previous = ""
         repeat_recoveries = 0
@@ -1516,6 +1536,8 @@ class Engine:
                     text = CONTINUATION
         while True:
             entry = self._entry()
+            if self._cutover_fence(run_id=entry.get("run_id")):
+                return "stuck"
             if entry.get("status") != "working":
                 return entry.get("status", "missing")
             # A surviving run may have persisted its paid receipt before recovery.
@@ -1538,6 +1560,8 @@ class Engine:
                        reason="El navegador de Alice no pudo arrancar; no se ha ejecutado el recado. Puedes reintentarlo.")
                 return "stuck"
             try:
+                if self._cutover_fence(run_id=entry.get("run_id")):
+                    return "stuck"
                 steps_before = entry.get("steps") or []
                 run_id = self.gateway.start(entry["session_id"], text,
                                             model=entry["model"], provider=entry["provider"])
@@ -1551,6 +1575,8 @@ class Engine:
             else:
                 update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
             state = self._wait_run(run_id)
+            if self._cutover_fence(run_id=run_id):
+                return "stuck"
             reply = _clean(state.get("output") or "", 2000)
             entry = self._entry()
             if reply:
@@ -1652,7 +1678,8 @@ class Engine:
             if decision.get("status") == "active":
                 # Parked on a process or a deadline the agent set: wait it out without spending runs.
                 deadline = time.time() + 45 * 60
-                while time.time() < deadline and self._entry().get("status") == "working" and self._waiting(entry):
+                while (time.time() < deadline and not legacy_payment_blocked(self.home)
+                       and self._entry().get("status") == "working" and self._waiting(entry)):
                     self.sleep(15)
                 text = CONTINUATION
                 continue
@@ -1694,7 +1721,9 @@ def _engine_lock(home: Path, errand_id: str):
 def launch(home: Path, errand_id: str, message: Optional[str] = None,
            engine_factory: Optional[Callable[..., Engine]] = None) -> bool:
     """Starts the errand's engine in the background, unless one already drives it."""
-    if legacy_payment_blocked(home) and legacy_purchase_errand(get(home, errand_id)):
+    # Hermes' native model/terminal/browser can execute effects that no keyword
+    # heuristic can reliably classify. ASR cutover fences ALL old errands.
+    if legacy_payment_blocked(home):
         return False
     lock = _engine_lock(home, errand_id)
     if lock is None:
@@ -1702,9 +1731,9 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 
     def body():
         try:
-            if legacy_payment_blocked(home) and legacy_purchase_errand(get(home, errand_id)):
+            if legacy_payment_blocked(home):
                 update(home, errand_id, status="stuck",
-                       reason="Legacy shopping disabled after Alice Secure Runner cutover.")
+                       reason="Legacy Hermes errand disabled after Alice Secure Runner cutover.")
                 return
             pending = (get(home, errand_id) or {}).get("resume_message")
             if pending and not pending.startswith(APPROVED_PREFIX):
@@ -1730,10 +1759,11 @@ def launch(home: Path, errand_id: str, message: Optional[str] = None,
 def ensure_running(home: Path) -> List[str]:
     """After a restart: an errand still ``working`` whose engine is gone continues where it was."""
     started = []
-    cutover = legacy_payment_blocked(home)
+    if legacy_payment_blocked(home):
+        # Existing Hermes engines cannot prove a tool run is read-only.
+        # Fail closed for all old errands, not just shopping keywords.
+        return []
     for entry in listing(home):
-        if cutover and legacy_purchase_errand(entry):
-            continue
         if entry.get("status") == "working" and launch(
                 home, entry["id"], "[Continuing toward your standing goal] Se reinició el servicio: "
                                    "comprueba en qué punto está el recado en el navegador y sigue."):
@@ -1756,8 +1786,7 @@ def start(home: Path, args: Dict[str, Any], *, origin_session: str = "", profile
     if not task:
         raise ValueError("Say what the errand is.")
     option_id = (offer or {}).get("option_id")
-    if legacy_payment_blocked(home) and legacy_purchase_errand(
-            {"offer": offer, "request": task, "checkout": args.get("checkout")}):
+    if legacy_payment_blocked(home):
         return {"ok": False, "error": LEGACY_DISABLED}
     # Lookup and insertion share a process-safe lock. The same request remains
     # the same errand for its whole active lifetime; another task is independent.
@@ -1797,8 +1826,7 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[str, Any]] = None) -> bool:
     """Resume an answer; a checkout decision must still be the persisted approved snapshot."""
-    if legacy_payment_blocked(home) and (checkout is not None or APPROVED_PREFIX in message
-                                         or legacy_purchase_errand(get(home, errand_id))):
+    if legacy_payment_blocked(home):
         return False
     if checkout is not None:
         # Do not let this delayed wake-up revive a stopped errand or another checkout.
@@ -1808,7 +1836,7 @@ def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[
             entry = next((e for e in entries if e.get("id") == errand_id), None)
             if (entry is None or entry.get("status") != "working"
                     or entry.get("checkout") != checkout or checkout.get("status") != "approved"
-                    or approved_checkout(entry) is None):
+                    or approved_checkout(entry, home=home) is None):
                 return False
             entry.update(questions=None, approval=None)
             # A running engine may already have consumed the message committed by the decision.

@@ -60,13 +60,65 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                              "request": "Leer un documento"}
                 with patch.object(errands, "listing", return_value=[pending, unrelated]), \
                         patch.object(errands, "launch", return_value=True) as launch:
-                    self.assertEqual(errands.ensure_running(home), ["study-1"])
-                    self.assertEqual(launch.call_count, 1)
-                    self.assertEqual(launch.call_args.args[1], "study-1")
+                    self.assertEqual(errands.ensure_running(home), [])
+                    launch.assert_not_called()
                 with patch.object(errands, "get", return_value=pending):
                     self.assertFalse(errands.launch(home, "buy-1"))
                 blocked = errands.start(home, {"task": "Comprar zapatillas"}, offer={"option_id": "sku-1"})
                 self.assertFalse(blocked["ok"])
+                # Synonyms/no purchase metadata cannot evade the fence.
+                self.assertFalse(errands.start(
+                    home, {"task": "Encárgame dos bolsas de pienso"})["ok"])
+                self.assertFalse(errands.start(
+                    home, {"task": "Leer un documento"})["ok"])
+                self.assertIsNone(errands.approved_checkout({"checkout": {
+                    "status": "approved", "decided_at": 9999999999}}, home=home))
+
+    def test_inflight_legacy_hermes_run_is_stopped_on_cutover_without_restarting(self):
+        errands = load("r02_inflight_guarded_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-inflight-") as directory:
+            home = Path(directory)
+            entry = {"id": "old-job", "status": "working", "run_id": "running-legacy-1",
+                     "request": "Consígueme el teclado", "model": "mock", "provider": "mock"}
+            stopped, updates = [], []
+            engine = object.__new__(errands.Engine)
+            engine.home, engine.errand_id = home, "old-job"
+            engine.gateway = __import__("types").SimpleNamespace(
+                stop=lambda run_id: stopped.append(run_id),
+                status=lambda _run_id: self.fail("no Hermes status after cutover"))
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "get", return_value=entry), \
+                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
+                                 updates.append(kw)):
+                self.assertEqual(engine.run(), "stuck")
+            self.assertEqual(stopped, ["running-legacy-1"])
+            self.assertEqual(updates[0]["status"], "stuck")
+            self.assertIn("desconocido", updates[0]["reason"])
+
+    def test_cutover_during_existing_hermes_run_stops_without_any_payment_approval(self):
+        errands = load("r02_poll_guarded_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-midflight-") as directory:
+            home = Path(directory)
+            entry = {"id": "old-job", "status": "working", "run_id": "running-legacy-1",
+                     "request": "Consígueme el teclado",
+                     "model": "mock", "provider": "mock"}
+            stopped, approved, statuses, updates = [], [], [], []
+            engine = object.__new__(errands.Engine)
+            engine.home, engine.errand_id = home, "old-job"
+            engine.gateway = __import__("types").SimpleNamespace(
+                stop=lambda run_id: stopped.append(run_id),
+                status=lambda run_id: statuses.append(run_id) or {"status": "running"},
+                approve=lambda *a: approved.append(a))
+            engine.sleep = lambda _: os.environ.__setitem__("ALICE_R02_ASR_ONLY", "yes")
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "get", return_value=entry), \
+                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
+                                 updates.append(kw)):
+                self.assertEqual(engine._wait_run("running-legacy-1")["status"], "cancelled")
+            self.assertEqual(statuses, ["running-legacy-1"])
+            self.assertEqual(stopped, ["running-legacy-1"])
+            self.assertEqual(approved, [])
+            self.assertEqual(updates[0]["status"], "stuck")
 
 
 if __name__ == "__main__":

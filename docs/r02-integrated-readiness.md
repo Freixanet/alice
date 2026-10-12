@@ -75,8 +75,12 @@ compatible; H02.1 alone can select P-256 fixture validation.
    approval, payment-card request, payment tool gate approval, and old
    approved-resume paths. A sticky `.alice/r02-asr-only-v1` marker in the
    Hermes account prevents an accidentally lost environment setting on
-   restart from re-enabling legacy checkout. Existing legacy shopping errands
-   cannot restart under cutover; unrelated errands can. The marker is **not**
+   restart from re-enabling legacy checkout. **All older Hermes errands
+   are conservatively paused under ASR-only mode**, even non-shopping
+   tasks: their unrestricted native tools cannot reliably be classified
+   as read-only from a natural-language request. Running old sessions are
+   stopped at orchestration boundaries; a payment already sent remains
+   uncertain, never implicitly refunded or retried. The marker is **not**
    an OS/terminal sandbox and cannot resist Host A root deliberately deleting
    local files. Credential migration and disabling Hermes' old card vault
    must be handled by independently managed Alice policy before production.

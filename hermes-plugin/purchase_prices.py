@@ -497,7 +497,7 @@ def checkout_amount(entry, selector, *, inspect=None, evaluate=None):
 
 
 def payment_ready(home, entry, *, inspect=None, evaluate=None):
-    approved = module('errands').approved_checkout(entry)
+    approved = module('errands').approved_checkout(entry, home=home)
     evidence = entry.get('checkout_evidence') or {}
     if not approved or evidence.get('checkout_id') != approved['id'] or not evidence.get('selector'):
         return False
