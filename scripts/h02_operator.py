@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import ssl
 import subprocess
 import sys
@@ -39,6 +40,22 @@ def call(path, body, role, job=""):
             return response.status, json.load(response)
     except urllib.error.HTTPError as exc:
         return exc.code, json.loads(exc.read())
+
+
+def request_signed(token, path, raw):
+    """Only Alice's synthetic test operator handles signing authority."""
+    ctx = ssl.create_default_context(cafile=str(FIXTURE / "gateway.pem"))
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                         urllib.request.HTTPSHandler(context=ctx))
+    request = urllib.request.Request(GATEWAY + path, data=raw, method="POST",
+                                     headers={"Authorization": "Alice-H02 " + token,
+                                              "Content-Type": "application/json"})
+    try:
+        with opener.open(request, timeout=12) as response:
+            return response.status
+    except urllib.error.HTTPError as exc:
+        exc.read(16384)
+        return exc.code
 
 
 def verify_policy():
@@ -108,6 +125,51 @@ def verify_sampled_asr_egress():
     print("H02_ASR_OUTBOUND_SAMPLES " + json.dumps(result, sort_keys=True), flush=True)
 
 
+def verify_rotation_and_replay_survive_replacement(job_id):
+    """Rotate a TEST key and replace only gateway; runner jobs remain intact."""
+    path = "/v1/resume"
+    raw = json.dumps({"job_id": job_id}, sort_keys=True, separators=(",", ":")).encode()
+    old = Keyring.load(str(FIXTURE / "keyring.json"))
+    old_capability = old.mint(subject="test-user-a", tenant="fixture-tenant-a",
+                              session="fixture-session-a", role="owner",
+                              job=job_id, path=path, body=raw)
+    # In-place update of the fixture bind mount; never a real key store.
+    (FIXTURE / "keyring.json").write_text(json.dumps({
+        "active": "next-rotated", "keys": {"next-rotated": secrets.token_hex(32)}}))
+    docker("up", "-d", "--force-recreate", "--no-deps", "gateway")
+    for _ in range(45):
+        new = Keyring.load(str(FIXTURE / "keyring.json"))
+        new_capability = new.mint(subject="test-user-a", tenant="fixture-tenant-a",
+                                  session="fixture-session-a", role="owner",
+                                  job=job_id, path=path, body=raw)
+        try:
+            if request_signed(new_capability, path, raw) == 200:
+                break
+        except OSError:
+            pass
+        time.sleep(1)
+    else:
+        raise AssertionError("gateway unavailable after key rotation")
+    if request_signed(old_capability, path, raw) != 403:
+        raise AssertionError("revoked old issuer key remains usable")
+    docker("up", "-d", "--force-recreate", "--no-deps", "gateway")
+    for _ in range(45):
+        try:
+            fresh = new.mint(subject="test-user-a", tenant="fixture-tenant-a",
+                             session="fixture-session-a", role="owner",
+                             job=job_id, path=path, body=raw)
+            if request_signed(fresh, path, raw) == 200:
+                break
+        except OSError:
+            pass
+        time.sleep(1)
+    else:
+        raise AssertionError("gateway cannot authenticate a fresh request after restart")
+    if request_signed(new_capability, path, raw) != 403:
+        raise AssertionError("consumed new capability reused after gateway restart")
+    print("H02_KEY_ROTATION_AND_DURABLE_REPLAY_VERIFIED", flush=True)
+
+
 def main():
     for _ in range(80):
         try:
@@ -141,6 +203,7 @@ def main():
     if not output["passed"]:
         raise AssertionError("H02 hostile proposal or private socket checks failed")
     print("H02_ATTACK_REPORT " + json.dumps(output, sort_keys=True), flush=True)
+    verify_rotation_and_replay_survive_replacement(job)
     print("H02_SINGLE_DOCKER_HOST_TEST_ONLY: independent administrative host still PENDING", flush=True)
 
 

@@ -68,6 +68,10 @@ It is NOT separate control-plane isolation between gateway and ASR.
   to public IPv4/IPv6 and metadata IPv4/IPv6 addresses. Rejections only
   establish those specific routes under the Linux fixture, **not** a complete
   DNS/UDP/WebRTC/browser destination allowlist.
+- The fixture operator also rotates its random issuer signing key, recreates
+  only the gateway, verifies an unused old-key capability is rejected, and
+  verifies consumed new-key replay stays rejected after a second gateway
+  recreation. ASR's job/SQLite volume is not reset.
 
 ### Local / hosted CI synthetic test
 
