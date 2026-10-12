@@ -334,6 +334,38 @@ merchant exercise, not a certified real merchant or PSP integration.
 The latest local repository suite after this fix ran **129 tests, 9 optional
 Chromium skipped, no failures**; a new SHA must be checked by GitHub.
 
+### Native iOS exact-checkout contract (new local candidate)
+
+Swift `SecureRunnerApprovalContract` strictly decodes the existing **fictional**
+AliceRunner checkout snapshot and P-256 approval challenge with no additional
+properties. It verifies tenant/session/job, precise checkout SHA-256 digest,
+immutable merchant, quantity, currency, itemization and expiry, returning
+canonical UTF-8 bytes only after all checks. A local Swift executable with a
+Python independently computed SHA-256 golden fixture returned the exact same
+challenge bytes. Malformed/tampered checkout, scope and expiry tests are
+defined as iOS XCTest; actual XCTest execution awaits an isolated CI simulator.
+
+The `SecureRunnerDeviceSigner` adapter separately provides a device-only
+Secure Enclave P-256 public-key enrollment helper and a method that can sign
+**only** a validated challenge. Its non-exportable key requests OS-level
+`userPresence` with passcode-required, device-only Keychain protection;
+there is no software-key fallback, payment submission, Hermès browser
+connection or automatically trusted enrollment. Static Swift parsing and
+typechecking against the installed **iOS device SDK** passed. No device
+key was generated, no biometric/authentication event was invoked and no
+proof of Face ID, presence, hardware attestation, remotely authenticated
+Alice account or live user consent exists. These integrations remain P0
+external gates. Existing SwiftUI cards still read-only with legacy `Pagar`
+guarded; no new purchase action has been enabled.
+
+An official-Hermes `PluginContext` registration smoke test has also been
+added. It uses the real public `PluginContext` and a unique disposable
+Hermes home to register both unprivileged planning tools, assert non-executing
+handler denial and unload them. The bare Mac without official Hermes reports
+**SKIPPED**, not PASS; the pinned-Hermes Quality CI must run this test for
+valid installed-context evidence. It does not contact a configured model or
+Hermes gateway or install anything into the person's home.
+
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |
