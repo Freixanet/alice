@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hmac
 import json
+import os
 import ssl
 import threading
 from dataclasses import dataclass
@@ -122,7 +123,12 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                 self._write(403, {"error": "denied"})
             except Indeterminate:
                 self._write(409, {"error": "unknown_outcome_do_not_retry"})
-            except Exception:
+            except Exception as exc:
+                # Only the disposable H01 test-host logs the exception CLASS.
+                # Never include request bodies, credentials or error strings.
+                if os.environ.get('H01_SYNTHETIC_ONLY') == 'yes':
+                    print('H01_ASR_HANDLER_FAILURE', self.path.split('?', 1)[0],
+                          type(exc).__name__, flush=True)
                 self._write(503, {"error": "unavailable"})
 
     return Handler

@@ -84,6 +84,8 @@ class Gateway:
                     raise ValueError('private broker response exceeds cap')
                 return response.status, json.loads(payload)
         except urllib.error.HTTPError as exc:
+            if exc.code == 503 and os.environ.get('H01_SYNTHETIC_ONLY') == 'yes':
+                print('H01_PRIVATE_BACKEND_REPLIED_503', api_path, flush=True)
             # Preserve precise synthetic deny/unknown semantics without
             # exposing backend exception text, cookies or environment.
             return (exc.code if exc.code in (401, 403, 409) else 503,
@@ -147,7 +149,10 @@ def make_handler(gateway: Gateway):
                 self.reply(status, result)
             except (ValueError, KeyError, TypeError):
                 self.reply(403, {'error': 'denied'})
-            except Exception:
+            except Exception as exc:
+                if os.environ.get('H01_SYNTHETIC_ONLY') == 'yes':
+                    print('H01_GATEWAY_HANDLER_FAILURE', self.path.split('?', 1)[0],
+                          type(exc).__name__, flush=True)
                 self.reply(503, {'error': 'unavailable'})
 
     return Handler
