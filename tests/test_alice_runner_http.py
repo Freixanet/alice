@@ -99,8 +99,8 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertEqual(self.store.submit_attempts, 1)
 
     def test_unprivileged_hermes_standin_no_runner_token_or_cdp(self):
-        for endpoint in ("/v1/jobs", "/v1/propose", "/v1/challenge", "/v1/approve", "/v1/commit",
-                         "/v1/human-handoff", "/v1/human-finish"):
+        for endpoint in ("/v1/jobs", "/v1/resume", "/v1/propose", "/v1/challenge", "/v1/approve", "/v1/commit",
+                         "/v1/human-handoff", "/v1/human-reissue", "/v1/human-finish"):
             with self.subTest(endpoint=endpoint), self.assertRaises(urllib.error.HTTPError) as err:
                 self.request(endpoint, {}, token="the-Hermes-agent-has-no-capability")
             self.assertEqual(err.exception.code, 401)
@@ -154,10 +154,53 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertEqual(err.exception.code, 403)
         self.assertEqual(self.store.submit_attempts, 0)
 
+    def test_human_handoff_lost_http_response_reissues_handle_without_agent_resume(self):
+        start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake shipping"})
+        identity = {"job_id": start["job_id"], "tenant": "user-A", "session": "paired"}
+        lost = self.request("/v1/human-handoff", identity)
+        # Duplicate backend requests cannot invalidate the delivered link.
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/human-handoff", identity)
+        self.assertEqual(err.exception.code, 403)
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/human-reissue", identity)
+        self.assertEqual(err.exception.code, 401)
+        # A separate human-side recovery action rotates the lost handle.
+        recovered = self.request("/v1/human-reissue", identity, token=self.human_token)
+        self.assertNotEqual(lost["human_handle"], recovered["human_handle"])
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/human-finish", {"job_id": start["job_id"], "tenant": "user-A",
+                                                    "human_handle": lost["human_handle"]}, token=self.human_token)
+        self.assertEqual(err.exception.code, 403)
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/propose", {**identity, "proposal": {"action": "stop", "epoch": 2}})
+        self.assertEqual(err.exception.code, 403)
+        done = self.request("/v1/human-finish", {"job_id": start["job_id"], "tenant": "user-A",
+                                                  "human_handle": recovered["human_handle"]}, token=self.human_token)
+        self.assertEqual(done["payment_claim"], "NOT_VERIFIED")
+        self.assertEqual(self.store.submit_attempts, 0)
+
     def test_backend_and_human_capabilities_cannot_be_shared(self):
         with self.assertRaises(ValueError):
             RunnerHTTPS(self.runner, coordinator_token=self.runner_token, human_token=self.runner_token,
                         cert_file=self.shared.cert, key_file=self.shared.key)
+
+    def test_resume_endpoint_returns_epoch_but_never_human_handle(self):
+        start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake shipping"})
+        identity = {"job_id": start["job_id"], "tenant": "user-A", "session": "paired"}
+        advanced = self.request("/v1/propose", {**identity,
+                                                 "proposal": {"action": "search", "query": "keyboard", "epoch": 0}})
+        observed = self.request("/v1/resume", identity)
+        self.assertEqual(observed["epoch"], advanced["epoch"])
+        self.assertEqual(observed["products"], [{"sku": "FAKE-ALICE-1"}])
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/resume", {**identity, "session": "another-session"})
+        self.assertEqual(err.exception.code, 403)
+        handoff = self.request("/v1/human-handoff", identity)
+        observed = self.request("/v1/resume", identity)
+        self.assertEqual(observed["status"], "human_only")
+        self.assertNotIn("human_handle", observed)
+        self.assertNotIn(handoff["human_handle"], str(observed))
 
 
 if __name__ == "__main__":

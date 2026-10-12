@@ -16,13 +16,15 @@ class Planner(Protocol):
 
 
 class Coordinator:
-    def __init__(self, runner: AliceRunner, *, tenant: str, session: str, recipient: str, planner: Planner):
+    def __init__(self, runner: AliceRunner, *, tenant: str, session: str, recipient: str, planner: Planner,
+                 existing_job_id: str | None = None):
         self._runner = runner  # Alice-only credential-bearing process
         self._tenant = tenant
         self._session = session
         self._planner = planner
-        self._job = runner.new_job(tenant, session, recipient)
-        self._previous: dict[str, Any] = {"epoch": 0, "status": "researching"}
+        self._job = (runner.resume_job(existing_job_id, tenant=tenant, session=session)
+                     if existing_job_id is not None else runner.new_job(tenant, session, recipient))
+        self._previous: dict[str, Any] = self._job.copy()
         self.events: list[dict[str, Any]] = []
 
     @property
@@ -42,6 +44,13 @@ class Coordinator:
         return result
 
     def run_to_approval(self, max_steps: int = 8) -> dict[str, Any]:
+        # Restarting a coordinator must not create a new cart or replan an
+        # already prepared/approved/terminal checkout.
+        if self._previous["status"] == "awaiting_approval":
+            return self._previous.copy()
+        if self._previous["status"] in ("approved", "dispatching", "unknown", "confirmed", "human_only",
+                                         "completed_by_human_simulated", "stopped"):
+            raise Denied("cannot replan a non-writable resumed job")
         for _ in range(max_steps):
             out = self.step()
             if out["status"] == "awaiting_approval":

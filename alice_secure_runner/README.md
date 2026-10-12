@@ -22,6 +22,9 @@ simultaneous submits, failure before dispatch, unknown outcome after dispatch,
 crash/restart reconciliation, and simulated exclusive human completion. No
 checkout is a real-world purchase. After restarting, `dispatching` becomes
 `unknown`, so **a potentially dispatched operation cannot be retried**.
+A disposable subprocess test actually exits with `os._exit()` after the
+fictional HTTPS merchant accepts a checkout and verifies no resubmission on
+restart. This is a local SQLite crash-window test, not cloud HA evidence.
 
 The Hermes adapter `hermes-plugin/r02_planner.py` uses official
 `ctx.llm.complete_structured()` to request **one JSON proposal**, validates it
@@ -96,7 +99,16 @@ plugin with appropriate user consent.
 - Synthetic jobs, epochs and checkout attempts are now persisted in SQLite;
   startup reconciles their states, invalidates in-flight checkout attempts to
   `unknown` and never automatically retries them. Human handoff handles are
-  stored only as hashes. There is still **no real browser-session recovery**, no
+  stored only as hashes. Trusted Alice can resume a partial job without
+  resetting its epoch through `resume_job` / `POST /v1/resume`; a lost simulated
+  human handoff reply can be recovered by an **explicit human-side** call to
+  `POST /v1/human-reissue` using a capability distinct from the backend's.
+  Duplicate coordinator handoffs are rejected; explicit recovery rotates the
+  handle and invalidates the previous one without restoring agent writes.
+  That rotation is NOT safe
+  to apply during real human/PSP payment execution until an additional
+  effect-in-flight fence is implemented. There is still **no real
+  browser-session recovery**, no
   encryption-at-rest/key-management strategy, no high-availability coordinator
   and no independent merchant status reconciliation. Production-grade durable
   recovery remains a release blocker.

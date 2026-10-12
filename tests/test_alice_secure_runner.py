@@ -13,6 +13,7 @@ import os
 import secrets
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -201,18 +202,28 @@ class RunnerHTTPSContractTests(unittest.TestCase):
         self.assertEqual(handoff["status"], "awaiting_human_finalization")
         with self.assertRaises(Denied):
             self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        recovered = self.runner.reissue_human_handle(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertNotEqual(handoff["human_handle"], recovered["human_handle"])
         for cmd in ("search", "checkout_commit"):
             with self.assertRaises(Denied):
                 self.runner.propose(self.client.job_id, tenant="user-A", session="alice-paired-1",
                                     proposal={"action": cmd, "epoch": 6, "query": "keyboard"})
         with self.assertRaises(Denied):
             self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle="forged")
-        result = self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+        with self.assertRaises(Denied):
+            self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+        result = self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=recovered["human_handle"])
         self.assertEqual(result["payment_claim"], "NOT_VERIFIED")
         with self.assertRaises(Denied):
             self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=handoff["human_handle"])
         with self.assertRaises(Denied):
             self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        with self.assertRaisesRegex(Denied, "write capability is revoked"):
+            self.runner.propose(self.client.job_id, tenant="user-A", session="alice-paired-1",
+                                proposal={"action": "search", "query": "keyboard", "epoch": 7})
+        with self.assertRaisesRegex(Denied, "write capability is revoked"):
+            self.runner.propose(self.client.job_id, tenant="user-A", session="alice-paired-1",
+                                proposal={"action": "add_to_cart", "quantity": 2, "epoch": 7})
         self.assertEqual(self.store.submit_attempts, 0)
 
     def test_failing_certificate_or_untrusted_origin_is_rejected(self):
@@ -357,6 +368,62 @@ class RunnerHTTPSContractTests(unittest.TestCase):
             self.assertEqual(self.store.submit_attempts, 0)
             second.close()
 
+    def test_real_process_exit_after_fake_submit_recovers_unknown_without_retry(self):
+        """A hard process exit after HTTPS submit must not permit another dispatch.
+
+        The parent serves only the fictional loopback HTTPS shop. A disposable
+        child owns the SQLite runner and terminates through os._exit, bypassing
+        Python exception handling and cleanup to model a genuine process crash.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.run_to_approval()
+            first.approve(coord.job_id, tenant="user-A", session="paired",
+                          signature=signed(first.challenge(coord.job_id, tenant="user-A", session="paired"),
+                                           self.device_key))
+            first.close()
+
+            child_code = """
+import os
+import sys
+from alice_secure_runner.core import AliceRunner, FictionalHTTPSAdapter
+
+origin, cert, merchant_token, key_hex, ledger, job_id = sys.argv[1:]
+adapter = FictionalHTTPSAdapter(origin=origin, ca_file=cert, merchant_token=merchant_token)
+runner = AliceRunner(adapter, approval_key=bytes.fromhex(key_hex), ledger_path=ledger)
+original_commit = adapter.commit
+def crash_after_submission(**kwargs):
+    original_commit(**kwargs)
+    os._exit(67)
+adapter.commit = crash_after_submission
+runner.commit(job_id, tenant='user-A', session='paired')
+os._exit(68)
+"""
+            child = subprocess.run(
+                [sys.executable, "-c", child_code, self.shop.url, self.cert, self.shop_secret,
+                 self.device_key.hex(), ledger, coord.job_id],
+                cwd=str(Path(__file__).resolve().parents[1]),
+                env={"PATH": os.environ.get("PATH", ""),
+                     "PYTHONPATH": str(Path(__file__).resolve().parents[1])},
+                capture_output=True, text=True, timeout=15, check=False)
+            self.assertEqual(child.returncode, 67, child.stderr)
+            self.assertEqual(self.store.submit_attempts, 1)
+            self.assertEqual(len(self.store.orders), 1)
+
+            recovered = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                with self.assertRaises(Denied):
+                    recovered.commit(coord.job_id, tenant="user-A", session="paired")
+                with sqlite3.connect(ledger) as db:
+                    state = db.execute("SELECT status FROM authorizations").fetchone()[0]
+                self.assertEqual(state, "unknown")
+                self.assertEqual(self.store.submit_attempts, 1)
+            finally:
+                recovered.close()
+
     def test_human_handoff_persists_only_handle_digest_on_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = str(Path(tmp) / "ledger.db")
@@ -377,6 +444,149 @@ class RunnerHTTPSContractTests(unittest.TestCase):
             with self.assertRaises(Denied):
                 second.human_finalize(coord.job_id, tenant="user-A", human_handle=handoff["human_handle"])
             second.close()
+
+    def test_lost_human_handoff_reply_can_reissue_after_process_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.run_to_approval()
+            lost_response = first.human_handoff(coord.job_id, tenant="user-A", session="paired")
+            first.close()
+
+            restarted = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                with self.assertRaises(Denied):
+                    restarted.human_handoff(coord.job_id, tenant="user-A", session="paired")
+                recovered = restarted.reissue_human_handle(coord.job_id, tenant="user-A", session="paired")
+                self.assertNotEqual(lost_response["human_handle"], recovered["human_handle"])
+                for token in (lost_response["human_handle"], "invented"):
+                    with self.assertRaises(Denied):
+                        restarted.human_finalize(coord.job_id, tenant="user-A", human_handle=token)
+                with self.assertRaises(Denied):
+                    restarted.commit(coord.job_id, tenant="user-A", session="paired")
+                with self.assertRaises(Denied):
+                    restarted.propose(coord.job_id, tenant="user-A", session="paired",
+                                      proposal={"action": "search", "query": "keyboard", "epoch": 6})
+                with self.assertRaises(Denied):
+                    restarted.human_handoff(coord.job_id, tenant="user-B", session="paired")
+                result = restarted.human_finalize(coord.job_id, tenant="user-A",
+                                                  human_handle=recovered["human_handle"])
+                self.assertEqual(result["payment_claim"], "NOT_VERIFIED")
+                with self.assertRaises(Denied):
+                    restarted.propose(coord.job_id, tenant="user-A", session="paired",
+                                      proposal={"action": "add_to_cart", "quantity": 2, "epoch": 7})
+                with self.assertRaises(Denied):
+                    restarted.human_handoff(coord.job_id, tenant="user-A", session="paired")
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                restarted.close()
+
+    def test_human_finalize_and_explicit_handle_reissue_have_one_winner(self):
+        self.ready()
+        original = self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        barrier = threading.Barrier(3)
+        outcomes = []
+
+        def finish():
+            barrier.wait()
+            try:
+                self.runner.human_finalize(self.client.job_id, tenant="user-A",
+                                           human_handle=original["human_handle"])
+                outcomes.append(("finish", "ok"))
+            except Denied:
+                outcomes.append(("finish", "denied"))
+
+        def reissue():
+            barrier.wait()
+            try:
+                issued = self.runner.reissue_human_handle(self.client.job_id, tenant="user-A",
+                                                          session="alice-paired-1")
+                outcomes.append(("reissue", issued))
+            except Denied:
+                outcomes.append(("reissue", "denied"))
+
+        threads = [threading.Thread(target=finish), threading.Thread(target=reissue)]
+        for thread in threads:
+            thread.start()
+        barrier.wait()
+        for thread in threads:
+            thread.join(timeout=5)
+        self.assertEqual(len(outcomes), 2)
+        successes = [name for name, outcome in outcomes if outcome != "denied"]
+        self.assertEqual(len(successes), 1)
+        if successes == ["reissue"]:
+            issued = next(value for name, value in outcomes if name == "reissue")
+            self.assertEqual(self.runner.human_finalize(self.client.job_id, tenant="user-A",
+                                                        human_handle=issued["human_handle"])["payment_claim"],
+                             "NOT_VERIFIED")
+        with self.assertRaises(Denied):
+            self.runner.reissue_human_handle(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_coordinator_resumes_same_partial_job_after_process_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            original = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                   planner=FictionalPlanner())
+            original.step()  # search
+            original.step()  # read product
+            job_id = original.job_id
+            observed = first.resume_job(job_id, tenant="user-A", session="paired")
+            self.assertEqual(observed["epoch"], 2)
+            self.assertEqual(observed["products"], [{"sku": "FAKE-ALICE-1"}])
+            first.close()
+
+            class RemainingPlanner:
+                actions = iter(({"action": "select_product", "sku": "FAKE-ALICE-1"},
+                                {"action": "add_to_cart", "quantity": 2},
+                                {"action": "prepare_checkout"}))
+
+                def next_action(self, observation):
+                    return {**next(self.actions), "epoch": observation["epoch"]}
+
+            recovered = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                resumed = Coordinator(recovered, tenant="user-A", session="paired", recipient="Fake delivery",
+                                      planner=RemainingPlanner(), existing_job_id=job_id)
+                self.assertEqual(resumed.job_id, job_id)
+                ready = resumed.run_to_approval()
+                self.assertEqual(ready["status"], "awaiting_approval")
+                self.assertEqual(ready["checkout"]["amount_minor"], 4998)
+                self.assertEqual(ready["epoch"], 5)
+                with self.assertRaises(Denied):
+                    Coordinator(recovered, tenant="user-B", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner(), existing_job_id=job_id)
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                recovered.close()
+
+    def test_prepared_checkout_resumes_without_model_replan_or_new_cart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            original = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                   planner=FictionalPlanner())
+            original_ready = original.run_to_approval()
+            first.close()
+
+            class MustNotCallPlanner:
+                def next_action(self, observation):
+                    raise AssertionError("resuming approval must not contact model")
+
+            recovered = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                resumed = Coordinator(recovered, tenant="user-A", session="paired", recipient="Fake delivery",
+                                      planner=MustNotCallPlanner(), existing_job_id=original.job_id)
+                ready = resumed.run_to_approval()
+                self.assertEqual(ready["checkout"], original_ready["checkout"])
+                self.assertEqual(ready["approval_challenge"], original_ready["approval_challenge"])
+                self.assertEqual(ready["epoch"], original_ready["epoch"])
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                recovered.close()
 
 
 if __name__ == "__main__":

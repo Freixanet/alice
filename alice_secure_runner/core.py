@@ -233,6 +233,28 @@ class AliceRunner:
             raise Denied("job does not belong to this session")
         return job
 
+    def resume_job(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Resume a persisted job for trusted Alice without minting new authority.
+
+        Returns a bounded coordinator observation; never leaks consent signing
+        keys or the human handoff handle. A restored state cannot reset epoch.
+        Terminal, human-only and uncertain states are observable, not writable.
+        """
+        with self.__lock:
+            job = self._job(job_id, tenant, session)
+            result: dict[str, Any] = {"job_id": job.id, "epoch": job.epoch, "status": job.state}
+            if job.found:
+                result["products"] = [{"sku": sku} for sku in job.found[:10]]
+            if job.selected:
+                result["sku"] = job.selected
+            if job.quantity:
+                result["quantity"] = job.quantity
+                result["cart_ready"] = job.state == "cart_ready"
+            if job.checkout is not None and job.state == "awaiting_approval":
+                result["checkout"] = job.checkout.copy()
+                result["approval_challenge"] = self._challenge(job)
+            return result
+
     def _pending(self, job: Job) -> dict[str, Any]:
         if job.checkout is None:
             raise Denied("checkout has not been prepared")
@@ -242,7 +264,8 @@ class AliceRunner:
         """Untrusted model proposals cannot commit an order or read secrets."""
         with self.__lock:
             job = self._job(job_id, tenant, session)
-            if job.state in ("awaiting_approval", "approved", "dispatching", "unknown", "confirmed", "human_only", "stopped"):
+            # Fail closed for every future state unless explicitly authorized.
+            if job.state not in ("researching", "selecting", "cart_ready"):
                 raise Denied("agent's shopping write capability is revoked")
             if not isinstance(proposal, dict) or proposal.get("action") not in ALLOWED:
                 raise Denied("unknown, privileged or malformed operation")
@@ -401,12 +424,12 @@ class AliceRunner:
                     "checkout_id": checkout_id, "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
 
     def human_handoff(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
-        """Revokes agent writes. Human token stays exclusively with Alice UI."""
+        """One-time revocation of agent writes and human handoff creation."""
         with self.__lock:
             job = self._job(job_id, tenant, session)
             if job.state in ("dispatching", "unknown", "confirmed", "stopped", "human_only",
                              "completed_by_human_simulated"):
-                raise Denied("cannot hand off an already-sent or terminal checkout twice")
+                raise Denied("cannot repeat a handoff or hand off a terminal checkout")
             if job.checkout is not None:
                 transitioned = self.__db.execute(
                     "UPDATE authorizations SET status='human_only' WHERE checkout_id=? AND status IN ('pending','approved')",
@@ -422,6 +445,30 @@ class AliceRunner:
             job.human_handle_digest = _digest(human_handle)
             self._persist_job(job)
             # Only the trusted caller/UI receives this; never feed it to Hermes.
+            return {"status": "awaiting_human_finalization", "human_handle": human_handle}
+
+    def reissue_human_handle(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Explicit human-side recovery, never an automatic backend retry.
+
+        The HTTPS service exposes this only with its distinct human capability.
+        A duplicate coordinator handoff request must not invalidate a live
+        human session; an authenticated human may explicitly request a new
+        handle if the original delivery failed. No real PSP is implemented.
+        """
+        with self.__lock:
+            job = self._job(job_id, tenant, session)
+            if job.state != "human_only":
+                raise Denied("human recovery is not available for this state")
+            if job.checkout is not None:
+                transitioned = self.__db.execute(
+                    "UPDATE authorizations SET status='human_only' WHERE checkout_id=? AND status='human_only'",
+                    (job.checkout["checkout_id"],)).rowcount
+                if transitioned != 1:
+                    raise Denied("human recovery is no longer exclusive")
+            job.epoch += 1
+            human_handle = secrets.token_urlsafe(32)
+            job.human_handle_digest = _digest(human_handle)
+            self._persist_job(job)
             return {"status": "awaiting_human_finalization", "human_handle": human_handle}
 
     def human_finalize(self, job_id: str, *, tenant: str, human_handle: str) -> dict[str, Any]:

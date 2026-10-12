@@ -37,7 +37,8 @@ def make_handler(runner: AliceRunner, coordinator_token: str, human_token: str):
             # A distinct Alice-owned human-facing capability is necessary even
             # for this mock endpoint; the planner and backend bearer cannot
             # claim human completion. This is NOT real user authentication.
-            expected = human_token if self.path == "/v1/human-finish" else coordinator_token
+            expected = (human_token if self.path in ("/v1/human-finish", "/v1/human-reissue")
+                        else coordinator_token)
             if not hmac.compare_digest(bearer, "Bearer " + expected):
                 self._write(401, {"error": "unauthorized"})
                 return
@@ -50,6 +51,8 @@ def make_handler(runner: AliceRunner, coordinator_token: str, human_token: str):
                     raise Denied("invalid request")
                 if self.path == "/v1/jobs":
                     out = runner.new_job(obj["tenant"], obj["session"], obj["recipient"])
+                elif self.path == "/v1/resume":
+                    out = runner.resume_job(obj["job_id"], tenant=obj["tenant"], session=obj["session"])
                 elif self.path == "/v1/propose":
                     out = runner.propose(obj["job_id"], tenant=obj["tenant"],
                                          session=obj["session"], proposal=obj["proposal"])
@@ -62,6 +65,8 @@ def make_handler(runner: AliceRunner, coordinator_token: str, human_token: str):
                     out = runner.commit(obj["job_id"], tenant=obj["tenant"], session=obj["session"])
                 elif self.path == "/v1/human-handoff":
                     out = runner.human_handoff(obj["job_id"], tenant=obj["tenant"], session=obj["session"])
+                elif self.path == "/v1/human-reissue":
+                    out = runner.reissue_human_handle(obj["job_id"], tenant=obj["tenant"], session=obj["session"])
                 elif self.path == "/v1/human-finish":
                     out = runner.human_finalize(obj["job_id"], tenant=obj["tenant"],
                                                 human_handle=obj["human_handle"])
