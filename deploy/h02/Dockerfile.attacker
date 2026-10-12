@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+COPY scripts/h02_remote_probe.py /h02_remote_probe.py
+RUN useradd -u 12003 -s /usr/sbin/nologin hostile-h02
+USER 12003:12003
+ENV PYTHONDONTWRITEBYTECODE=1
+CMD ["python", "/h02_remote_probe.py", "--help"]
