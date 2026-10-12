@@ -122,13 +122,14 @@ class RevocableP256DeviceConsent:
 
     @staticmethod
     def _enrollment_payload(row: tuple) -> dict:
-        nonce, tenant, session, account, installation, pem, operation, version, _, expires, _ = row
+        nonce, tenant, session, account, installation, pem, operation, version, key_expires, expires, _ = row
         return {
             "purpose": "alice-r02-device-enroll-v1",
             "tenant": tenant, "session": session, "account": account,
             "installation": installation,
             "public_key_sha256": hashlib.sha256(pem.encode("ascii")).hexdigest(),
             "operation": operation, "expected_version": version,
+            "key_expires_at": key_expires,
             "nonce": nonce, "expires_at": expires,
         }
 
@@ -167,7 +168,7 @@ class RevocableP256DeviceConsent:
         """Verify exact key-possession proof and atomically enroll/rotate once."""
         if (not isinstance(challenge, dict) or set(challenge) != {
                 "purpose", "tenant", "session", "account", "installation",
-                "public_key_sha256", "operation", "expected_version",
+                "public_key_sha256", "operation", "expected_version", "key_expires_at",
                 "nonce", "expires_at"}):
             raise EnrollmentDenied("invalid enrollment response")
         nonce = challenge.get("nonce")
@@ -338,6 +339,25 @@ class RevocableP256DeviceConsent:
                     pass
                 raise
             return on_valid()
+
+    def effect_admission_state(self, *, tenant: str, session: str,
+                               challenge_digest: str) -> str | None:
+        """Trusted Alice-only reconciliation; never exposed to the planner.
+
+        A durable 'effect_admitted' may precede the runner's own dispatch
+        record if either process fails between independent SQLite commits.
+        It is *not* proof that the merchant was called or that it was not.
+        """
+        tenant, session = _identity(tenant), _identity(session)
+        if (not isinstance(challenge_digest, str)
+                or re.fullmatch(r"[a-f0-9]{64}", challenge_digest) is None):
+            return None
+        with self._lock:
+            row = self._db.execute(
+                "SELECT state FROM device_approval_grants WHERE tenant=? "
+                "AND session=? AND challenge_digest=?",
+                (tenant, session, challenge_digest)).fetchone()
+            return row[0] if row is not None else None
 
     def _verify_locked(self, *, tenant: str, session: str, challenge: bytes,
                        signature: str) -> bool:

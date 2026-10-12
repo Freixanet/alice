@@ -12,6 +12,7 @@ final class SecureRunnerEnrollmentContractTests: XCTestCase {
         operation: String = "enroll",
         version: Int = 0,
         expires: Int = 1_180,
+        keyExpires: Int = 4_600,
         keyDigest: String? = nil
     ) throws -> Data {
         let digest = SHA256.hash(data: Data(publicPEM.utf8))
@@ -22,6 +23,7 @@ final class SecureRunnerEnrollmentContractTests: XCTestCase {
             "account": account, "installation": installation,
             "public_key_sha256": keyDigest ?? digest,
             "operation": operation, "expected_version": version,
+            "key_expires_at": keyExpires,
             "nonce": "fixture-nonce", "expires_at": expires
         ])
     }
@@ -44,6 +46,8 @@ final class SecureRunnerEnrollmentContractTests: XCTestCase {
         XCTAssertThrowsError(try proof(challenge(installation: "other-install")))
         XCTAssertThrowsError(try proof(challenge(), pem: "different public PEM"))
         XCTAssertThrowsError(try proof(challenge(expires: 999)))
+        XCTAssertThrowsError(try proof(challenge(keyExpires: 999)))
+        XCTAssertThrowsError(try proof(challenge(keyExpires: 40_000_000)))
     }
 
     func testRotationRequiresNewGenerationAndExactVersion() throws {

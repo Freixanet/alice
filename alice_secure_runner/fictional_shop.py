@@ -139,7 +139,8 @@ class PersistentFictionalStore(FictionalStore):
                 "sku": row[0], "quantity": row[1], "variant": row[2]}
             return super().quote(cart_id, recipient)
 
-    def record_order(self, key: str, expected: dict) -> dict:
+    def record_order(self, key: str, expected: dict, *,
+                     cart_id: str | None = None) -> dict:
         with self._lock:
             # BEGIN IMMEDIATE serializes separate merchant processes, not
             # merely threads sharing an in-memory dict. A restart or second
@@ -157,6 +158,20 @@ class PersistentFictionalStore(FictionalStore):
                     if any(receipt.get(name) != expected.get(name) for name in fields):
                         raise ValueError("idempotency key changed checkout")
                 else:
+                    if cart_id is not None:
+                        # Quote and durable order must refer to the SAME cart
+                        # generation. A second merchant process may have
+                        # changed it after the HTTP preflight quote.
+                        latest = self._db.execute(
+                            "SELECT sku,quantity,variant FROM carts WHERE cart_id=?",
+                            (cart_id,)).fetchone()
+                        if latest is None:
+                            raise ValueError("cart unavailable before durable checkout")
+                        self.carts[cart_id] = {
+                            "sku": latest[0], "quantity": latest[1], "variant": latest[2]}
+                        quote_now = super().quote(cart_id, expected["recipient"])
+                        if any(quote_now.get(name) != expected.get(name) for name in fields):
+                            raise ValueError("durable cart changed before checkout")
                     receipt = {
                         "order_id": "FAKE-ORDER-" + secrets.token_hex(16),
                         "checkout_id": key,
@@ -324,7 +339,9 @@ def make_handler(store: FictionalStore):
                                 or not store.certified_adapter):
                             raise ValueError("unverified checkout")
                         key = body["idempotency_key"]
-                        order = store.record_order(key, expected)
+                        order = (store.record_order(key, expected, cart_id=body["cart_id"])
+                                 if isinstance(store, PersistentFictionalStore)
+                                 else store.record_order(key, expected))
                     self._send(200, order)
                 else:
                     self._send(404, {"error": "not found"})

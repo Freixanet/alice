@@ -34,6 +34,23 @@ _REDACT = re.compile(r"(?i)(?:https?://[^\s]+|[\w.+-]+@[\w.-]+\.[a-z]{2,}|"
                      r"\b(?:\d[ -]?){13,19}\b|\b(?:password|secret|bearer|"
                      r"api.?key|access.?token|cvv|address|recipient)\b)")
 
+# The laboratory exposes ONE known fictional catalogue, not arbitrary user
+# prose. Regex alone cannot reliably detect names, phone fragments or street
+# addresses hidden in product descriptions or prompts. Only trusted fixture
+# values are declassified to the untrusted Hermes model; unknown strings
+# remain redacted until a real Alice data-classification policy exists.
+_PUBLIC_STRINGS = {
+    "status": frozenset({"researching", "selecting", "cart_ready", "stopped"}),
+    "sku": frozenset({"FAKE-ALICE-1"}),
+    "selected": frozenset({"FAKE-ALICE-1"}),
+    "name": frozenset({"Fictional ergonomic keyboard"}),
+    "description": frozenset({"Quiet keys, compact ISO layout, fictional merchant stock."}),
+    "currency": frozenset({"EUR"}),
+    "variant": frozenset({"standard", "graphite"}),
+    "variants": frozenset({"standard", "graphite"}),
+}
+_PUBLIC_GOALS = frozenset({"Research a fictional keyboard"})
+
 
 def _name(value: str) -> str:
     if not isinstance(value, str) or not _NAME.fullmatch(value):
@@ -54,16 +71,16 @@ def _public_text(value: str) -> str:
     return _REDACT.sub("[redacted]", clipped)
 
 
-def _visible(value: Any, depth: int = 0) -> Any:
+def _visible(value: Any, depth: int = 0, *, field: str = "") -> Any:
     if depth > 4:
         raise Denied("observation nesting exceeded")
     if isinstance(value, dict):
-        return {k: _visible(v, depth + 1) for k, v in value.items()
+        return {k: _visible(v, depth + 1, field=k) for k, v in value.items()
                 if isinstance(k, str) and k in _VISIBLE}
     if isinstance(value, list):
-        return [_visible(v, depth + 1) for v in value[:10]]
+        return [_visible(v, depth + 1, field=field) for v in value[:10]]
     if isinstance(value, str):
-        return _public_text(value)
+        return value if value in _PUBLIC_STRINGS.get(field, ()) else "[redacted]"
     if value is None or type(value) in (bool, int):
         return value
     raise Denied("invalid model observation")
@@ -168,7 +185,7 @@ class PlannerMailbox:
         encoded = json.dumps(safe, sort_keys=True, separators=(",", ":"), allow_nan=False)
         if len(encoded.encode()) > 4096:
             raise Denied("oversized model observation")
-        safe_goal = _public_text(goal)
+        safe_goal = goal if goal in _PUBLIC_GOALS else "Research the fictional catalogue"
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
             try:

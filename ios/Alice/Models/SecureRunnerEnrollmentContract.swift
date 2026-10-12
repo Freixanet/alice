@@ -21,6 +21,7 @@ enum SecureRunnerEnrollmentContract {
         let publicKeySHA256: String
         let operation: String
         let expectedVersion: Int
+        let keyExpiresAt: Int
         let nonce: String
         let expiresAt: Int
 
@@ -29,6 +30,7 @@ enum SecureRunnerEnrollmentContract {
             case publicKeySHA256 = "public_key_sha256"
             case operation
             case expectedVersion = "expected_version"
+            case keyExpiresAt = "key_expires_at"
             case nonce
             case expiresAt = "expires_at"
         }
@@ -36,7 +38,8 @@ enum SecureRunnerEnrollmentContract {
 
     private static let allFields: Set<String> = [
         "purpose", "tenant", "session", "account", "installation",
-        "public_key_sha256", "operation", "expected_version", "nonce", "expires_at"
+        "public_key_sha256", "operation", "expected_version", "key_expires_at",
+        "nonce", "expires_at"
     ]
 
     static func checkedProofBytes(
@@ -53,6 +56,8 @@ enum SecureRunnerEnrollmentContract {
               challenge.purpose == "alice-r02-device-enroll-v1",
               challenge.operation == "enroll" || challenge.operation == "rotate",
               challenge.expectedVersion >= 0,
+              challenge.keyExpiresAt > now,
+              challenge.keyExpiresAt <= now + 31_536_000,
               !challenge.nonce.isEmpty, challenge.nonce.utf8.count <= 120,
               challenge.nonce.utf8.allSatisfy({
                   (48...57).contains($0) || (65...90).contains($0)

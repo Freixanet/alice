@@ -366,7 +366,7 @@ handler denial and unload them. The bare Mac without official Hermes reports
 valid installed-context evidence. It does not contact a configured model or
 Hermes gateway or install anything into the person's home.
 
-### Account-scoped device key possession (next candidate, uncommitted during test)
+### Account-scoped device key possession (published in `3e0df06`)
 
 The existing `RevocableP256DeviceConsent` registry now offers a trusted
 administrator-only, SQLite-persisted, one-use, 180-second challenge for first
@@ -396,6 +396,35 @@ accepted/mutated synthetic enrollment, Swift XCTest files parse correctly.
 available standalone command), and the prior green GitHub iOS CI on
 `d4c5d9b` does **not** cover this newer Swift code. A new exact-SHA CI
 run is required after publication.
+
+### Effect admission, exact enrollment lifetime, private backend redirects and R03 concurrency
+
+The subsequent local security increment, prepared against `3e0df06`,
+retains the existing runner, approval and independent fictional merchant
+ledgers. It binds the exact proposed key expiry to the signed enrollment
+challenge in both Python and Swift. It detects a previously committed
+device-effect admission that has not reached the runner's dispatch ledger,
+fencing the restored or immediately retried checkout as `UNKNOWN` instead
+of risking a second merchant submission. The state is intentionally
+conservative: this is not evidence that a charge actually reached a merchant.
+
+The synthetic R03 merchant now rechecks the quoted cart within the same
+SQLite `BEGIN IMMEDIATE` order transaction, preventing another merchant
+process from mutating the cart between initial quote and durable receipt.
+H02 gateway private-origin bearer and signed capability requests refuse
+all HTTP 3xx responses; no redirect may carry them outside their destination.
+The proposal mailbox declassifies only an exact, fixed fictional product
+catalogue: arbitrary names, addresses, fragments of phone numbers and
+goals remain redacted. The allowlist is a *test-fixture policy*, not a
+general-purpose personal-data classification solution.
+
+Focused local validation before committing this increment: **42 PASS**
+across the device registry, durable external merchant, gateway redirect,
+remote planner and H02.1 transport tests. Swift enrollment, approval and
+Secure Enclave signer production files pass iPhoneOS 26.5 typecheck; this
+does not prove XCTest execution, actual iOS secure-key generation or
+authenticated Alice transport. Full-suite results, the published commit
+SHA and its exact GitHub checks must be recorded separately after completion.
 
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |

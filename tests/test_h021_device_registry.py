@@ -67,6 +67,10 @@ class DeviceRegistryContractTests(unittest.TestCase):
         with self.assertRaises(EnrollmentDenied):
             self.registry.complete_proven_enrollment(
                 modified, _sign(self.first, _canonical(modified), self.folder))
+        lifetime_tampered = {**challenge, "key_expires_at": challenge["key_expires_at"] + 3600}
+        with self.assertRaises(EnrollmentDenied):
+            self.registry.complete_proven_enrollment(
+                lifetime_tampered, _sign(self.first, _canonical(lifetime_tampered), self.folder))
         legitimate = _sign(self.first, _canonical(challenge), self.folder)
         self.assertEqual(self.registry.complete_proven_enrollment(challenge, legitimate), 1)
         with self.assertRaises(EnrollmentDenied):
@@ -419,6 +423,92 @@ class DeviceRegistryCheckoutContractTests(unittest.TestCase):
                 before = self.fixture.store.submit_attempts
             with self.assertRaises(Denied):
                 runner.commit(coord.job_id, tenant="tenant-d", session="session-d")
+            with self.fixture.store._lock:
+                self.assertEqual(self.fixture.store.submit_attempts, before)
+
+    def test_crash_after_cross_db_effect_admission_recovers_unknown_not_approved(self):
+        """A durable device grant is not equivalent to a recorded merchant call."""
+        with tempfile.TemporaryDirectory(prefix="alice-device-crash-between-ledgers-") as tmp:
+            folder = Path(tmp)
+            private, public = _keypair(folder, "consent")
+            registry = RevocableP256DeviceConsent(folder / "devices.sqlite3")
+            self.addCleanup(registry.close)
+            registry.enroll(tenant="tenant-z", session="session-z", account="owner-z",
+                            installation="device-z", public_pem=public,
+                            expires_at=int(time.time()) + 3600)
+            path = folder / "runner.sqlite3"
+
+            def new_runner():
+                return AliceRunner(FictionalHTTPSAdapter(
+                    origin=self.fixture.shop.url, ca_file=self.fixture.cert,
+                    merchant_token=self.fixture.shop_secret), approval_verifier=registry,
+                    ledger_path=path)
+
+            runner = new_runner()
+            coord = Coordinator(runner, tenant="tenant-z", session="session-z",
+                                recipient="Fictional delivery", planner=FictionalPlanner())
+            prepared = coord.run_to_approval()
+            runner.approve(coord.job_id, tenant="tenant-z", session="session-z",
+                           signature=_sign(private, _canonical(prepared["approval_challenge"]), folder))
+            approval = runner._AliceRunner__jobs[coord.job_id]
+            digest = approval.approval_challenge_digest
+
+            class SimulatedCrash(RuntimeError):
+                pass
+
+            def crash_before_runner_dispatch():
+                raise SimulatedCrash("device grant durable; Alice runner not dispatched")
+
+            with self.assertRaises(SimulatedCrash):
+                registry.guard_effect(
+                    tenant="tenant-z", session="session-z", expected_version=1,
+                    challenge_digest=digest, on_valid=crash_before_runner_dispatch)
+            self.assertEqual(registry.effect_admission_state(
+                tenant="tenant-z", session="session-z", challenge_digest=digest),
+                "effect_admitted")
+            self.assertEqual(runner.resume_job(
+                coord.job_id, tenant="tenant-z", session="session-z")["status"], "approved")
+            with self.fixture.store._lock:
+                before = self.fixture.store.submit_attempts
+            runner.close()
+
+            resumed = new_runner()
+            self.addCleanup(resumed.close)
+            self.assertEqual(resumed.resume_job(
+                coord.job_id, tenant="tenant-z", session="session-z")["status"], "unknown")
+            with self.assertRaises(Denied):
+                resumed.commit(coord.job_id, tenant="tenant-z", session="session-z")
+            self.assertEqual(resumed.reconcile_unknown(
+                coord.job_id, tenant="tenant-z", session="session-z")["status"], "unknown")
+            with self.fixture.store._lock:
+                self.assertEqual(self.fixture.store.submit_attempts, before)
+
+    def test_quote_error_after_effect_admission_fences_approved_state_immediately(self):
+        with tempfile.TemporaryDirectory(prefix="alice-quote-after-grant-") as tmp:
+            folder = Path(tmp)
+            private, public = _keypair(folder, "consent")
+            registry = RevocableP256DeviceConsent(folder / "devices.sqlite3")
+            self.addCleanup(registry.close)
+            registry.enroll(tenant="tenant-q", session="session-q", account="owner-q",
+                            installation="device-q", public_pem=public,
+                            expires_at=int(time.time()) + 3600)
+            adapter = FictionalHTTPSAdapter(origin=self.fixture.shop.url, ca_file=self.fixture.cert,
+                                            merchant_token=self.fixture.shop_secret)
+            runner = AliceRunner(adapter, approval_verifier=registry)
+            self.addCleanup(runner.close)
+            coord = Coordinator(runner, tenant="tenant-q", session="session-q",
+                                recipient="Fictional recipient", planner=FictionalPlanner())
+            prepared = coord.run_to_approval()
+            runner.approve(coord.job_id, tenant="tenant-q", session="session-q",
+                           signature=_sign(private, _canonical(prepared["approval_challenge"]), folder))
+            with self.fixture.store._lock:
+                before = self.fixture.store.submit_attempts
+            from unittest.mock import patch
+            with patch.object(adapter, "quote", side_effect=Denied("changed quote")):
+                with self.assertRaises(Denied):
+                    runner.commit(coord.job_id, tenant="tenant-q", session="session-q")
+            self.assertEqual(runner.resume_job(
+                coord.job_id, tenant="tenant-q", session="session-q")["status"], "unknown")
             with self.fixture.store._lock:
                 self.assertEqual(self.fixture.store.submit_attempts, before)
 

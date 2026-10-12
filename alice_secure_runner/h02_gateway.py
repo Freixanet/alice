@@ -22,6 +22,14 @@ MAX_BODY = 16384
 BACKEND_ORIGIN = "https://asr:8443"  # fixed Docker-internal origin; never user-controlled
 
 
+class _DenyPrivateBackendRedirect(urllib.request.HTTPRedirectHandler):
+    """Backend capabilities must not follow a redirect, even if ASR is hostile."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise urllib.error.HTTPError(
+            req.full_url, code, "private backend redirect forbidden", headers, fp)
+
+
 class H02Gateway:
     def __init__(self, *, keyring: Keyring | PublicVerifier, ledger: ReplayLedger,
                  assignments: dict, backend: dict, ca_file: str):
@@ -43,7 +51,8 @@ class H02Gateway:
         self.ca.minimum_version = ssl.TLSVersion.TLSv1_2
         self.opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}),
-            urllib.request.HTTPSHandler(context=self.ca))
+            urllib.request.HTTPSHandler(context=self.ca),
+            _DenyPrivateBackendRedirect())
 
     def authorize(self, authorization: str, path: str, body: bytes):
         if not authorization.startswith("Alice-H02 "):
@@ -86,6 +95,8 @@ class H02Gateway:
                                          "Content-Type": "application/json"})
         try:
             with self.opener.open(req, timeout=10) as response:
+                if response.geturl() != BACKEND_ORIGIN + private_path:
+                    raise ValueError("private ASR origin changed")
                 value = response.read(MAX_BODY + 1)
                 if len(value) > MAX_BODY:
                     raise ValueError("private broker oversized response")

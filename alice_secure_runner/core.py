@@ -246,6 +246,13 @@ class AliceRunner:
                     pass
                 else:
                     raise ValueError("invalid persisted authorization transition")
+                if job.state == "approved":
+                    # Separate device/runner SQLite databases cannot share a
+                    # transaction. Admission can commit in the device registry
+                    # just BEFORE runner dispatch is durably recorded. After a
+                    # crash it would be misleading to restore 'approved' and
+                    # invite another commit; preserve uncertainty instead.
+                    self._fence_orphaned_effect_admission(job)
                 if job.state != "awaiting_approval":
                     job.challenge_nonce = ""
                     job.challenge_expires = 0
@@ -253,6 +260,27 @@ class AliceRunner:
                     job.human_handle_digest = ""
             self.__jobs[job.id] = job
             self._persist_job(job)
+
+    def _fence_orphaned_effect_admission(self, job: Job) -> bool:
+        if job.state != "approved":
+            return False
+        checker = getattr(self.__approval_verifier, "effect_admission_state", None)
+        if not callable(checker):
+            return False
+        digest = job.approval_challenge_digest
+        if (not digest or checker(tenant=job.tenant, session=job.owner_session,
+                                 challenge_digest=digest) != "effect_admitted"):
+            return False
+        cid = self._pending(job)["checkout_id"]
+        changed = self.__db.execute(
+            "UPDATE authorizations SET status='unknown' "
+            "WHERE checkout_id=? AND status='approved' AND digest=?",
+            (cid, _digest(job.checkout))).rowcount
+        if changed != 1:
+            raise ValueError("inconsistent admitted effect; refusing checkout restart")
+        job.state = "unknown"
+        self._persist_job(job)
+        return True
 
     def close(self) -> None:
         """Stop this synthetic runner after closing its test listener."""
@@ -581,6 +609,8 @@ class AliceRunner:
     def commit(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
         """Trusted Alice coordinator only. Never expose as a model tool."""
         with self.__lock:
+            if self._fence_orphaned_effect_admission(self._job(job_id, tenant, session)):
+                raise Indeterminate("checkout admission was previously consumed; reconcile without retry")
             effect_guard = getattr(self.__approval_verifier, "guard_effect", None)
             if callable(effect_guard):
                 try:
@@ -591,9 +621,16 @@ class AliceRunner:
                         on_valid=lambda: self._commit_locked(job_id, tenant=tenant,
                                                               session=session))
                 except ValueError as exc:
+                    self._fence_orphaned_effect_admission(self._job(job_id, tenant, session))
                     if isinstance(exc, Denied):
                         raise
                     raise Denied("device enrollment revoked or expired") from exc
+                except Exception:
+                    # If admission committed but quote, persistence or merchant
+                    # failed, do not expose a still-approved job to another
+                    # attempt. A GET-only receipt reconciliation is permitted.
+                    self._fence_orphaned_effect_admission(self._job(job_id, tenant, session))
+                    raise
             return self._commit_locked(job_id, tenant=tenant, session=session)
 
     def _commit_locked(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:

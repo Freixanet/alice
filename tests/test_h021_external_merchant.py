@@ -359,6 +359,38 @@ class ExternalMerchantRecovery(unittest.TestCase):
 
 
 class PersistentMerchantConcurrentDatabaseContract(unittest.TestCase):
+    def test_cart_change_between_quote_and_order_cannot_commit_stale_receipt(self):
+        """Cross-process writes cannot race a final immutable checkout receipt."""
+        from alice_secure_runner.fictional_shop import PersistentFictionalStore
+
+        with tempfile.TemporaryDirectory(prefix="r03-merchant-cart-race-") as folder:
+            settings = dict(secret="fictional-effect-only",
+                            browser_read_secret="fictional-read-only",
+                            ledger_path=Path(folder) / "merchant.sqlite3")
+            first = PersistentFictionalStore(**settings)
+            second = PersistentFictionalStore(**settings)
+            try:
+                first.put_cart("fictional-cart", "FAKE-ALICE-1", 2, "graphite")
+                stale = first.quote("fictional-cart", "fictional-recipient")
+                second.put_cart("fictional-cart", "FAKE-ALICE-1", 1, "standard")
+                with self.assertRaisesRegex(ValueError, "durable cart changed"):
+                    first.record_order("checkout-stale", stale, cart_id="fictional-cart")
+                self.assertIsNone(second.receipt("checkout-stale"))
+                current = first.quote("fictional-cart", "fictional-recipient")
+                receipt = first.record_order("checkout-current", current,
+                                             cart_id="fictional-cart")
+                self.assertEqual(receipt["quantity"], 1)
+                self.assertEqual(receipt["variant"], "standard")
+                self.assertEqual(second.receipt("checkout-current"), receipt)
+                # A subsequent cart mutation cannot rewrite an existing
+                # receipt, and is not permission to submit another order.
+                second.put_cart("fictional-cart", "FAKE-ALICE-1", 2, "graphite")
+                self.assertEqual(first.record_order(
+                    "checkout-current", current, cart_id="fictional-cart"), receipt)
+            finally:
+                first.close()
+                second.close()
+
     def test_two_independent_sqlite_connections_reuse_one_exact_order(self):
         from alice_secure_runner.fictional_shop import PersistentFictionalStore
 

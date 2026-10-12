@@ -387,6 +387,28 @@ class PlannerMailboxHTTPSContractTests(unittest.TestCase):
         self.assertNotIn("12 Baker St", received)
         self.assertNotIn("612345678", received)
 
+    def test_unknown_freeform_product_strings_never_pass_model_boundary(self):
+        """Short names, street addresses and phone fragments evade regex PII filters."""
+        self.mailbox.publish(
+            self.pair_id, tenant="tenant-a", session="session-a",
+            job_id=self.job["job_id"], epoch=0,
+            goal="Research Marc; meet at 12 Baker St; dial +34 61234",
+            observation={
+                "epoch": 0, "status": "researching",
+                "products": [{"sku": "FAKE-ALICE-1", "name": "12 Baker St"},
+                             {"sku": "USER-TOKEN", "name": "Marc"}],
+                "description": "Call +34 61234",
+                "variant": "apartment 12",
+                "currency": "EUR"})
+        pending = self.mailbox.pending(self.token)
+        text = json.dumps(pending)
+        self.assertEqual(pending["goal"], "Research the fictional catalogue")
+        self.assertIn("FAKE-ALICE-1", text)
+        for sensitive in ("12 Baker St", "+34 61234", "Marc", "USER-TOKEN",
+                          "apartment 12"):
+            self.assertNotIn(sensitive, text)
+        self.assertEqual(pending["observation"]["description"], "[redacted]")
+
 
 if __name__ == "__main__":
     unittest.main()
