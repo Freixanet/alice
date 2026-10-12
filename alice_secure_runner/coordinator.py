@@ -49,6 +49,7 @@ class Coordinator:
         if self._previous["status"] == "awaiting_approval":
             return self._previous.copy()
         if self._previous["status"] in ("approved", "dispatching", "unknown", "confirmed", "human_only",
+                                         "handoff_pending_close",
                                          "completed_by_human_simulated", "stopped"):
             raise Denied("cannot replan a non-writable resumed job")
         for _ in range(max_steps):

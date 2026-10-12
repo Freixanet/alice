@@ -113,10 +113,10 @@ class FictionalHTTPSAdapter:
             raise Denied("invalid merchant response")
         return result
 
-    def search(self, query: str) -> dict[str, Any]:
+    def search(self, query: str, *, browser_session: str | None = None) -> dict[str, Any]:
         return self.call("GET", "/search?q=" + urllib.parse.quote(query, safe=""))
 
-    def read(self, sku: str) -> dict[str, Any]:
+    def read(self, sku: str, *, browser_session: str | None = None) -> dict[str, Any]:
         return self.call("GET", "/product/" + urllib.parse.quote(sku, safe=""))
 
     def cart(self, cart_id: str, sku: str, quantity: int) -> dict[str, Any]:
@@ -194,7 +194,8 @@ class AliceRunner:
                 if authorization_state == "dispatching":
                     self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (cid,))
                     job.state = "unknown"
-                elif authorization_state in ("approved", "unknown", "confirmed", "human_only"):
+                elif authorization_state in ("approved", "unknown", "confirmed", "human_only",
+                                             "handoff_pending_close"):
                     job.state = authorization_state
                 elif authorization_state == "human_simulated":
                     job.state = "completed_by_human_simulated"
@@ -279,7 +280,7 @@ class AliceRunner:
                 query = proposal["query"]
                 if not isinstance(query, str) or not (1 <= len(query) <= 100):
                     raise Denied("invalid search")
-                result = self.__adapter.search(query)
+                result = self.__adapter.search(query, browser_session=job.id)
                 products = result.get("products")
                 if not isinstance(products, list) or len(products) > 10:
                     raise Denied("bad merchant results")
@@ -290,7 +291,7 @@ class AliceRunner:
                 sku = proposal["sku"]
                 if not isinstance(sku, str) or sku not in job.found:
                     raise Denied("product not returned by this job's search")
-                product = self.__adapter.read(sku)
+                product = self.__adapter.read(sku, browser_session=job.id)
                 if product.get("sku") != sku:
                     raise Denied("merchant product changed")
                 output = {"sku": sku, "name": str(product.get("name", ""))[:100],
@@ -424,23 +425,46 @@ class AliceRunner:
                     "checkout_id": checkout_id, "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
 
     def human_handoff(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
-        """One-time revocation of agent writes and human handoff creation."""
+        """Revoke agent; verify browser closure BEFORE issuing human authority.
+
+        If closure fails, a durable pending state blocks BOTH the agent and
+        human reissue. Trusted Alice can retry closure without reopening writes.
+        """
         with self.__lock:
             job = self._job(job_id, tenant, session)
             if job.state in ("dispatching", "unknown", "confirmed", "stopped", "human_only",
                              "completed_by_human_simulated"):
                 raise Denied("cannot repeat a handoff or hand off a terminal checkout")
+            if job.state != "handoff_pending_close":
+                if job.checkout is not None:
+                    transitioned = self.__db.execute(
+                        "UPDATE authorizations SET status='handoff_pending_close' "
+                        "WHERE checkout_id=? AND status IN ('pending','approved')",
+                        (job.checkout["checkout_id"],)).rowcount
+                    if transitioned != 1:
+                        raise Denied("cannot hand off while checkout submission may be in flight")
+                job.epoch += 1
+                job.state = "handoff_pending_close"
+                job.challenge_nonce = ""
+                job.challenge_expires = 0
+                job.commit_expires = 0
+                job.human_handle_digest = ""
+                self._persist_job(job)
+            if hasattr(self.__adapter, "release_session"):
+                try:
+                    self.__adapter.release_session(job.id)
+                except Exception as exc:
+                    # Browser closure has NOT been attested: no human handle,
+                    # no planner writes, and no reissue until retry succeeds.
+                    raise Denied("Alice browser session could not be closed") from exc
             if job.checkout is not None:
                 transitioned = self.__db.execute(
-                    "UPDATE authorizations SET status='human_only' WHERE checkout_id=? AND status IN ('pending','approved')",
+                    "UPDATE authorizations SET status='human_only' "
+                    "WHERE checkout_id=? AND status='handoff_pending_close'",
                     (job.checkout["checkout_id"],)).rowcount
                 if transitioned != 1:
-                    raise Denied("cannot hand off while checkout submission may be in flight")
-            job.epoch += 1
+                    raise Denied("human handoff state cannot be made exclusive")
             job.state = "human_only"
-            job.challenge_nonce = ""
-            job.challenge_expires = 0
-            job.commit_expires = 0
             human_handle = secrets.token_urlsafe(32)
             job.human_handle_digest = _digest(human_handle)
             self._persist_job(job)

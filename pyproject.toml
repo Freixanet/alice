@@ -11,3 +11,6 @@ dependencies = []
 
 [tool.setuptools.packages.find]
 include = ["alice_secure_runner*"]
+
+[tool.setuptools.package-data]
+alice_secure_runner = ["*.mjs"]

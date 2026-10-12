@@ -10,6 +10,7 @@ setup(
     version="0.1.0",
     description="Synthetic Alice Secure Runner HTTPS contract prototype",
     packages=find_packages(include=("alice_secure_runner", "alice_secure_runner.*")),
+    package_data={"alice_secure_runner": ["*.mjs"]},
     python_requires=">=3.11",
     install_requires=[],
 )

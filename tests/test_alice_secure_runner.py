@@ -525,6 +525,28 @@ os._exit(68)
             self.runner.reissue_human_handle(self.client.job_id, tenant="user-A", session="alice-paired-1")
         self.assertEqual(self.store.submit_attempts, 0)
 
+    def test_browser_close_failure_blocks_human_reissue_until_verified_retry(self):
+        self.ready()
+        with mock.patch.object(self.adapter, "release_session", create=True,
+                               side_effect=RuntimeError("synthetic close failure")):
+            with self.assertRaisesRegex(Denied, "could not be closed"):
+                self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        observed = self.runner.resume_job(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertEqual(observed["status"], "handoff_pending_close")
+        with self.assertRaises(Denied):
+            self.runner.reissue_human_handle(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        with self.assertRaises(Denied):
+            self.runner.propose(self.client.job_id, tenant="user-A", session="alice-paired-1",
+                                proposal={"action": "add_to_cart", "quantity": 2, "epoch": observed["epoch"]})
+        with mock.patch.object(self.adapter, "release_session", create=True, return_value=None) as close:
+            handoff = self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+            close.assert_called_once_with(self.client.job_id)
+        self.assertEqual(handoff["status"], "awaiting_human_finalization")
+        self.assertEqual(self.runner.human_finalize(self.client.job_id, tenant="user-A",
+                                                    human_handle=handoff["human_handle"])["payment_claim"],
+                         "NOT_VERIFIED")
+        self.assertEqual(self.store.submit_attempts, 0)
+
     def test_coordinator_resumes_same_partial_job_after_process_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
             ledger = str(Path(tmp) / "ledger.db")

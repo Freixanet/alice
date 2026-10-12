@@ -1,12 +1,40 @@
 # Alice Secure Runner — R02 runnable security-contract prototype
 
-**Prototype only: no real browser, vault, isolated cloud host, merchant integration or live payment.**
+**Prototype only: optional REAL Chromium fixture, but no isolated cloud host,
+real browser vault, merchant integration or live payment. Never run this as a
+real shopping service.**
 
 This separate Python 3.11+ package uses only the standard library and can run
 independently from Hermes on Linux, macOS or Windows. Its fictional merchant and
 Alice backend simulation each use **real TLS on loopback**, with an ephemeral
 test CA and token; only `tests/test_alice_secure_runner.py` and
 `tests/test_alice_runner_http.py` start/stop these services automatically.
+
+The separate **opt-in browser-read fixture** requires Node, Playwright and
+headless Chromium _on Alice's runner host only_. It uses one subprocess over
+inherited stdin/stdout (no published CDP), one ephemeral browser context per
+job, and allows only typed product search/read on one fictional HTTPS origin.
+The browser child receives only a scoped **read token**; the merchant fixture
+rejects this token for cart/quote/commit operations. The Python runner keeps
+the independent checkout-effect token. Browser IPC has per-command IDs and
+operation-specific close acknowledgements; missing/mismatched replies kill the
+disposable process group rather than accepting a stale acknowledgement.
+The real Chromium fixture deliberately uses `ignoreHTTPSErrors` for its
+disposable self-signed localhost certificate; the authenticated Python
+checkout adapter independently validates the pinned test CA. Chromium
+blocks JavaScript-initiated POSTs, redirects and other destinations through
+Playwright routing. **That is an application-level request filter, NOT a
+verified OS egress firewall or security sandbox.** Browser/host same-UID
+process inspection, Playwright bypasses and Chromium escapes are not covered.
+Real browser execution and per-job context isolation are tested in a separate
+CI job, not in the ordinary mock test suite. This module must never be
+installed or launched within the user's official Hermes environment.
+
+```sh
+# Alice runner CI/ephemeral lab ONLY: point to its own Playwright installation.
+ALICE_TEST_PLAYWRIGHT_MODULE=/path/to/isolated/node_modules/playwright \
+  python3.11 -m unittest discover -s tests -p test_alice_real_browser.py -v
+```
 
 ```shell
 python3.11 -m unittest discover -s tests -p 'test_alice*.py' -v
@@ -80,9 +108,12 @@ plugin with appropriate user consent.
 
 ## Limits and NO-GO gates
 
-- No actual browser/CDP: this **cannot** prove Hermes cannot read browser
-  cookies/session or trigger JavaScript/GET/POST side effects in unknown shops.
-  The runner currently has **no browser to expose**, which is a narrower claim.
+- An optional **real browser read-only fixture now exists** behind the typed
+  Python runner. It does **not** prove Hermes cannot obtain its process memory,
+  secrets, cookies or debugging handles as an equally privileged OS user. It
+  does not support arbitrary shops, browser checkout, or a secure remote viewer.
+  A Playwright `route()` is not a system egress policy; page scripts and new
+  web APIs may escape unverified request paths. No unknown-shop security claim.
 - No OS security boundary on a common host: a privileged Hermes terminal can
   inspect same-user processes, memory and environment. An authenticated local
   HTTPS bearer is insufficient against that threat; remote isolation and
@@ -105,6 +136,11 @@ plugin with appropriate user consent.
   `POST /v1/human-reissue` using a capability distinct from the backend's.
   Duplicate coordinator handoffs are rejected; explicit recovery rotates the
   handle and invalidates the previous one without restoring agent writes.
+  A real-browser handoff must first reach a durable
+  `handoff_pending_close` state and receive an acknowledged session closure
+  before human-only authority is issued. A failed close blocks both agent and
+  human reissue. This does not prove prior Chrome processes have been destroyed
+  after a power loss/restart, because no verified OS/VM lease fencing exists.
   That rotation is NOT safe
   to apply during real human/PSP payment execution until an additional
   effect-in-flight fence is implemented. There is still **no real

@@ -6,6 +6,8 @@ No real payments, card numbers, user accounts, merchant network or browser.
 from __future__ import annotations
 
 import json
+import html
+import secrets
 import ssl
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -19,6 +21,9 @@ class FictionalStore:
 
     def __init__(self, *, secret: str):
         self.secret = secret
+        # Separate least-privilege browser read token: it can NEVER write cart,
+        # quote or commit, even if hostile page JS evades Playwright routes.
+        self.browser_read_secret = secrets.token_urlsafe(40)
         self._lock = threading.RLock()
         self.carts: dict[str, dict] = {}
         self.orders: dict[str, dict] = {}
@@ -52,8 +57,20 @@ def make_handler(store: FictionalStore):
             self.end_headers()
             self.wfile.write(payload)
 
+        def _page(self, status, markup):
+            payload = markup.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Set-Cookie", "fixture_session=not-a-real-secret; HttpOnly; Secure; SameSite=Strict")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
         def _auth(self):
-            if self.headers.get("Authorization") != "Bearer " + store.secret:
+            path = urlsplit(self.path).path
+            wanted = (store.browser_read_secret if path.startswith("/browse/") else store.secret)
+            if self.headers.get("Authorization") != "Bearer " + wanted:
                 self._send(403, {"error": "denied"})
                 return False
             return True
@@ -68,6 +85,23 @@ def make_handler(store: FictionalStore):
                                  if any(word in q for word in ("keyboard", "teclado", "alice")) else []})
             elif url.path == "/product/" + store.product["sku"]:
                 self._send(200, store.product)
+            elif url.path == "/browse/search":
+                q = parse_qs(url.query).get("q", [""])[0].lower()
+                found = any(word in q for word in ("keyboard", "teclado", "alice"))
+                item = (f'<li data-sku="{html.escape(store.product["sku"])}" '
+                        f'data-name="{html.escape(store.product["name"])}">Fictional product</li>') if found else ""
+                self._page(200, "<!doctype html><title>Fictional products</title>"
+                           f"<ul id='results'>{item}</ul>")
+            elif url.path == "/browse/product/" + store.product["sku"]:
+                p = store.product
+                self._page(200, "<!doctype html><title>Fictional product</title>"
+                           f'<article id="product" data-sku="{html.escape(p["sku"])}" '
+                           f'data-unit-minor="{p["unit_minor"]}" data-currency="EUR">'
+                           f'<h1>{html.escape(p["name"])}</h1><p>{html.escape(p["description"])}</p></article>'
+                           # Deliberately hostile page script: a route-guarded
+                           # browser must block even same-origin POST effects.
+                           '<script>fetch("/commit",{method:"POST",headers:{"Content-Type":"application/json"},'
+                           'body:"{}"}).catch(()=>{});</script>')
             else:
                 self._send(404, {"error": "not found"})
 

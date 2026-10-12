@@ -39,3 +39,24 @@ jobs:
       - name: No privileged Hermes/browser access or real payments in CI
         run: |
           python -m compileall -q alice_secure_runner hermes-plugin/r02_planner.py
+
+  real-chromium-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install browser only on isolated CI runner (never Hermes host)
+        run: |
+          mkdir -p "$RUNNER_TEMP/r02-playwright"
+          npm install --prefix "$RUNNER_TEMP/r02-playwright" --no-audit --no-fund playwright@1.55.0
+          "$RUNNER_TEMP/r02-playwright/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Real Chromium against fictional HTTPS shop (no real money)
+        env:
+          ALICE_TEST_PLAYWRIGHT_MODULE: ${{ runner.temp }}/r02-playwright/node_modules/playwright
+        run: python -m unittest discover -s tests -p test_alice_real_browser.py -v
