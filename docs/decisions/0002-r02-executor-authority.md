@@ -1,195 +1,129 @@
-# ADR 0002 — Browser purchase authority at the executor (R02)
+# ADR 0002 — Portable Alice purchase execution, independent of Hermes internals
 
-**Status: Proposed / BLOCKED (2026-10-11).** This is an upstream Hermes contract
-proposal, **not** an implemented security boundary. [PR #76](https://github.com/Freixanet/alice/pull/76)
-must stay **draft and unmerged** while R02 is P0. Do not interpret a green
-plugin CI as approval to automate payments.
+**Status: Proposed / R02 P0 BLOCKED (revised 2026-10-11).** [PR #76](https://github.com/Freixanet/alice/pull/76)
+is **DRAFT / NO-GO to merge**. This record replaces its earlier **upstream-Hermes-dependent proposal** while retaining the historical version in Git. It does **not** claim an Alice Secure Runner has been shipped, installed, secured or proven.
 
-## Problem and demonstrated boundary
+## Product invariant (non-negotiable)
 
-The Hermes source inspected for R02 has this execution path:
+Alice must be distributable to anyone who connects it to a **compatible, unmodified, official Hermes installation**. No private Hermes fork, core changes, monkeypatch, local hand-edit of an executor or upstream PR acceptance may be required. Necessary Alice components must be bundled and provisioned through an ordinary user-facing onboarding path, not individual operator instructions. Any platform/hosting restriction or explicit payment-merchant limitation must be shown honestly.
 
-1. `agent/tool_executor.py` builds a tool dispatch and enters official
-   `tool_request` / `tool_execution` middleware.
-2. `_dispatch_authorized_once` runs scope, `pre_tool_call`, argument-pruning
-   and Hermes guardrails before the final **top-level** tool call.
-3. `_pre_tool_block` catches exceptions and returns `(None, original_args)`:
-   the missing security decision becomes **allow**. `hermes_cli/middleware.py`
-   likewise skips a middleware that raises before `next_call()`.
-4. The registry receives `skip_pre_tool_call_hook=True`. Native browser
-   `click(ref)` / `press(key)` / `type(ref,text)`, `browser_console`, raw
-   `browser_cdp` and `browser_dialog` reach different executors. `browser_exec`
-   runs a separate browser-use CLI process that can issue further actions
-   without another Alice hook. Alice's tab/context preamble covers only
-   `browser_exec`, not every native tool.
+**Old ADR error corrected:** the previous text treated a new required `register_action_authorizer` API in Hermes core as a condition to unblock R02. That is **not an acceptable product dependency**. Upstream improvements can be proposed separately, but Alice's trust boundary and functionality must be owned by Alice itself.
 
-The factual canary `scripts/verify-r02-executor-contract.py` supplies only
-synthetic requests and effect callbacks. As of this proposal it finds FIVE
-independent `unsafe_*` failures: pre-hook exception, middleware exception,
-an unlabeled final-review `browser_click(ref='@e7')`, and an Alice guard
-exception that lets that click pass, plus repeated acceptance of one checkout
-at the non-consuming `pay_gate` layer (this does not prove two payments). The
-canary intentionally exits **2** if
-the desired authority is missing. Its positives demonstrate only that
-existing restricted tool flows remain available at the _tool-hook_ level.
+## Evidence, official interfaces and non-solutions
 
-**Crucial limitation:** checking button labels, URLs, DOM state or a card-input
-field cannot establish the effect of clicking an arbitrary element. Scripted
-navigation, `fetch`, deferred UI callbacks, GET side effects, server-side
-payment captures, embedded gateway frames and redirects can have effects the
-caller cannot infer. Even a browser-network interceptor cannot universally
-classify a merchant's private API request as a charge. An approved checkout
-does **not** authorize every browser operation on the same site.
+- Official Hermes plugins can add scoped tools via `ctx.register_tool`, including a dedicated `alice_shopping` toolset; plugins also support installation/distribution and versioned configuration. [Official plugin documentation](https://hermes-agent.nousresearch.com/docs/user-guide/features/plugins). This is a **coordination interface**, not an OS sandbox.
+- Alice already talks to Hermes through its supported `POST /v1/runs`, polling/status and stop paths (`hermes-plugin/errands.py::Gateway`). This is a **potential zero-extra-plugin coordination transport**, not yet a proven multi-step planner protocol: Alice would send bounded observations, treat every Hermes text/action reply as an untrusted proposal, validate it against a strict schema and independently execute or reject it. The official API's ability to produce reliable typed plans across supported versions and model configurations still requires integration testing. There is no assumption of a new Hermes model-only or tool-free API.
+- Hermes supports configurable toolsets per profile (`platform_toolsets` and dashboard profile configuration). They improve ergonomics for an Alice planning profile but do **not** stop a compromised/privileged Hermes process from accessing its machine, browser or network. They are never the payment security boundary.
+- Hermes **browser-provider plugins are NOT the required security solution**: the official provider contract returns a CDP WebSocket URL to Hermes, whose own browser stack drives it. Doing that with Alice's secret-bearing browser would expose its control surface again. [Official browser-provider documentation](https://hermes-agent.nousresearch.com/docs/developer-guide/browser-provider-plugin).
+- `pre_tool_call` and `tool_execution` middleware are **not mandatory fail-closed controls** for the inspected Hermes source: `_pre_tool_block` catches exceptions and permits a call; `_run_execution_chain` skips a failing middleware before `next_call`. `browser_exec` has inner subprocess actions; native clicks, console/JS, CDP and dialogs have other paths. `scripts/verify-r02-executor-contract.py` demonstrates five **synthetic policy-decision gaps** (exit 2 expected); this is not proof of a real charge.
+- Current Alice's managed Chrome uses a shared Hermes-reachable CDP port, browser contexts only partition cookies, and password/card flows use Hermes Vault. This **cannot** be reclassified as Alice's isolated payment runner. Existing checkout “Pagar” resumes the autonomous Hermes run; existing browser takeover is temporary. These flows **must not** serve as the new authority.
 
-## Decision proposed for Hermes, not Alice-only
+## Decision: Alice owns the privileged execution boundary
 
-Keep optional generic middleware for observability and rewriting; introduce a
-**separate, mandatory, fail-closed action-authority seam** in the trusted
-Hermes executor. Alice supplies policy for its purchase sessions via a
-versioned **official** registration, e.g.
-`register_action_authorizer('browser.effect', authorize)`; this name is a
-_proposed API_, **not an existing Hermes feature**.
-
-### Where checks must execute
-
-| Hermes component                                                         | Required change (upstream proposal)                                                                                                                                                                                                                   |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent/tool_executor.py`                                                 | Establish a server-trusted actor/run/scope and fail closed if required authorization cannot be obtained, including callback exceptions/timeouts; do not treat generic prehooks as authoritative.                                                      |
-| `hermes_cli/plugins.py` / `middleware.py`                                | Add a versioned, required-authorizer registration distinct from best-effort hooks/middleware. No skip-on-error for required policies; unavailable/unregistered policy for protected scope = reject.                                                   |
-| `tools/browser_tool.py` / `browser_tool_session.py`                      | Validate every actual click/press/fill/navigation operation **after** resolving the real target/ref and **immediately before** issuing its browser command; reject changed target/document.                                                           |
-| `tools/browser_use_cli.py` and browser-use helper/CLI executor           | Replace unrestricted multi-action scripting for protected runs with individual brokered commands (or a restricted declarative interpreter); every helper calls the authority. No unchecked JS/aliases/imports or ambient CDP transport.               |
-| `tools/browser_console`, `browser_cdp_tool.py`, `browser_dialog_tool.py` | Make all script, raw protocol and dialog paths pass through the same broker, including explicit target/frame and indirect `Runtime.evaluate`/input. Reject unprovable effects rather than using tool-name regex.                                      |
-| Agent tool registry/scope and child-process isolation                    | Remove direct shell, filesystem/network/CDP escape paths in protected runs at _execution_, not merely prompt/tool advertisement. Child processes must have no separate usable browser/debug credentials or unrestricted egress.                       |
-| Browser broker / network egress                                          | Enforce session-owned browser context, target/frame, document epoch and approved egress policy. Classify uncertain externally mutating operations as requiring manual execution. A generic broker cannot itself prove a third-party payment semantic. |
-| Dashboard/phone browser input                                            | Distinguish human-controlled authenticated actions from agent actions with trustworthy provenance. A human handoff must atomically revoke the agent's ability to act on that context.                                                                 |
-
-If upstream cannot provide these hooks for every active execution backend,
-Hermes should **not advertise automated, safely authorized purchase submission**.
-An Alice-owned proxy is viable only if it becomes the sole transport and all
-other executable/browser/network routes are removed at a trusted scope boundary;
-attaching it as one more optional tool is insufficient.
-
-### Proposed required-authorizer contract
-
-The executor constructs the action request from trusted runtime state, never
-from a model-supplied tool argument or mutable prompt:
+Keep Hermes as a **planner/coordinator**, treating its prompts, model outputs, plugin calls, labels, URLs, session IDs and arguments as **untrusted input** for payment purposes. Alice Secure Runner (ASR) is a separate first-party service whose API accepts **typed, narrowly scoped commands**, never arbitrary JS, CDP, a terminal, filesystem paths or user-chosen network requests.
 
 ```text
-AuthorityRequest v1
-  actor_kind              agent | authenticated_human
-  run_id, session_id, profile_id, errand_id
-  browser_context_id, target_id, frame_id, document_epoch
-  observed_url, canonical_https_origin
-  operation_kind          navigate | read | input | click | dialog | script | network
-  resolved_target         browser-issued control ref/DOM node identity if present
-  normalized_operation    exact requested key/button/action and effect surface
-  checkout_id             exact approved checkout (payment intents only)
-  merchant_origin         exact merchant/approved PSP allowlist where justified
-  order_fingerprint       canonical item IDs, variants, quantities, delivery and recipient
-  amount_minor, currency  exact approved total + ISO currency
-  idempotency_key         unique for this intent and effect
+Alice app (user approval + device-authenticated signing)
+                  │
+                  ▼
+Alice Coordinator / Policy Service (trusted principal, durable state)
+     │                                     │
+     │ plan/observation (no secrets)       │ authorized typed operations
+     ▼                                     ▼
+Official Hermes /v1/runs             Alice Secure Runner
+or optional official Alice toolset   • private browser + network boundary
+(untrusted coordinator)              • exclusive isolated cookies/login data
+                                      • credentials/payment token custody
+                                      • verifier + one-use checkout execution
+                                              │
+                                              ▼
+                                   merchant / PSP permitted integration
 ```
 
-The authorizer returns an opaque, signed/unguessable **single-use capability**
-or a denial. The capability is scoped to the exact action hash, audience,
-run/session, target/document epoch, merchant, checkout fingerprint, amount and
-currency, and a short expiration. The **trusted broker** atomically checks
-and consumes it before dispatch. No other action, frame, tab, merchant,
-amount, currency, retries or script may reuse it. On timeout, hook exception,
-process crash, tab switch, document change, missing proof, disputed payment
-effect or unknown operation: **deny or stop for human action**, never allow.
-Mark a sent-but-unconfirmed payment `unknown / reconciliation required`;
-do **not** automatically retry after consuming a capability. Merchant
-idempotency keys help only where the merchant actually supports them.
+### Portable delivery and onboarding
 
-There are two distinct authorities: **browser interaction** may allow safe
-product exploration or cart preparation under a constrained executor, whereas
-**irreversible external transaction** needs its own reliable approval/operation
-binding. Permission to click or fill a card is not permission to charge. If
-Hermes cannot prove the merchant-side effect or securely mediate final submit,
-it must reserve that submit for a person.
+1. **Default portable path (not universal service coverage yet):** Alice-hosted, tenant-isolated ASR reachable over authenticated HTTPS. The customer installs Alice, pairs an official compatible Hermes instance, consents to Alice-hosted shopping, and signs in to merchants **inside ASR's isolated user-controlled flow**. No executable is installed on the Hermes host and no special Hermes setting is needed for the security boundary. This makes the **technical integration independent of the user's Hermes OS**, but actual availability still depends on Alice running a reliable hosted service, supported network/region, user consent, eligibility and possibly a paid plan. Serving every otherwise compatible user/region is a **release obligation still unproven**; failure means no autonomous ASR service, with an honest fallback. The service must fund compute/bandwidth, protect tenant data and sessions, encrypt at rest/in transit, define data residency/retention and incident response, and use appropriate PCI/PSP tokenization rather than assuming a browser vault alone makes payment data compliant. No free/offline/always-on guarantee is implied.
+2. **Optional private path:** a signed Alice Runner package with unattended setup on **verified** OS/container/VM isolation primitives, separate OS/security principal, private IPC and enforced egress. Provisioning must fail closed when permissions or runtime prerequisites are absent; never quietly fall back to same-user `launchd`, a plain local CDP port or a Python in-process plugin. No blanket guarantee of automatic private hosting on every OS.
+3. **Hermes integration:** the proposed _base_ adapter uses `/v1/runs` as a planning channel, **conditional on demonstrated structured-turn and recovery compatibility**. A packaged official Alice plugin/`alice_shopping` toolset can optionally streamline callbacks, observations, status and activity (installed through Hermes' documented plugin flow, with any required user consent). The runner does not rely on that plugin for authorization. Probe the actual supported API/version during pairing; do not presume host administration or plugin installation rights. Without a plugin Alice must itself operate the plan/execute loop and validate/fail closed on malformed model replies; this has **not** been integrated or verified.
+4. **Account/key lifecycle:** Alice, not Hermes, pairs the runner to the user, stores runner access and user secrets in its own custody, rotates/revokes credentials and encrypts tenant state. Hermes receives only public item information, redacted observations, opaque non-authorizing correlation IDs and results. Never return runner browser WebSocket, raw cookies, vault IDs, bearer capabilities or payment details through Hermes, logs or model context.
 
-### Compatibility and maintenance
+### Non-bypass boundary (explicit scope)
 
-- Upstream must feature-advertise `browser_action_authority_v1`, preserve
-  behavior of non-protected tools/sessions, and let Alice fail closed for
-  protected sessions when the feature is absent.
-- Maintain a single normal browser API: bounded DOM inspection and product
-  interactions still work through the broker; script/terminal/CDP alternate
-  transports are either properly brokered or absent in protected sessions.
-- Browsers have independent tab navigation, popups and cross-origin PSP
-  frames; no global "current tab" or auto-approved PSP domain is sufficient.
-- This is not achieved by modifying personal `~/.hermes` files, monkeypatching
-  subprocesses, intercepting Python imports or adding another heuristic
-  `pre_tool_call` veto. Review upstream compatibility tests before any opt-in.
+Only ASR holds merchant sessions, payment instruments, checkout APIs and the private browser profile. Hermes has **no route** to ASR's CDP/IPC, private keys or raw browser network endpoint. ASR accepts no script, `Runtime.evaluate`, native CDP, shell, arbitrary HTTP or out-of-band browser action from the model. Network egress from the runner is mediated with policy and isolated per user/job; authentication and quotas are enforced **by ASR**, not by `pre_tool_call`.
 
-## Interim alternative: human performs the irreversible submission
+Hermes can retain its **own** standard browser, terminal and network on its **own** host for unrelated tasks. A `/v1/runs` call may itself invoke ordinary tools and produce effects on that host, **even when Alice only wants a plan**; Alice must not send protected checkout data or authorize those effects. Toolset/profile selection is advisory for this threat model, and the no-plugin planning transport must be tested for unexpected tool calls. This architecture cannot claim to restrict arbitrary actions made by a separately privileged Hermes agent or payment credentials already stored **outside Alice** (including the existing shared Hermes Vault). The defensible claim is narrower and testable: **Hermes cannot access or actuate ASR-owned browser sessions, payment instruments, checkout intents or final-submission endpoints except through the runner's checked API**. This **does not guarantee** Hermes cannot act on the same external merchant account by using other credentials already held by the user/Hermes. For the Alice-scoped guarantee the user must enter/migrate purchase credentials into Alice's private vault and avoid giving equivalent payment credentials to Hermes. The existing Alice buying flow must stop using the shared CDP/vault before ASR can be enabled.
 
-Until the required executor is available, **do not resume an autonomous
-purchase run from the existing `checkout_request` approval**. Currently
-`errands.decide_checkout` sets status `working`, `resume` starts a new run,
-`approved_message` instructs the model to pay, and `_answer_approval`
-automatically approves some Hermes payment-card confirmations. Thus the
-current iPhone **“Permitir” is NOT a safe manual-finalization handoff**.
+No same-user local process isolation is accepted merely because it has a separate port. A local runner without proven platform isolation/egress is unavailable, not a degraded security mode; hosted ASR remains the default path.
 
-A replacement **proposed (not implemented)** workflow needs a protocol and UI
-change to make the control unambiguous:
+### Action and approval protocol (proposed, not implemented)
 
-1. In a broker-constrained, no-payment-credential context, the agent researches
-   products, reads bounded data, and (if the broker can prove its actions safe)
-   prepares the cart and total. No ambiguous write reaches payment submission.
-2. Save a review snapshot; **stop/revoke** the agent's write scope and wait
-   until in-flight operations have settled before exposing human controls.
-3. Show “Revisar y finalizar personalmente” rather than “Permitir pagar”. The
-   person operates the actual retailer/payment page directly, in an
-   authenticated human-only session. Sharing cart/cookies across browsers is
-   not guaranteed; show a link or instructions without promising continuity.
-4. Do **not** auto-resume the agent or auto-approve Hermes card/payment prompts.
-   Record `awaiting_human_finalization` and later `unknown/pending_check`,
-   never `paid` from a button press or unverified agent statement. Verify an
-   independent merchant order/receipt before claiming success.
+Every call from Hermes is a **proposal**, not permission. Alice Coordinator authenticates the actual account, session/run association and request provenance from its paired connection, not from model-supplied identifiers. ASR checks its own current context and policy immediately before dispatch. Unsupported/unknown actions are denied:
 
-Without isolation at the trusted executor, even preparatory **agent writes**
-may produce unintended effects. For older Hermes versions the defensible
-fallback is **read-only comparison with no authenticated browser, card or
-payment capability**, then a human opens and completes the purchase. A plugin
-hook alone cannot guarantee that fallback against every alternate executor.
+```text
+ProposedAction v1 (untrusted): {job_id, action: navigate|inspect|select|input|cart_adjust|checkout_prepare|checkout_commit,
+                               target_ref, typed_values}
 
-## Required acceptance evidence before R02 may close
+TrustedAction v1 (Alice Coordinator → ASR):
+  tenant_id, actor_id, job_id, step_id, operation_hash
+  runner_session_id, context_id, target_id, frame_id, document_epoch
+  current_origin, allowed_destination, exact operation and resolved target
+  expiry, monotonic_step, policy_version, authorization_id (when required)
 
-| Negative (must deny)                                                                           | Positive (must preserve)                                                 |
-| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Required policy missing, exception, timeout or crash at every dispatch stage                   | Normal read-only DOM inspection, product title/price, screenshots        |
-| Unknown final button and JS-driven network side effect despite harmless labels                 | Navigation and item selection within constrained fixture                 |
-| Raw console JS, `Runtime.evaluate`, CDP mouse/key/dialog and indirect JavaScript               | Separate sanctioned product click, cart adjustment and checkout review   |
-| Agent changes tab, popup, frame, document after authorization                                  | Two authorized consecutive interactions each with fresh action authority |
-| Replays, mismatched session/profile/target/checkout/merchant/item/qty/recipient/total/currency | Valid one-use authorization for a specific **mock** checkout request     |
-| Back-to-back submits, crash after dispatch, unknown transaction outcome                        | Correct no-retry/reconciliation state and human-control handoff          |
-| Network, shell or subprocess bypassing browser broker                                          | Authenticated person performs final submission with agent scope revoked  |
+CheckoutAuthorization v1 (created only by Alice after real user confirmation):
+  user_id, merchant_id / trusted merchant account, checkout_id, cart/order fingerprint
+  item IDs, variants, quantities, delivery and recipient commitment
+  amount_minor, ISO currency, taxes/shipping, selected payment method
+  recipient merchant payment endpoint/integration, one-use intent ID, expiry
+  user confirmation signature or server-authenticated decision bound to exact digest
+```
 
-Use an isolated HTTPS **fictional store** and captured/mocked payment endpoint;
-no real merchants, orders, money, personal browser, vault or service effects.
-Run both unit tests of the broker and integration tests through the actual
-Hermes dispatch + Chrome and all alternative paths, not the old fixture that
-directly calls `_isolate_errand_browser` before creating a purchase offer.
-Force race conditions, cancellation, faults and restart/recovery; audit
-positive compatibility for products, login, cart and PSP handoff. Repeat on
-each supported upstream Hermes version before enabling automatic submission.
+Runner compares trustworthy merchant/PSP state with approved digest, consumes a **single-use** authorization with transactional durable compare-and-swap before a **known** final operation, and does not grant any other operation by implication. Cross-user, tab, frame, item, amount, currency, recipient, destination, currency conversion, reused token, stale document, unknown price or approval mismatch **deny**. Serialize competing submits. If a request was sent and its effect is unknown, mark `unknown/reconciliation_required` and **never retry blindly**, including after restart. A database transaction cannot be atomic with an external merchant charge; reconcile using merchant-supported idempotency/status/receipts or human confirmation, with no false “paid” claim.
 
-## Decision boundaries / alternatives rejected
+### Actual charge semantics: autonomy without invented protection
 
-- **More `PAY_WORDS`, URL and DOM heuristics:** rejected; a final-review button
-  may have no telltale controls, and it cannot prove merchant-side effect.
-- **Using the current generic `tool_execution` middleware:** rejected as a
-  mandatory authority; failures before `next_call` are skipped, and the hook
-  only covers the top-level tool, not helper actions.
-- **One unrestricted checkout approval for a session/merchant:** rejected;
-  does not bind the action, order fingerprint or one-use semantics.
-- **A plugin-local proxy while other browser/CDP/shell transports remain:**
-  rejected; routes around it remain usable.
-- **Safe human completion** remains the default design until a tested trusted
-  broker exists; the existing automatic `decide_checkout` UI is not that design.
+**Arbitrary clicks are not independently provable safe.** A product button can execute JavaScript, contact a merchant API or submit a GET with side effects. A generic HTTP proxy cannot reliably distinguish every merchant's definitive payment API from ordinary cart mutations, and browser-origin scripts can trigger redirects and opaque PSP actions. Merchant page text or a DOM selector is not a reliable payment authorization source.
 
-**Revisit when:** Hermes supplies a fail-closed, action-level official API and
-broker/backend coverage with isolated browser proof; or an explicitly accepted
-manual-only purchase flow replaces automated checkout. R03/R07 remain separate.
+ASR therefore defines **levels of execution**:
+
+| Flow                                                                                        | Allowed autonomy                                              | Security condition / fallback                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product research, compare, visible reads                                                    | High; Hermes plans, ASR returns bounded redacted observations | Clean Alice browser with no payment/login secrets; no arbitrary JS API, restricted navigation and egress                                                                                                                                                                               |
+| Cart preparation and ordinary selection                                                     | High for verified no-payment contexts                         | Typed ASR actions; adapter, capability restrictions and risk controls; uncertain side effect stops for user                                                                                                                                                                            |
+| Login, address, account data                                                                | Coordinated; secrets entered/handled only inside ASR          | Trusted secure user-entry flow, origin binding, privacy protection; do not feed secrets to Hermes                                                                                                                                                                                      |
+| **Autonomous approved purchase**                                                            | **Enabled only per certified merchant/PSP adapter**           | Merchant/API returns **independently verifiable** order and exact payable amount and supports a uniquely bound final submit, idempotent/reconcilable outcome. ASR submits one approved intent from its backend, **not a generic browser click**. No blanket merchant coverage promised |
+| Unsupported shop, unknown charge semantics, card-on-file purchase or uncertain PSP redirect | Agent prepares a review but cannot submit final effect        | User completes checkout in ASR's human-only browser/PSP surface after agent control is revoked, or opens merchant independently; do not promise transferable cookies                                                                                                                   |
+
+ASR's commerce adapters require independent review/versioning per supported merchant/PSP and fail closed on markup/API drift. **Adapter admission requirements:** an authorized and sufficiently stable merchant/PSP API or documented integration; an independently read final cart/recipient/charge amount; precisely scoped payment credential/tokenization; evidence of definitive server-side submission semantics; replay/idempotency or transaction status/reconciliation; handling of taxes, shipping, refunds, PSP authentication/3DS and API drift; and tests proving that bypassed/unknown network effects never charge. A proprietary undocumented checkout discovered by browsing is **not certified** just because it passed mock tests. Merchant terms, automation restrictions, fraud controls, CAPTCHAs and regional payment methods may restrict adapter coverage. Remote browser sessions may break passkeys/WebAuthn, Apple Pay, device-bound payments, IP/location-sensitive prices and anti-bot policies. Detect incompatibility and hand off without claiming the remote cart transfers to the person's device. A card-on-file account can purchase without a visible card form: this is why merely refusing card fill or blocking a labeled “Pay” button is inadequate. User auth must be captured by trusted Alice UI, not Hermes's generic approval or a model-generated tool result.
+
+### Manual finalization is a real transition, not the current approval button
+
+The coordinator requests stopping Hermes's shopping run **and independently revokes/fences all ASR write capabilities using a monotonic runner epoch**, drains or records in-flight effects, persists `awaiting_human_finalization`, then issues a user-only browser session or safe merchant link. `POST /v1/runs/{id}/stop` alone cannot guarantee a submitted merchant request was canceled. If an effect was already dispatched, mark `unknown` and reconcile rather than granting an ambiguous agent/human race. Human actions authenticate separately; Hermes cannot access the human session. On reconnect/restart, `ensure_running` must **not** restart a paused write-capable run. The current `decide_checkout` → `approved_message` → `resume` and `_answer_approval` automatic card consent **must be separated** from the new flow before enabling it. UI displays exact product/total/currency, timestamp and a clear “Revisar y finalizar personalmente”; never calls an unverified checkout `paid`.
+
+## Compatibility matrix and release gates
+
+| Requirement                                     | Proven today                                                    | Must verify before release                                                                                                                                                            |
+| ----------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Official unmodified Hermes can be a coordinator | Existing `/v1/runs` API + plugin registration; source inspected | Multi-turn plan/result contract across supported released Hermes versions, pairing, replay/reconnect/cancel, fallback without plugin                                                  |
+| No Hermes access to ASR secrets/browser         | **Not implemented**; old Chrome/Vault are shared                | Hostile-Hermes adversarial tests: read env/files, CDP probes, private URLs, subagent, arbitrary network, forged tool results, cross-tenant isolation                                  |
+| Setup works for any compatible installation     | **Not demonstrated**                                            | Fresh user onboarding on Linux/macOS/Windows Hermes hosts, hosted runner by default without manual executor setup, offline/permissions/region handling, UI consent                    |
+| Typed actions and ordinary site usability       | Existing **plugin** unit tests only                             | Real hosted ASR+Hermes synthetic HTTPS shop, product search, variant/cart, login and total; concurrency, tabs/popups, redirects, DOM read and denial UX                               |
+| Approved autonomous checkout                    | **Not implemented or certified**                                | Independently verifiable checkout intent, exact digest+signature+amount/currency+cart, one-use submit, external timeout/reconciliation, certified adapters, zero actual charges in CI |
+| Safe unsupported-shop handoff                   | **Not implemented**                                             | Stop/revoke/hand over browser including crash/restart, no auto card consent, preserve honest `pending/unknown` status                                                                 |
+
+### Threat tests required (fail securely)
+
+Negative cases include opaque final button, immediate/deferred JS/network, CDP/console/keyboard/dialog, tab/frame switch, stale document, other merchant/recipient/item/qty/currency/total, expired/denied/forged/replayed consent, concurrent submit, bridge disconnection, server restart, unknown outcome, merchant checkout drift, PSP cross-origin/3DS, malicious tool outputs, tenant confusion, direct probing of ASR URL/ports/files, and Hermes terminal+browser with no ASR credentials. Runner egress tests include SSRF/cloud metadata, DNS rebinding, WebSockets, service workers, `sendBeacon`, hidden iframes and delayed network effects. User approval tests include a device-authenticated challenge signing the exact digest (`user_id`, checkout ID, cart/recipient, amount in minor units, ISO currency, nonce and expiry), replay/tampering, revocation and another device/session. Also verify absence of default stored merchant cards in the clean runner. In a fictional HTTPS shop, record no outbound financial operation without the exact approved adapter intent and no second submission after consumed/unknown intent.
+
+Positive cases include browsing and DOM reads without secrets, step-by-step ordinary interactions, adding/removing products, cart accuracy, checkout preparation, full user-approved **synthetic** adapter purchase exactly once and independently confirmed receipt, and human handoff with no agent write capability. Real browser E2E is mandatory; synthetic source canaries and a green plugin CI cannot establish these guarantees.
+
+## Delivery and migration plan (nothing here is implemented)
+
+1. Introduce independent Alice Coordinator/ASR protocol, tenant isolation and hosted runner prototype with fictional shop; Hermes generic `/v1/runs` adapter first. **Do not reuse shared Hermes Chrome/Vault**.
+2. Test official Alice plugin enhancement separately (optional) and capability probing. Make pairing/onboarding handle runner registration and user consent automatically.
+3. Migrate **only Alice purchase tasks** to the new runner; gate/disallow old autonomous checkout path until tested, including old shared-browser and Hermes Vault checkout. Never mutate users' unrelated Hermes tools/profiles globally. Existing users need a consented migration/re-authentication flow, with cleanup of old Alice-owned shared-browser sessions and clear instructions to revoke or remove duplicate Hermes merchant/payment credentials where desired; a copy of a Hermes-vault secret does not revoke the Hermes original, and Alice cannot silently delete unrelated user credentials.
+4. Add human-only fallback, then certified payment adapters, closed-loop amount verification, durable idempotency and risk controls; test end-to-end across platforms and merchants.
+5. Only enable autonomous checkout for adapters which pass all threat/positive gates. If hosted runner or merchant adapter unavailable, display a usable explicit human completion flow, not a silent downgrade.
+
+**Decision:** R02 remains **P0 / NO-GO**. PR #76 is **DRAFT, unmerged**. No Hermes core changes, private fork or installation-specific executor configuration are prerequisites. Contributing generic upstream APIs later may improve ergonomics, but is **not** on Alice's critical path. The prior Hermes-core-dependent design is superseded by this **proposed** Alice-owned boundary; compatibility, privacy and security guarantees remain pending real implementation and tests. R03/R07 remain separate.
+
+**Scope warning:** this ADR corrects the **purchase-security architecture**, not every existing Alice feature. The current compatibility matrix still records macOS-specific QR provisioning and optional host-browser dependencies elsewhere. Alice's broader requirement for every feature to work across compatible Hermes installations needs separate product-wide compatibility evidence; it is **not** established by writing this ADR or by PR #76, and no unrelated platform work is initiated here.

@@ -9,6 +9,21 @@
 | Web — companion | Browser access, account boundaries and encrypted conversation sync | `src/routes/`, `src/components/`, `src/lib/`                       |
 | Mac notifier    | Optional local notifications from Hermes activity                  | `mac/notifier/`                                                    |
 
+### Purchase execution: distributable R02 proposal (not implemented)
+
+The current Hermes-based purchase errand is **not** a verified authority boundary
+for final payment. The [revised ADR 0002](decisions/0002-r02-executor-authority.md)
+proposes Alice Secure Runner: a separate Alice-owned browser, credential store
+and typed action/payment broker, with a hosted isolated runner as the common
+path for compatible unmodified Hermes installations. Alice proposes to orchestrate
+the planning loop over official Hermes `/v1/runs`, with an optional official
+plugin/toolset for richer coordination; neither prehooks nor toolset visibility
+are trusted to protect a payment. A Hermes browser-provider that returns CDP
+to Hermes would **not** provide the required isolation. Merchant-specific
+verified adapters may enable authorized autonomous purchases; unknown effects
+must instead use a human-only finalization path. None of this runner/onboarding
+or handoff is shipped by PR #76. The PR remains DRAFT / NO-GO.
+
 ## Connection and identity
 
 The native app connects directly to services on the user's Hermes host. The
