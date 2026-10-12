@@ -7,6 +7,12 @@ on:
       - "scripts/h01_*.py"
       - "scripts/verify-r02-h01-docker.sh"
       - "alice_secure_runner/**"
+      - "pyproject.toml"
+      - "setup.py"
+      - "tests/test_h01_gateway.py"
+      - "tests/test_h01_operator_policy.py"
+      - "tests/test_alice_secure_runner.py"
+      - "tests/test_alice_real_browser.py"
       - ".github/workflows/r02-h01-hosted-isolation.yml"
   workflow_dispatch:
 

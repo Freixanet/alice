@@ -52,6 +52,7 @@ PY
 chmod 644 "$H01_FIXTURE_DIR"/*
 
 docker compose -f deploy/h01/compose.yaml config --quiet
+python3 -m unittest discover -s tests -p 'test_h01_operator_policy.py' -v
 docker compose -f deploy/h01/compose.yaml --profile attack build --pull
 docker compose -f deploy/h01/compose.yaml up -d --no-deps asr gateway
 python3 scripts/h01_operator.py e2e

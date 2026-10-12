@@ -85,8 +85,13 @@ connections and adversarial probes, checks an approved fictitious checkout,
 then forces runner SIGKILL in a delayed fake payment and verifies durable
 `unknown` without retry. All containers, ledger and fixture files are removed
 on normal script exit. A crash of the test operator could leave temporary
-containers/files; in that case manually `docker compose -f
-deploy/h01/compose.yaml --profile attack down -v` from the lab host.
+containers/files; in that case identify the exact disposable Compose project
+and fixture path before running `docker compose -f deploy/h01/compose.yaml
+--profile attack down -v` with the original `H01_COMPOSE_PROJECT` and
+`H01_FIXTURE_DIR` set. Do not delete unrelated Docker resources. Image tags
+are scoped to the unique project, but the test gateway still uses a fixed
+loopback port (`38443`): **parallel H01 invocations on one Docker daemon are
+not supported**.
 Do **not** invoke this script with real accounts, personal Hermes configuration,
 or on a computer controlled by a potentially malicious Hermes process.
 
@@ -117,9 +122,33 @@ operated cloud VM, real official Hermes host or real PSP.
 | Hermes host with root/Docker-socket privileges on Alice host    | **PENDING / NOT A SAFE DEPLOYMENT**                    | Must host on independently controlled machine/VM                       |
 | Human viewer and real payment-provider receipts                 | **PENDING**                                            | Do not transfer real cards/cookies or buy anything                     |
 
-The CI workflow `.github/workflows/r02-h01-hosted-isolation.yml` must be
-checked on the **exact final H01 commit**. Local Python tests and a previous
-PR77 Chromium 9/9 PASS are **not evidence of Docker network isolation**.
+An initial independently hosted Docker lab run **passed** on H01 commit
+`d13e88f08bdbb267f20e2f8fa7f5475f2492a7ec`:
+[run 38203633534, job 114662209072](https://github.com/Freixanet/alice/actions/runs/38203633534).
+The hostile container returned **35 passing checks**, the fake 4998-minor-unit
+checkout confirmed once and rejected replay, a recreated runner rejected
+stale browser ownership, and SIGKILL during synthetic dispatch recovered
+`unknown` with no automatic resubmission. The 35 checks mix real OS/network
+denials, authenticated rejections, and nonexistent endpoints; they are **not**
+35 independent OS isolation properties. CI status must be rechecked after
+every subsequent commit on its **exact SHA**. Local Python tests and PR77
+Chromium 9/9 PASS alone are **not evidence of Docker network isolation**.
+
+### Public execution record (non-sensitive)
+
+| Stage | Evidence | Outcome / restriction |
+| --- | --- | --- |
+| H01 executable packaging | Standalone wheel via two-stage runner and gateway Docker builds | Installed outside source on disposable CI VM; no client-side Docker |
+| Hostile Hermes probe | Run `38203633534`, SHA `d13e88f` | 35 selected checks passed; privileged same-host adversary not covered |
+| Durable restart regression | `tests/test_alice_secure_runner.py`; same Docker run | Fixed SQLite live-cursor replacement loop; test restores 10 jobs in two new processes |
+| Orphan browser ownership | Same Docker run | Replacement process rejects old browser generation; not cross-host attestation |
+| Interrupted payment effect | Same Docker run | `unknown`, 0 automatic retries; fake merchant was co-located with ASR |
+| Independent security and correctness reviews | Two read-only reviews of H01 code and CI | Security isolation limits and functional recovery gaps remain open |
+| Hosted production, genuine identity/PSP and Hermes end-to-end | No such test performed | **P0 / NO-GO** |
+
+The private execution ledger referenced by `docs/continuity.md` is not part of
+this repository; this public record intentionally does **not** claim to have
+updated an unavailable external ledger.
 
 ## Continuity and current architectural gaps
 
@@ -129,6 +158,15 @@ PR77 Chromium 9/9 PASS are **not evidence of Docker network isolation**.
   memory/cart is **not** persistent; a crash during irreversible work is
   intentionally marked UNKNOWN and must not be re-sent. Verify actual PSP
   charge state and idempotency independently before any production retry.
+- An H01 startup bug was reproduced and fixed: previously `_recover_jobs()`
+  iterated a live SQLite `SELECT` cursor while `INSERT OR REPLACE` replaced
+  those same records. Reinserted rowids could be seen repeatedly, stalling
+  HTTPS startup indefinitely after container restart. The code now takes
+  `.fetchall()` first. The regression test creates ten persisted jobs and
+  restarts two independent Python processes, each with an eight-second hard
+  timeout. The Docker E2E deliberately recreates the ASR container and
+  verifies the old container is no longer running before checking stale
+  browser-generation denial.
 - Browser generation is a **logical fail-closed marker**. Without trusted
   container/VM destruction attestation and a cleanup/reaper protocol, an
   orphaned session cannot be safely resumed or handed to a human.

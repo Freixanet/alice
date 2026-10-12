@@ -163,10 +163,26 @@ def verify_live_container_policy():
         nets = tuple(sorted(item['NetworkSettings']['Networks']))
         expected = (('asr_backplane',) if service == 'asr' else
                     ('asr_backplane', 'hermes_front', 'operator_front'))
-        assert all(name.endswith('_' + suffix) for name, suffix in zip(nets, expected)), (service, nets)
+        # zip() alone silently ignores ADDITIONAL networks, allowing a public
+        # network to be attached without failing the isolation verifier.
+        assert len(nets) == len(expected), (service, 'unexpected extra network', nets)
+        assert nets == tuple(os.environ['H01_COMPOSE_PROJECT'] + '_' + suffix for suffix in expected), (service, nets)
+        for name, suffix in zip(nets, expected):
+            metadata = json.loads(subprocess.check_output(['docker', 'network', 'inspect', name], text=True))[0]
+            wanted_internal = suffix != 'operator_front'
+            assert metadata['Internal'] is wanted_internal, (service, name, 'unexpected network egress')
         if service == 'asr':
             published = item['NetworkSettings'].get('Ports') or {}
             assert not any(bindings for bindings in published.values()), 'ASR published on host port'
+        else:
+            # Network isolation fails if the Alice-facing gateway is accidentally
+            # exposed on 0.0.0.0 or a second host address, even though Hermes
+            # remains disconnected from the ASR bridge in this Docker fixture.
+            published = item['NetworkSettings'].get('Ports') or {}
+            assert set(published) == {'8443/tcp'}, (service, 'unexpected published ports', published)
+            bindings = published['8443/tcp'] or []
+            assert len(bindings) == 1 and bindings[0]['HostIp'] == '127.0.0.1' and bindings[0]['HostPort'] == '38443', (
+                service, 'gateway listener not bound exclusively to loopback', bindings)
         checks.append({'service': service, 'user': config.get('User'),
                        'readonly': True, 'cap_drop_all': True, 'separate_pid': True,
                        'networks': list(expected), 'docker_socket': False})
@@ -218,6 +234,9 @@ def full_test():
         raise AssertionError('hostile Hermes attack succeeded: ' + json.dumps(output['failed']))
     evidence.append({'phase': 'hostile-hermes-real-container', 'checks': output['checks'],
                      'failed': output['failed']})
+    # Each probe reports its concrete method: real TCP, /proc, mount, UID/caps
+    # or HTTP role guard. Distinguish an absent endpoint from a kernel denial.
+    print('H01_ATTACK_MATRIX ' + json.dumps(output['checks'], sort_keys=True), flush=True)
     print('H01_PHASE_PASS ' + json.dumps({'phase': 'hostile-hermes-real-container',
                                           'checks': len(output['checks'])}), flush=True)
 
@@ -236,7 +255,9 @@ def full_test():
     s, out = query('/v1/commit', {'job_id': a}, actor='a')
     require('no repeat commit', s, out, 403)
     evidence.append({'phase': 'alice-trusted-approval-and-once-only',
-                     'amount_minor': 4998, 'submitted_fictional_count': 1})
+                     'amount_minor': 4998, 'fictional_receipts_observed': 1,
+                     'second_submit_http_status': 403,
+                     'independent_durable_merchant_receipt_verified': False})
     print('H01_PHASE_PASS ' + json.dumps(evidence[-1]), flush=True)
 
     # A real Browser-owned job survives in SQLite but its *prior owner*
@@ -292,7 +313,9 @@ def full_test():
         except Exception as exc:
             result['transport'] = type(exc).__name__
 
-    thread = threading.Thread(target=submit)
+    # A socket stuck beyond its per-operation timeout must not pin the CI
+    # operator process indefinitely if this bounded failure assertion fires.
+    thread = threading.Thread(target=submit, daemon=True)
     thread.start()
     for _ in range(80):
         if inspect_dispatch(crash) == 'dispatching':
@@ -302,6 +325,10 @@ def full_test():
         raise AssertionError('durable dispatching not observed; cannot test crash')
     docker('kill', '-s', 'SIGKILL', 'asr')
     thread.join(timeout=25)
+    if thread.is_alive():
+        raise AssertionError('fake checkout client still executing after ASR SIGKILL')
+    if not result or ('http' in result and result['http'][0] == 200):
+        raise AssertionError('fake checkout client did not observe an interrupted dispatch')
     os.environ['H01_FAULT_COMMIT_DELAY'] = '0'
     docker('up', '-d', '--force-recreate', '--no-deps', 'asr')
     ready()
