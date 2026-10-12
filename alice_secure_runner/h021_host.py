@@ -13,6 +13,7 @@ import os
 import secrets
 import ssl
 import threading
+from contextlib import nullcontext
 from http.server import ThreadingHTTPServer
 
 from .browser_fixture import BrowserFixtureReadAdapter
@@ -21,6 +22,7 @@ from .fictional_shop import FictionalStore, FixtureHTTPS
 from .h01_host import secret
 from .h02_identity import InvalidCapability, ReplayLedger
 from .h021_crypto import PublicVerifier
+from .device_approval import P256DeviceConsent
 from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 from .http_service import FixturePrincipal, make_handler
 
@@ -107,15 +109,35 @@ def main():
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain("/run/h01-tls/asr.pem", "/run/h01-tls/asr.key")
-    store = FictionalStore(secret=secrets.token_urlsafe(45))
-    store.commit_delay_seconds = min(max(int(os.environ.get("H01_FAULT_COMMIT_DELAY", "0")), 0), 30)
-    with FixtureHTTPS(store, "/run/h01-tls/asr.pem", "/run/h01-tls/asr.key") as merchant:
+    external_merchant = os.environ.get("H021_EXTERNAL_MERCHANT_FIXTURE_ONLY") == "yes"
+    store = None
+    if external_merchant:
+        merchant_context = nullcontext(None)
+        origin = "https://merchant:8443"
+        merchant_ca = "/run/h01-ca/merchant.pem"
+        effect_token = secret("merchant_effect_token")
+        read_token = secret("merchant_read_token")
+    else:
+        store = FictionalStore(secret=secrets.token_urlsafe(45))
+        store.commit_delay_seconds = min(max(int(os.environ.get("H01_FAULT_COMMIT_DELAY", "0")), 0), 30)
+        merchant_context = FixtureHTTPS(store, "/run/h01-tls/asr.pem", "/run/h01-tls/asr.key")
+        effect_token = store.secret
+        read_token = store.browser_read_secret
+    with merchant_context as merchant:
+        if merchant is not None:
+            origin = merchant.url
+            merchant_ca = "/run/h01-tls/asr.pem"
         adapter = BrowserFixtureReadAdapter(
-            origin=merchant.url, ca_file="/run/h01-tls/asr.pem",
-            merchant_token=store.secret, browser_read_token=store.browser_read_secret,
+            origin=origin, ca_file=merchant_ca,
+            merchant_token=effect_token, browser_read_token=read_token,
             playwright_module="/opt/h01/node_modules/playwright")
-        runner = AliceRunner(adapter, approval_key=bytes.fromhex(secret("device_hmac_hex")),
-                             ledger_path="/var/lib/h01/state.sqlite3")
+        if os.environ.get("H021_DEVICE_CONSENT_P256_FIXTURE_ONLY") == "yes":
+            runner = AliceRunner(adapter,
+                approval_verifier=P256DeviceConsent.load("/run/h021-auth/devices.json"),
+                ledger_path="/var/lib/h01/state.sqlite3")
+        else:
+            runner = AliceRunner(adapter, approval_key=bytes.fromhex(secret("device_hmac_hex")),
+                                 ledger_path="/var/lib/h01/state.sqlite3")
         principals = {}
         for actor in ("a", "b"):
             tenant, session = "fixture-tenant-" + actor, "fixture-session-" + actor

@@ -1,5 +1,12 @@
 # Alice Secure Runner — R02 runnable security-contract prototype
 
+**New post-H02.1 integrated development ledger:** see
+[`docs/r02-integrated-readiness.md`](../docs/r02-integrated-readiness.md).
+The new synthetic third-process merchant, independent durable receipts,
+read-only unknown reconciliation, exact tax/variant consent and public-only
+P-256 consent verification are covered there. These are **not** real PSP,
+biometric attestation, deployment or two-administrator isolation guarantees.
+
 **Prototype only: optional REAL Chromium fixture, but no isolated cloud host,
 real browser vault, merchant integration or live payment. Never run this as a
 real shopping service.**

@@ -98,5 +98,59 @@ class StructuredBridgeContractTests(unittest.TestCase):
         self.assertEqual(self.store.submit_attempts, 0)
 
 
+class OfficialPluginRegistrationContractTests(unittest.TestCase):
+    def setUp(self):
+        self.tools = []
+        self.model = ModelStub([{"action": "search", "query": "keyboard", "epoch": 0}])
+        self.ctx = SimpleNamespace(llm=self.model, register_tool=lambda **kw: self.tools.append(kw))
+
+    def test_registration_uses_repository_verified_hermes_contract(self):
+        capabilities = hermes_planner.register(self.ctx)
+        self.assertEqual(len(self.tools), 1)
+        self.assertEqual(self.tools[0]["name"], "alice_secure_plan")
+        self.assertFalse(capabilities["execution_authority"])
+        self.assertFalse(capabilities["pairing_verified"])
+        self.assertTrue(capabilities["structured_planner_available"])
+        self.assertEqual(self.model.calls, [])
+
+    def test_tool_proposes_without_execution_authority(self):
+        hermes_planner.register(self.ctx)
+        import json
+        result = json.loads(self.tools[0]["handler"]({
+            "goal": "Find a fictional keyboard", "observations": [{"epoch": 0, "status": "working"}],
+            "epoch": 0, "state": "active",
+        }))
+        self.assertEqual(result["status"], "proposed")
+        self.assertFalse(result["execution_authority"])
+        self.assertEqual(result["proposal"]["action"], "search")
+
+    def test_terminal_unknown_cancelled_states_do_not_call_model(self):
+        hermes_planner.register(self.ctx)
+        import json
+        for state in ("cancelled", "unknown", "stopped"):
+            out = json.loads(self.tools[0]["handler"]({
+                "goal": "keyboard", "observations": [], "epoch": 0, "state": state}))
+            self.assertEqual(out["status"], "blocked")
+            self.assertFalse(out["execution_authority"])
+        self.assertEqual(self.model.calls, [])
+
+    def test_malformed_request_and_malicious_model_fail_closed(self):
+        import json
+        hermes_planner.register(self.ctx)
+        handler = self.tools[0]["handler"]
+        for payload in (None, {}, {"goal": "x", "epoch": 0, "observations": [],
+                                   "state": "active", "commit": True},
+                        {"goal": "x", "epoch": 0, "observations": [], "state": "unknown-now"}):
+            self.assertEqual(json.loads(handler(payload))["status"], "denied")
+        self.model.outputs = iter([{"action": "checkout_commit", "epoch": 0}])
+        self.assertEqual(json.loads(handler({
+            "goal": "keyboard", "observations": [], "epoch": 0, "state": "active"}))["status"], "denied")
+
+    def test_no_unverified_registration_or_planner_facade(self):
+        with self.assertRaises(hermes_planner.PlannerUnavailable):
+            hermes_planner.register(SimpleNamespace(llm=self.model))
+        self.assertFalse(hermes_planner.feature_probe(SimpleNamespace())["structured_planner_available"])
+
+
 if __name__ == "__main__":
     unittest.main()

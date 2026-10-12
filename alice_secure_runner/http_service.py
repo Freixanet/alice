@@ -108,6 +108,8 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     out = runner.approve(obj["job_id"], tenant=tenant, session=session, signature=obj["signature"])
                 elif self.path == "/v1/commit":
                     out = runner.commit(obj["job_id"], tenant=tenant, session=session)
+                elif self.path == "/v1/reconcile":
+                    out = runner.reconcile_unknown(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-handoff":
                     out = runner.human_handoff(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-reissue":

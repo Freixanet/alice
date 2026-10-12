@@ -79,8 +79,9 @@ final class ErrandBoard {
         loaded = true
     }
 
-    /// «Permitir» pays, so it asks for Face ID first; «Denegar» does not.
+    /// Legacy Hermes checkout only. Local Face ID/passcode is not ASR consent.
     func decide(_ errand: Errand, allow: Bool, card: String = "") async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store, let checkout = errand.checkout, checkout.status == .pending else { return }
         if allow {
             let language = errand.language
@@ -94,33 +95,49 @@ final class ErrandBoard {
     }
 
     func answerQuestions(_ errand: Errand, _ answers: [String: String]) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store else { return }
         await answer(errand) { try await store.answerErrand(errand.id, answers: answers) }
     }
 
     func confirm(_ errand: Errand, allow: Bool) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store, let approval = errand.approval else { return }
         await answer(errand) { try await store.approveInErrand(errand.id, requestID: approval.requestID, allow: allow) }
     }
 
     func cardReady(_ errand: Errand, label: String) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store else { return }
         await answer(errand) { try await store.errandCardReady(errand.id, label: label) }
     }
 
     func refreshCheckout(_ errand: Errand) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store else { return }
         await answer(errand) { try await store.refreshCheckout(errand.id) }
     }
 
     func goOn(_ errand: Errand, acceptPrice: Bool) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store else { return }
         await answer(errand) { try await store.continueErrand(errand.id, acceptPrice: acceptPrice) }
     }
 
     func stop(_ errand: Errand) async {
+        guard allowsLegacyAction(errand) else { return }
         guard let store else { return }
         await answer(errand) { try await store.stopErrand(errand.id) }
+    }
+
+    private func allowsLegacyAction(_ errand: Errand) -> Bool {
+        guard errand.usesLegacyCheckout else {
+            problems[errand.id] = errand.language.pick(
+                "Secure Runner cannot use the old Hermes checkout. No payment was sent by Alice from this action.",
+                "Secure Runner no puede usar el pago antiguo de Hermes. Alice no ha enviado ningún pago con esta acción.")
+            return false
+        }
+        return true
     }
 
     private func answer(_ errand: Errand, _ work: () async throws -> Errand?) async {
@@ -195,6 +212,17 @@ struct ErrandStack: View {
     }
 
     var body: some View {
+        if errand.usesLegacyCheckout {
+            legacyBody
+        } else {
+            // Hermes payloads are untrusted, even when they claim "confirmed".
+            // The future authenticated ASR feed can use the other read-only
+            // status presentations; legacy checkout actions stay unavailable.
+            SecureRunnerStatusCard(status: .unverified, language: errand.language)
+        }
+    }
+
+    private var legacyBody: some View {
         VStack(alignment: .leading, spacing: 12) {
             ErrandProgressCard(errand: errand, logoID: logoID, logo: logo)
             // The browser only while it is being used: not before it starts, and gone once the
@@ -264,6 +292,10 @@ struct ErrandStack: View {
                     }
             }
             if let receipt = errand.receipt {
+                Text(errand.language.pick("Legacy Hermes order report · not Alice Secure Runner",
+                                          "Informe del pedido de Hermes anterior · no es Alice Secure Runner"))
+                    .font(.caption)
+                    .foregroundStyle(Palette.warning(scheme))
                 ReplyBubble {
                     RichMessageView(content: PurchaseSummaryText.result(receipt, language: errand.language), bubbled: true)
                 }
@@ -331,7 +363,7 @@ struct ErrandChatBlock: View {
                     board.fresh && !old.needsPerson && new.needsPerson
                 }
                 .haptic(.success, trigger: errand.receipt?.paid == true) { old, new in
-                    board.fresh && !old && new
+                    board.fresh && errand.usesLegacyCheckout && !old && new
                 }
                 .fullScreenCover(isPresented: $browsing) {
                     LiveBrowserScreen(agentWorking: errand.status == .working, caption: errand.lastStep?.text)

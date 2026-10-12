@@ -450,6 +450,7 @@ struct CheckoutApprovalCard: View {
 
     private var compactCard: some View {
         VStack(alignment: .leading, spacing: 10) {
+            legacyNotice
             Text(language.pick("Approve \(checkout.total.pricesKeptTogether) at \(shop)",
                                "Aprobar \(checkout.total.pricesKeptTogether) en \(shop)"))
                 .font(.subheadline.weight(.semibold))
@@ -467,8 +468,8 @@ struct CheckoutApprovalCard: View {
                     VStack(spacing: 8) { compactButtons }
                 }
                 if let error { Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme)) }
-                Text(language.pick("Approve this exact total with Face ID or your passcode. Check the shop's terms before paying.",
-                                   "Aprueba este importe exacto con Face ID o tu código. Revisa las condiciones de la tienda antes de pagar."))
+                Text(language.pick("Face ID or passcode only verifies this device; it is not a Secure Runner payment signature. Check the shop's total.",
+                                   "Face ID o el código solo verifican este móvil; no firman un pago de Secure Runner. Comprueba el total de la tienda."))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -479,27 +480,30 @@ struct CheckoutApprovalCard: View {
     @ViewBuilder private var compactButtons: some View {
         ApprovalChoiceButton(title: language.pick("Cancel", "Cancelar"), deny: true,
                              disabled: phase == .sending, tint: .approve, action: onDeny)
-        ApprovalChoiceButton(title: language.pick("Pay \(checkout.total.pricesKeptTogether)",
-                                                 "Pagar \(checkout.total.pricesKeptTogether)"),
+        ApprovalChoiceButton(title: language.pick("Hermes checkout · \(checkout.total.pricesKeptTogether)",
+                                                 "Pago Hermes · \(checkout.total.pricesKeptTogether)"),
                              disabled: phase == .sending || payingWith.isEmpty, tint: .approve, action: onAllow)
     }
 
     /// Approved: one line, so the checkout no longer reads as something still to answer.
     private var approvedLine: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "checkmark.seal.fill").font(.title3).foregroundStyle(Palette.success(scheme))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(language.pick("Approved · \(checkout.total.pricesKeptTogether)",
-                                   "Aprobado · \(checkout.total.pricesKeptTogether)"))
-                    .font(.body.weight(.medium))
-                Text(payingWith.isEmpty ? shop
-                     : paid ? language.pick("Paid with \(payingWith)", "Pagado con \(payingWith)")
-                     : paying ? language.pick("Paying with \(payingWith)", "Pagando con \(payingWith)")
-                     : language.pick("Not paid · \(payingWith)", "No se llegó a pagar · \(payingWith)"))
-                    .font(.subheadline).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 8) {
+            legacyNotice
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.seal.fill").font(.title3).foregroundStyle(Palette.success(scheme))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(language.pick("Approved · \(checkout.total.pricesKeptTogether)",
+                                       "Aprobado · \(checkout.total.pricesKeptTogether)"))
+                        .font(.body.weight(.medium))
+                    Text(payingWith.isEmpty ? shop
+                         : paid ? language.pick("Paid with \(payingWith)", "Pagado con \(payingWith)")
+                         : paying ? language.pick("Paying with \(payingWith)", "Pagando con \(payingWith)")
+                         : language.pick("Payment not confirmed · \(payingWith)", "Cobro sin confirmar · \(payingWith)"))
+                        .font(.subheadline).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                if !payingWith.isEmpty { CardBrandBadge(label: payingWith) }
             }
-            Spacer(minLength: 0)
-            if !payingWith.isEmpty { CardBrandBadge(label: payingWith) }
         }
         .padding(16)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
@@ -533,6 +537,7 @@ struct CheckoutApprovalCard: View {
 
     private var fullCard: some View {
         VStack(alignment: .leading, spacing: 14) {
+            legacyNotice
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Checkout").font(.title3.weight(.semibold))
@@ -595,7 +600,7 @@ struct CheckoutApprovalCard: View {
                 }
                 HStack(spacing: 10) {
                     PurchaseCapsuleButton(title: language.pick("Deny", "Denegar"), disabled: phase == .sending, action: onDeny)
-                    PurchaseCapsuleButton(title: language.pick("Allow", "Permitir"), prominent: true,
+                    PurchaseCapsuleButton(title: language.pick("Approve in Hermes", "Autorizar en Hermes"), prominent: true,
                                           disabled: payingWith.isEmpty, busy: phase == .sending,
                                           symbol: Biometrics.symbol, tint: .approve, action: onAllow)
                 }
@@ -606,6 +611,10 @@ struct CheckoutApprovalCard: View {
                 if let error {
                     Text(error).font(.footnote).foregroundStyle(Palette.danger(scheme)).padding(.horizontal, 6)
                 }
+                Text(language.pick("Device authentication here is not Secure Runner approval or proof of a charge.",
+                                   "La verificación del móvil aquí no autoriza Secure Runner ni acredita ningún cobro."))
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
                 Text(language.pick("By continuing you accept \(shop)'s terms, privacy and returns policies.",
                                    "Al continuar aceptas las condiciones, la privacidad y las devoluciones de \(shop)."))
                     .font(.footnote)
@@ -617,6 +626,14 @@ struct CheckoutApprovalCard: View {
         .padding(16)
         .background(Palette.card(scheme), in: .rect(cornerRadius: 28))
         .accessibilityElement(children: .contain)
+    }
+
+    private var legacyNotice: some View {
+        Text(language.pick("Old Hermes checkout · not Alice Secure Runner",
+                           "Pago anterior de Hermes · no es Alice Secure Runner"))
+            .font(.caption.weight(.medium))
+            .foregroundStyle(Palette.warning(scheme))
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     /// With which card: the one chosen, and a menu of the others and «Añadir tarjeta» while deciding.

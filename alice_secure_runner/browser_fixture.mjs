@@ -7,7 +7,11 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const playwright = require(process.env.ALICE_TEST_PLAYWRIGHT_MODULE);
 const origin = new URL(process.env.ALICE_FIXTURE_ORIGIN).origin;
-if (!/^https:\/\/localhost:\d+$/.test(origin))
+if (
+  !/^https:\/\/localhost:\d+$/.test(origin) &&
+  !(process.env.ALICE_H021_EXTERNAL_MERCHANT === "yes" &&
+    origin === "https://merchant:8443")
+)
   throw Error("fixture loopback TLS only");
 const browser = await playwright.chromium.launch({
   headless: true,
@@ -142,6 +146,7 @@ async function dispatch(command) {
     sku: el.dataset.sku,
     name: el.querySelector("h1")?.textContent,
     description: el.querySelector("p")?.textContent,
+    variants: el.dataset.variants?.split(",") ?? [],
     unit_minor: Number(el.dataset.unitMinor),
     currency: el.dataset.currency,
   }));

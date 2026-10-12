@@ -36,6 +36,9 @@ class BrowserFixtureReadAdapter(FictionalHTTPSAdapter):
                "ALICE_TEST_PLAYWRIGHT_MODULE": str(Path(playwright_module).resolve()),
                "ALICE_FIXTURE_ORIGIN": origin,
                "ALICE_FIXTURE_BROWSER_READ_TOKEN": browser_read_token}
+        if (os.environ.get("H021_EXTERNAL_MERCHANT_FIXTURE_ONLY") == "yes"
+                and origin == "https://merchant:8443"):
+            env["ALICE_H021_EXTERNAL_MERCHANT"] = "yes"
         if os.environ.get("PLAYWRIGHT_BROWSERS_PATH"):
             env["PLAYWRIGHT_BROWSERS_PATH"] = os.environ["PLAYWRIGHT_BROWSERS_PATH"]
         if chrome_path:

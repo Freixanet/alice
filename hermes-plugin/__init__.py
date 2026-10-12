@@ -2108,6 +2108,15 @@ def _register_goal_tools(ctx) -> None:
 
 
 def register(ctx) -> None:
+    # Official Hermes plugin lifecycle. This registers ONLY an untrusted typed
+    # proposal tool; no signing/merchant/browser credential is ever attached.
+    # Without the official structured LLM interface, the handler fails closed.
+    try:
+        _module("r02_planner.py", "alice_r02_planner").register(ctx)
+    except Exception:
+        logging.getLogger(__name__).warning(
+            "Alice R02 planner registration unavailable; secure shopping disabled",
+            exc_info=False)
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)

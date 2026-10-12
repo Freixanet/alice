@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import secrets
 import sqlite3
 import ssl
@@ -35,11 +36,13 @@ class Indeterminate(RuntimeError):
     """Checkout dispatch might have reached the merchant; never retry blindly."""
 
 
-ALLOWED = frozenset({"search", "read_product", "select_product", "add_to_cart", "prepare_checkout", "stop"})
+ALLOWED = frozenset({"search", "read_product", "select_product", "select_variant",
+                     "add_to_cart", "prepare_checkout", "stop"})
 ACTION_KEYS = {
     "search": frozenset({"action", "query", "epoch"}),
     "read_product": frozenset({"action", "sku", "epoch"}),
     "select_product": frozenset({"action", "sku", "epoch"}),
+    "select_variant": frozenset({"action", "variant", "epoch"}),
     "add_to_cart": frozenset({"action", "quantity", "epoch"}),
     "prepare_checkout": frozenset({"action", "epoch"}),
     "stop": frozenset({"action", "epoch"}),
@@ -64,6 +67,7 @@ class Job:
     state: str = "researching"
     found: tuple[str, ...] = ()
     selected: str = ""
+    variant: str = "standard"
     quantity: int = 0
     cart_id: str = field(default_factory=lambda: secrets.token_urlsafe(20))
     checkout: dict[str, Any] | None = None
@@ -84,7 +88,9 @@ class FictionalHTTPSAdapter:
         parsed = urllib.parse.urlsplit(origin)
         if parsed.scheme != "https" or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ("", "/"):
             raise Denied("merchant endpoint must be a fixed HTTPS origin")
-        if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        external_lab = (parsed.hostname == "merchant" and parsed.port == 8443 and
+                        os.environ.get("H021_EXTERNAL_MERCHANT_FIXTURE_ONLY") == "yes")
+        if parsed.hostname not in ("localhost", "127.0.0.1", "::1") and not external_lab:
             raise Denied("prototype adapter can access only its fictional loopback merchant")
         self._base = origin.rstrip("/")
         self._ssl = ssl.create_default_context(cafile=ca_file)
@@ -123,8 +129,9 @@ class FictionalHTTPSAdapter:
     def read(self, sku: str, *, browser_session: str | None = None) -> dict[str, Any]:
         return self.call("GET", "/product/" + urllib.parse.quote(sku, safe=""))
 
-    def cart(self, cart_id: str, sku: str, quantity: int) -> dict[str, Any]:
-        return self.call("POST", "/cart", {"cart_id": cart_id, "sku": sku, "quantity": quantity})
+    def cart(self, cart_id: str, sku: str, quantity: int, *, variant: str = "standard") -> dict[str, Any]:
+        return self.call("POST", "/cart", {"cart_id": cart_id, "sku": sku,
+                                           "quantity": quantity, "variant": variant})
 
     def quote(self, cart_id: str, recipient: str) -> dict[str, Any]:
         return self.call("POST", "/quote", {"cart_id": cart_id, "recipient": recipient})
@@ -133,16 +140,30 @@ class FictionalHTTPSAdapter:
         return self.call("POST", "/commit", {"cart_id": cart_id, "recipient": recipient,
                                              "snapshot": snapshot, "idempotency_key": idempotency_key})
 
+    def lookup_order(self, checkout_id: str) -> dict[str, Any] | None:
+        """Read-only independent merchant record; never retries a checkout."""
+        if (not isinstance(checkout_id, str) or not 1 <= len(checkout_id) <= 120
+                or not all(ch.isascii() and (ch.isalnum() or ch in "_-") for ch in checkout_id)):
+            raise Denied("invalid checkout identifier")
+        try:
+            return self.call("GET", "/orders/" + checkout_id)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            raise
+
 
 class AliceRunner:
     """Prototype broker with a durable, at-most-one checkout attempt ledger."""
 
-    def __init__(self, adapter: FictionalHTTPSAdapter, *, approval_key: bytes, ledger_path: str | Path = ":memory:"):
-        if len(approval_key) < 32:
+    def __init__(self, adapter: FictionalHTTPSAdapter, *, approval_key: bytes | None = None,
+                 approval_verifier: Any | None = None, ledger_path: str | Path = ":memory:"):
+        if approval_verifier is None and (not isinstance(approval_key, bytes) or len(approval_key) < 32):
             raise ValueError("prototype device HMAC key must be >=32 bytes")
         ledger_path = ":memory:" if str(ledger_path) == ":memory:" else str(Path(ledger_path).expanduser().resolve())
         self.__adapter = adapter
         self.__approval_key = approval_key
+        self.__approval_verifier = approval_verifier
         self.__jobs: dict[str, Job] = {}
         self.__lock = threading.RLock()
         self.__owner: sqlite3.Connection | None = None
@@ -298,6 +319,7 @@ class AliceRunner:
                 result["products"] = [{"sku": sku} for sku in job.found[:10]]
             if job.selected:
                 result["sku"] = job.selected
+                result["variant"] = job.variant
             if job.quantity:
                 result["quantity"] = job.quantity
                 result["cart_ready"] = job.state == "cart_ready"
@@ -381,22 +403,43 @@ class AliceRunner:
                 product = self.__adapter.read(sku, browser_session=job.id)
                 if product.get("sku") != sku:
                     raise Denied("merchant product changed")
+                variants = product.get("variants")
+                if (not isinstance(variants, list) or not 1 <= len(variants) <= 12
+                        or any(not isinstance(v, str) or not 1 <= len(v) <= 48
+                               or not all(c.isascii() and (c.isalnum() or c in "_-")
+                                       for c in v) for v in variants)
+                        or len(set(variants)) != len(variants)):
+                    raise Denied("untrusted merchant variant choices")
                 output = {"sku": sku, "name": str(product.get("name", ""))[:100],
                           "description": str(product.get("description", ""))[:350],
-                          "unit_minor": product.get("unit_minor"), "currency": product.get("currency")}
+                          "unit_minor": product.get("unit_minor"), "currency": product.get("currency"),
+                          "variants": variants.copy()}
                 if action == "select_product":
                     job.selected = sku
                     job.state = "selecting"
+            elif action == "select_variant":
+                variant = proposal["variant"]
+                if (job.state != "selecting" or not job.selected
+                        or not isinstance(variant, str) or len(variant) > 48):
+                    raise Denied("variant selection unavailable")
+                available = self.__adapter.read(job.selected, browser_session=job.id)
+                if (not isinstance(available.get("variants"), list)
+                        or variant not in available["variants"]):
+                    raise Denied("unverified merchant variant")
+                job.variant = variant
+                output = {"sku": job.selected, "variant": variant}
             elif action == "add_to_cart":
                 quantity = proposal["quantity"]
                 if not job.selected or type(quantity) is not int or not (1 <= quantity <= 5):
                     raise Denied("cart requires selected product and bounded quantity")
-                result = self.__adapter.cart(job.cart_id, job.selected, quantity)
-                if result.get("sku") != job.selected or result.get("quantity") != quantity:
+                result = self.__adapter.cart(job.cart_id, job.selected, quantity, variant=job.variant)
+                if (result.get("sku") != job.selected or result.get("quantity") != quantity
+                        or result.get("variant") != job.variant):
                     raise Denied("merchant cart mismatch")
                 job.quantity = quantity
                 job.state = "cart_ready"
-                output = {"sku": job.selected, "quantity": quantity, "cart_ready": True}
+                output = {"sku": job.selected, "variant": job.variant,
+                          "quantity": quantity, "cart_ready": True}
             elif action == "prepare_checkout":
                 if not job.quantity or job.state != "cart_ready":
                     raise Denied("no independently prepared cart")
@@ -404,7 +447,13 @@ class AliceRunner:
                 self._validate_quote(job, quote)
                 checkout_id = secrets.token_urlsafe(16)
                 snapshot = {"merchant": "Alice Fictional HTTPS Merchant", "sku": job.selected,
+                            "variant": job.variant,
                             "quantity": job.quantity, "recipient": job.recipient,
+                            "merchant_id": quote["merchant_id"],
+                            "subtotal_minor": quote["subtotal_minor"],
+                            "tax_minor": quote["tax_minor"],
+                            "shipping_minor": quote["shipping_minor"],
+                            "discount_minor": quote["discount_minor"],
                             "amount_minor": quote["amount_minor"], "currency": quote["currency"],
                             "checkout_id": checkout_id}
                 job.checkout = snapshot
@@ -424,10 +473,21 @@ class AliceRunner:
             return {"ok": True, "epoch": job.epoch, "status": job.state, **output}
 
     def _validate_quote(self, job: Job, quote: dict[str, Any]) -> None:
-        if (quote.get("sku") != job.selected or quote.get("quantity") != job.quantity
+        if not isinstance(quote, dict) or (
+                set(quote) != {"sku", "variant", "quantity", "recipient", "merchant_id",
+                               "subtotal_minor", "tax_minor", "shipping_minor",
+                               "discount_minor", "amount_minor", "currency"} or
+                quote.get("sku") != job.selected or quote.get("variant") != job.variant
+                or quote.get("quantity") != job.quantity
                 or quote.get("recipient") != job.recipient or quote.get("currency") != "EUR"
-                or type(quote.get("amount_minor")) is not int
-                or not 1 <= quote["amount_minor"] <= 100_000):
+                or quote.get("merchant_id") != "alice-fictional-merchant-v1"
+                or any(type(quote.get(field)) is not int or quote[field] < 0
+                       or quote[field] > 100_000 for field in
+                       ("subtotal_minor", "tax_minor", "shipping_minor",
+                        "discount_minor", "amount_minor")) or
+                not 1 <= quote["amount_minor"] <= 100_000 or
+                quote["subtotal_minor"] + quote["tax_minor"] +
+                quote["shipping_minor"] - quote["discount_minor"] != quote["amount_minor"]):
             raise Denied("checkout amount/items/recipient cannot be verified")
 
     def _challenge(self, job: Job) -> dict[str, Any]:
@@ -450,8 +510,14 @@ class AliceRunner:
                 raise Denied("not awaiting user approval")
             if time.time() >= job.challenge_expires:
                 raise Denied("checkout consent expired")
-            wanted = hmac.new(self.__approval_key, _canonical(self._challenge(job)), hashlib.sha256).hexdigest()
-            if not isinstance(signature, str) or not hmac.compare_digest(signature, wanted):
+            if self.__approval_verifier is not None:
+                valid = self.__approval_verifier.verify(
+                    tenant=job.tenant, session=job.owner_session,
+                    challenge=_canonical(self._challenge(job)), signature=signature)
+            else:
+                wanted = hmac.new(self.__approval_key, _canonical(self._challenge(job)), hashlib.sha256).hexdigest()
+                valid = isinstance(signature, str) and hmac.compare_digest(signature, wanted)
+            if not valid:
                 raise Denied("invalid or replayed user approval")
             cid = self._pending(job)["checkout_id"]
             rc = self.__db.execute("UPDATE authorizations SET status='approved' WHERE checkout_id=? AND status='pending'",
@@ -477,8 +543,11 @@ class AliceRunner:
             # Recheck the real fictional merchant total before any submission.
             fresh = self.__adapter.quote(job.cart_id, job.recipient)
             self._validate_quote(job, fresh)
-            if (fresh["amount_minor"], fresh["currency"]) != (snapshot["amount_minor"], snapshot["currency"]):
-                raise Denied("amount changed after user approval")
+            if any(fresh.get(field) != snapshot.get(field) for field in
+                   ("sku", "variant", "quantity", "recipient", "merchant_id", "subtotal_minor",
+                    "tax_minor", "shipping_minor", "discount_minor",
+                    "amount_minor", "currency")):
+                raise Denied("checkout amount changed or itemization changed after user approval")
             checkout_id = snapshot["checkout_id"]
             rc = self.__db.execute("UPDATE authorizations SET status='dispatching' WHERE checkout_id=? AND status='approved' AND digest=?",
                                    (checkout_id, _digest(snapshot))).rowcount
@@ -495,10 +564,7 @@ class AliceRunner:
                 self._persist_job(job)
                 self._cleanup_terminal_browser(job)
                 raise Indeterminate("submission result unknown; do not retry automatically") from exc
-            if (response.get("checkout_id") != checkout_id or response.get("amount_minor") != snapshot["amount_minor"]
-                    or response.get("currency") != snapshot["currency"]
-                    or not isinstance(response.get("order_id"), str)
-                    or not 1 <= len(response["order_id"].strip()) <= 120):
+            if not self._receipt_matches(snapshot, response):
                 self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (checkout_id,))
                 job.state = "unknown"
                 self._persist_job(job)
@@ -516,6 +582,60 @@ class AliceRunner:
             self._cleanup_terminal_browser(job)
             return {"status": "confirmed_simulated", "order_id": response["order_id"],
                     "checkout_id": checkout_id, "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
+
+    @staticmethod
+    def _receipt_matches(snapshot: dict[str, Any], receipt: Any) -> bool:
+        if not isinstance(receipt, dict):
+            return False
+        if any(receipt.get(name) != snapshot.get(name) for name in
+               ("checkout_id", "sku", "variant", "quantity", "recipient", "merchant_id",
+                "subtotal_minor", "tax_minor", "shipping_minor", "discount_minor",
+                "amount_minor", "currency")):
+            return False
+        order_id = receipt.get("order_id")
+        return isinstance(order_id, str) and 1 <= len(order_id.strip()) <= 120
+
+    def reconcile_unknown(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Explicit trusted *read-only* inquiry after uncertain dispatch.
+
+        A missing merchant record or failed lookup keeps UNKNOWN and can NEVER
+        restore approval or trigger a second charge. Only an exact durable
+        merchant receipt advances UNKNOWN -> confirmed.
+        """
+        with self.__lock:
+            job = self._job(job_id, tenant, session)
+            if job.state != "unknown" or job.checkout is None:
+                raise Denied("only unknown checkout may be reconciled")
+            snapshot = self._pending(job)
+            checkout_id = snapshot["checkout_id"]
+            row = self.__db.execute(
+                "SELECT digest,status FROM authorizations WHERE checkout_id=?",
+                (checkout_id,)).fetchone()
+            if row != (_digest(snapshot), "unknown"):
+                raise Denied("not an unchanged uncertain checkout")
+            # A merchant being unreachable is not evidence the charge failed.
+            try:
+                receipt = self.__adapter.lookup_order(checkout_id)
+            except (OSError, urllib.error.URLError, TimeoutError):
+                return {"status": "unknown", "reconciliation": "merchant_unavailable",
+                        "checkout_id": checkout_id}
+            if receipt is None:
+                return {"status": "unknown", "reconciliation": "no_authoritative_receipt",
+                        "checkout_id": checkout_id}
+            if not self._receipt_matches(snapshot, receipt):
+                raise Indeterminate("merchant receipt conflicts with approved checkout")
+            updated = self.__db.execute(
+                "UPDATE authorizations SET status='confirmed',order_id=? "
+                "WHERE checkout_id=? AND status='unknown' AND digest=?",
+                (receipt["order_id"], checkout_id, row[0])).rowcount
+            if updated != 1:
+                raise Indeterminate("unknown checkout authorization changed")
+            job.state = "confirmed"
+            self._persist_job(job)
+            self._cleanup_terminal_browser(job)
+            return {"status": "confirmed_simulated", "reconciliation": "merchant_receipt",
+                    "order_id": receipt["order_id"], "checkout_id": checkout_id,
+                    "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
 
     def human_handoff(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
         """Revoke agent; verify browser closure BEFORE issuing human authority.

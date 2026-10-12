@@ -34,7 +34,7 @@ if docker compose -f deploy/h021/compose.yaml ps -q | grep -q .; then
   echo "H021 containers remain; keep private files for recovery" >&2; exit 1
 fi
 # Only images tagged with this uniquely recorded disposable Compose project.
-for image in runner gateway hostile; do
+for image in runner gateway merchant hostile; do
   docker image rm "${H02_COMPOSE_PROJECT}-${image}:fixture" >/dev/null 2>&1 || true
 done
 python3 - "$H02_FIXTURE_DIR" <<'PY'

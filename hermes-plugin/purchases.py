@@ -207,6 +207,8 @@ def failure(text: Any) -> Optional[str]:
 
 def open_payment(home: Path, session: str, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """This conversation's payment still waiting for its outcome, within the hour."""
+    if os.environ.get("ALICE_R02_ASR_ONLY") == "yes":
+        return None
     now = now or time.time()
     for entry in reversed(_read(_ledger(home))):
         if (session and entry.get("session") == session and entry.get("status") in ("pending", "unknown")

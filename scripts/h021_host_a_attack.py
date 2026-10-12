@@ -37,6 +37,8 @@ def main():
                         help="operator confirms B IP belongs to authorized disposable fixture")
     parser.add_argument("--approved-private-target", action="store_true",
                         help="operator independently confirms private ASR bridge IP is B's live listener")
+    parser.add_argument("--require-attested-proof", action="store_true",
+                        help="fail closed unless independently-administered B and firewall proof exists")
     args = parser.parse_args()
     if not args.approved_target or not args.approved_private_target or os.geteuid() != 0:
         raise SystemExit("requires BOTH approved public/private targets and HOST A root privileges")
@@ -92,8 +94,14 @@ def main():
         "selected_private_and_administrative_ports": negative,
         "actual_independent_administrative_control": "PENDING MANUAL CLOUD/IAM ATTESTATION",
         "B_private_listener_present": "B_OPERATOR_MANIFEST_UNTRUSTED_UNTIL_INDEPENDENTLY_ATTESTED",
+        "h021_acceptance": "PENDING_EXTERNAL_INDEPENDENT_PROOF",
+        "route_negative_is_not_firewall_proof": True,
     }
     print(json.dumps(evidence, sort_keys=True))
+    # Probe success is deliberately NOT a security-release decision. An
+    # unroutable Docker bridge address cannot prove an effective network rule.
+    if args.require_attested_proof:
+        return 3
     return 1 if any(value["reached"] for value in negative.values()) else 0
 
 

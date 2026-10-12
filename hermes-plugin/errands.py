@@ -39,6 +39,17 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import urlsplit
 
 SESSION_PREFIX = "errand-"
+
+
+def legacy_payment_blocked() -> bool:
+    """Strict opt-in ASR mode: legacy shared-browser payment is NEVER fallback.
+
+    This is application policy only; it does not sandbox Hermes' native tools.
+    """
+    return os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+
+
+LEGACY_DISABLED = "El pago con el navegador compartido de Hermes está desactivado para Alice Secure Runner."
 STATUSES = ("working", "needs_approval", "needs_input", "needs_card", "needs_login", "done", "stuck", "stopped", "denied")
 ACTIVE = ("working", "needs_approval", "needs_input", "needs_card", "needs_login")
 # An approved checkout pays within this window; later, the agent asks again.
@@ -474,6 +485,8 @@ def paying_card(home: Path, site: str, labels: List[str], asked: str = "") -> st
 def request_checkout(home: Path, errand_id: str, args: Dict[str, Any], now: Optional[float] = None,
                      fetch: Optional[Callable[..., Tuple[bytes, str]]] = None,
                      saved_cards: Optional[Callable[[], List[Dict[str, Any]]]] = None) -> Dict[str, Any]:
+    if legacy_payment_blocked():
+        return {"ok": False, "error": LEGACY_DISABLED}
     now = now or time.time()
     entry = get(home, errand_id)
     if entry is None:
@@ -554,6 +567,8 @@ def refresh_message(checkout: Dict[str, Any]) -> str:
 def decide_checkout(home: Path, errand_id: str, allow: bool, now: Optional[float] = None,
                     card_label: str = "", *, checkout_id: str) -> Optional[Dict[str, Any]]:
     """Compare the exact checkout and persist its one decision under the writer lock."""
+    if legacy_payment_blocked():
+        return None
     with _locked(home) as path:
         now = time.time() if now is None else now
         entries = _read(path, strict=True)
@@ -668,6 +683,8 @@ def same_amount(a: Any, b: Any) -> bool:
 
 def approved_checkout(entry: Optional[Dict[str, Any]], site: str = "", now: Optional[float] = None) -> Optional[Dict[str, Any]]:
     """The errand's checkout the person approved, still fresh, for this shop (any shop when blank)."""
+    if legacy_payment_blocked():
+        return None
     now = now or time.time()
     checkout = (entry or {}).get("checkout")
     if not isinstance(checkout, dict) or checkout.get("status") != "approved":
@@ -738,6 +755,9 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
 
     ``card_fill_site`` is the page a saved payment card is about to be written into (None when
     the call is not a card fill); otherwise the call is checked as a browser action."""
+    if legacy_payment_blocked() and (
+            card_fill_site is not None or is_pay_action(tool_name, args, active_url, payment_step)):
+        return {"action": "block", "message": LEGACY_DISABLED}
     filling = card_fill_site is not None
     if not filling and not is_pay_action(tool_name, args, active_url, payment_step):
         return None
@@ -840,6 +860,8 @@ CARD_SCHEMA: Dict[str, Any] = {
 
 
 def request_card(home: Path, errand_id: str, page: str) -> Dict[str, Any]:
+    if legacy_payment_blocked():
+        return {"ok": False, "error": LEGACY_DISABLED}
     parts = urlsplit(str(page or ""))
     if parts.scheme != "https" or not parts.hostname:
         return {"ok": False, "error": "page must be the https address of the page with the card fields"}
@@ -1726,6 +1748,8 @@ def started_result(entry: Dict[str, Any]) -> Dict[str, Any]:
 
 def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[str, Any]] = None) -> bool:
     """Resume an answer; a checkout decision must still be the persisted approved snapshot."""
+    if legacy_payment_blocked() and (checkout is not None or APPROVED_PREFIX in message):
+        return False
     if checkout is not None:
         # Do not let this delayed wake-up revive a stopped errand or another checkout.
         # launch only starts a thread; it never acquires this store lock synchronously.

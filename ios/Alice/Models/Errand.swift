@@ -106,6 +106,13 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
     var access: Access? = nil
+    /// A marker supplied by the legacy Hermes feed is NOT ASR authorization or
+    /// evidence of payment. An explicitly R02-marked errand must never fall
+    /// through to the legacy checkout controls, even if its payload is malformed.
+    /// Optional to preserve decoding of older launch-cache archives.
+    var secureRunnerMarker: Bool? = nil
+
+    var usesLegacyCheckout: Bool { secureRunnerMarker != true }
 
     var accessRequest: SecureRequest? {
         guard var request = access?.request else { return nil }
@@ -214,7 +221,11 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             access: (row["secure_request"] as? [String: Any]).flatMap { raw in
                 guard let requestID = raw["request_id"] as? String else { return nil }
                 return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]))
-            })
+            },
+            // Presence, not the (untrusted) asserted state, is enough to fail
+            // closed. No "confirmed" status is ever inferred from Hermes JSON.
+            secureRunnerMarker: row.keys.contains("alice_secure_runner")
+                || (row["checkout_flow"] as? String) == "alice_secure_runner" ? true : nil)
     }
 }
 

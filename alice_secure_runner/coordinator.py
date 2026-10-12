@@ -34,7 +34,8 @@ class Coordinator:
     def step(self) -> dict[str, Any]:
         # Copy *only* explicitly bounded, non-authorizing public observations.
         safe = {k: v for k, v in self._previous.items()
-                if k in ("epoch", "status", "products", "name", "sku", "description", "currency", "unit_minor", "cart_ready", "quantity")}
+                if k in ("epoch", "status", "products", "name", "sku", "description", "currency",
+                         "unit_minor", "variants", "variant", "cart_ready", "quantity")}
         proposed = self._planner.next_action(safe)
         # Planner output is not executed in Hermes: the runner independently
         # authorizes exact typed parameters against its own trusted job state.

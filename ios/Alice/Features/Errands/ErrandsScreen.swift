@@ -112,7 +112,12 @@ struct ErrandRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(errand.title).font(.body.weight(.medium)).lineLimit(2)
                 HStack(spacing: 6) {
-                    ComponentPill(text: errand.status.label(errand.language), tint: errand.status.tint(scheme))
+                    if errand.usesLegacyCheckout {
+                        ComponentPill(text: errand.status.label(errand.language), tint: errand.status.tint(scheme))
+                    } else {
+                        ComponentPill(text: errand.language.pick("ASR unverified", "ASR sin verificar"),
+                                      tint: Palette.warning(scheme))
+                    }
                     if let total = errand.receipt?.total ?? errand.checkout?.total, !total.isEmpty {
                         Text(total.pricesKeptTogether).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                     }
@@ -161,7 +166,7 @@ struct ErrandDetailScreen: View {
                         onCardReady: { label in if preview == nil { Task { await board.cardReady(errand, label: label) } } },
                         onRefreshCheckout: { if preview == nil { Task { await board.refreshCheckout(errand) } } },
                         onStop: { if preview == nil { Task { await board.stop(errand) } } })
-                    if errand.status.isOpen, preview == nil {
+                    if errand.status.isOpen, preview == nil, errand.usesLegacyCheckout {
                         Button(role: .destructive) { confirmingStop = true } label: {
                             Text(errand.language.pick("Stop this errand", "Parar este recado"))
                                 .frame(maxWidth: .infinity, minHeight: 44)

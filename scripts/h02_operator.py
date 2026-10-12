@@ -58,7 +58,7 @@ def request_signed(token, path, raw):
         return exc.code
 
 
-def verify_policy():
+def verify_policy(*, h021_external_merchant=False):
     """Inspect *effective* Docker network/port policy, not just Compose YAML."""
     if not __debug__:
         raise RuntimeError("refuse Docker security verification under python -O")
@@ -66,7 +66,11 @@ def verify_policy():
     private = project + "_asr_backplane"
     public = project + "_public_front"
     expected = {"asr": {private}, "gateway": {private, public}}
-    for service in ("asr", "gateway"):
+    merchant_private = project + "_merchant_private"
+    if h021_external_merchant:
+        expected["asr"].add(merchant_private)
+        expected["merchant"] = {merchant_private}
+    for service in expected:
         identifier = docker("ps", "-q", service).stdout.strip()
         if not identifier:
             raise AssertionError("container not running: " + service)
@@ -77,7 +81,8 @@ def verify_policy():
                 or host.get("PidMode") == "host"
                 or "ALL" not in (host.get("CapDrop") or [])
                 or observed["Config"]["User"] !=
-                ("12001:12001" if service == "asr" else "12002:12002")
+                ("12001:12001" if service == "asr" else
+                 "12002:12002" if service == "gateway" else "12003:12003")
                 or any(m["Destination"] == "/var/run/docker.sock" for m in observed.get("Mounts", []))):
             raise AssertionError("unsafe live container privileges: " + service)
         networks = observed["NetworkSettings"]["Networks"]
@@ -85,7 +90,7 @@ def verify_policy():
             raise AssertionError("unexpected live Docker network membership: " + service)
         for name in networks:
             net = json.loads(subprocess.check_output(["docker", "network", "inspect", name], text=True))[0]
-            if net["Internal"] != (name == private):
+            if net["Internal"] != (name in {private, merchant_private}):
                 raise AssertionError("unexpected live network internal policy: " + name)
         ports = observed["NetworkSettings"].get("Ports") or {}
         if service == "asr":
@@ -94,12 +99,14 @@ def verify_policy():
             private_ip = networks[private].get("IPAddress")
             if not private_ip:
                 raise AssertionError("private ASR IP missing")
-        else:
+        elif service == "gateway":
             bindings = ports.get("8443/tcp") or []
             if (set(ports) != {"8443/tcp"} or len(bindings) != 1
                     or bindings[0].get("HostIp") != os.environ["H02_PUBLIC_BIND"]
                     or bindings[0].get("HostPort") != "38444"):
                 raise AssertionError("H02 gateway binding unexpectedly widened")
+        elif any(v for v in ports.values()):
+            raise AssertionError("independent merchant published a host port")
     return private_ip
 
 

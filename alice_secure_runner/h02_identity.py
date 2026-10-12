@@ -24,7 +24,7 @@ MAX_TTL = 300
 ROLE_PATHS = {
     "proposal": frozenset(("/v1/proposals",)),
     "owner": frozenset(("/v1/jobs", "/v1/resume", "/v1/challenge", "/v1/approve",
-                        "/v1/commit", "/v1/human-handoff")),
+                        "/v1/commit", "/v1/reconcile", "/v1/human-handoff")),
     "human": frozenset(("/v1/human-reissue", "/v1/human-finish")),
 }
 FIELDS = frozenset(("v", "iss", "aud", "kid", "sub", "tenant", "session",
