@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alice-secure-runner-prototype"
+version = "0.1.0"
+description = "Synthetic HTTPS-only Alice Secure Runner contract prototype; not a payment or browser sandbox"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+include = ["alice_secure_runner*"]

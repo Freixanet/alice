@@ -1816,6 +1816,34 @@ def _register_task_tools(ctx) -> None:
     errands.card_rules = _card_rules
     _keep_errand_tools_visible()
 
+    # R02 prototype: official Hermes ctx.llm structured completion returns a
+    # PROPOSAL ONLY. This tool neither owns nor connects to Alice Secure Runner,
+    # has no runner credential/CDP, and cannot authorize or execute a purchase.
+    planner = _module("r02_planner.py", "alice_r02_planner")
+
+    def secure_plan(args, **_):
+        try:
+            args = args if isinstance(args, dict) else {}
+            proposal = planner.propose(
+                ctx, goal=args.get("goal"), observations=args.get("observations"),
+                epoch=args.get("epoch"))
+            return _agent_json({"ok": True, "proposal": proposal, "authority": "none"})
+        except (planner.InvalidProposal, planner.PlannerUnavailable):
+            return _agent_json({"ok": False, "error": "Planner unavailable or untrusted proposal rejected."})
+        except Exception:
+            return _agent_json({"ok": False, "error": "Planner could not provide a verified proposal."})
+
+    ctx.register_tool(
+        name="alice_secure_plan", toolset="alice_shopping_plan", handler=secure_plan,
+        schema={"name": "alice_secure_plan",
+                "description": "Propose one typed R02 shopping step. No runner, payment or browser authority.",
+                "parameters": {"type": "object", "properties": {
+                    "goal": {"type": "string", "maxLength": 2000},
+                    "epoch": {"type": "integer", "minimum": 0},
+                    "observations": {"type": "array", "maxItems": 24},
+                }, "required": ["goal", "epoch", "observations"], "additionalProperties": False}},
+        check_fn=_always, description="Structured proposal only, never executes effects.")
+
     # Explicit read-only inspection on the errand's pinned Chrome target.
     # The model supplies selectors, never JS; CDP itself stays forbidden to the
     # agent in a purchase offer because it has no proven target binding.
