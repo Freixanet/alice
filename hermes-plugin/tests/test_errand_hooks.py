@@ -486,7 +486,7 @@ class ErrandHookTests(unittest.TestCase):
 
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
-        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read",
+        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read", "alice_secure_plan",
                                            "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):
