@@ -1847,7 +1847,12 @@ def _register_task_tools(ctx) -> None:
     # Exactly ONE registration path; the previous permissive tool schema
     # omitted the explicit state and could plan UNKNOWN/cancelled jobs.
     # Registration here is unprivileged and uses official Hermes plugin ctx.
-    _module("r02_planner.py", "alice_r02_planner").register(ctx)
+    planner = _module("r02_planner.py", "alice_r02_planner")
+    planner.register(ctx)
+    # This additional official tool is optional and has NO executor authority.
+    # It may only read/publish to a disposable Alice-owned HTTPS proposal
+    # mailbox, never receive the merchant browser, CDP or payment secret.
+    _module("r02_remote.py", "alice_r02_remote").register(ctx, planner)
 
     def legacy_task_handler(handler):
         """Quarantine old browser/vault/cart tools after an ASR-only cutover.

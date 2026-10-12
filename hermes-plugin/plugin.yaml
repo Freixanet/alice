@@ -39,6 +39,7 @@ provides_tools:
   - card_request
   - errand_dom_read
   - alice_secure_plan
+  - alice_secure_plan_remote
 provides_hooks:
   - pre_tool_call
   - post_tool_call

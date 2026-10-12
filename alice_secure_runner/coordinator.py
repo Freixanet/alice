@@ -76,3 +76,56 @@ class FictionalPlanner:
 
     def next_action(self, observation: dict[str, Any]) -> dict[str, Any]:
         return {**next(self._next), "epoch": observation["epoch"]}
+
+
+class PairedRemoteCoordinator:
+    """Trusted Alice boundary for an externally supplied, proposal-only tool.
+
+    The coordinator NEVER sends the runner, device signer or payment authority
+    to Hermes. An Alice process explicitly stages each sanitized observation;
+    a Hermes plugin independently proposes to a one-shot HTTPS mailbox. A
+    claimed step is consumed only once, including after an uncertain crash.
+    """
+
+    def __init__(self, runner: AliceRunner, mailbox: Any, *, tenant: str,
+                 session: str, pair_id: str, goal: str, recipient: str,
+                 existing_job_id: str | None = None):
+        self._runner = runner
+        self._mailbox = mailbox
+        self._tenant = tenant
+        self._session = session
+        self._pair_id = pair_id
+        self._goal = goal
+        self._job = (runner.resume_job(existing_job_id, tenant=tenant, session=session)
+                     if existing_job_id is not None else runner.new_job(tenant, session, recipient))
+
+    @property
+    def job_id(self) -> str:
+        return self._job["job_id"]
+
+    def stage(self) -> str:
+        state = self._runner.resume_job(
+            self.job_id, tenant=self._tenant, session=self._session)
+        if state["status"] not in ("researching", "selecting", "cart_ready"):
+            raise Denied("remote planner writes revoked after checkout or handoff")
+        # The mailbox applies an allowlist independently, avoiding accidental
+        # exposure of recipient/checkout/payment values to the model.
+        return self._mailbox.publish(
+            self._pair_id, tenant=self._tenant, session=self._session,
+            job_id=self.job_id, epoch=state["epoch"],
+            goal=self._goal, observation=state)
+
+    def consume(self, step_id: str) -> dict[str, Any]:
+        # Claim is durably single-use BEFORE any external browser/cart action.
+        # If this process crashes after claim, do NOT automatically reapply.
+        claimed = self._mailbox.claim(
+            self._pair_id, tenant=self._tenant, session=self._session,
+            step_id=step_id)
+        if claimed["job_id"] != self.job_id:
+            raise Denied("planner step belongs to a different Alice job")
+        result = self._runner.propose(
+            self.job_id, tenant=self._tenant, session=self._session,
+            proposal=claimed["proposal"])
+        self._mailbox.acknowledge(
+            self._pair_id, step_id=step_id, result_status=result["status"])
+        return result

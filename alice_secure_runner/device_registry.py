@@ -151,6 +151,30 @@ class RevocableP256DeviceConsent:
                 self._db.execute("ROLLBACK")
                 raise
 
+    def guard_effect(self, *, tenant: str, session: str, on_valid):
+        """Fence an already-approved dispatch against subsequent revocation.
+
+        If revocation completed before this reservation, deny without sending.
+        If dispatch began first, revocation waits behind the SQLite lock and
+        cannot falsely claim the already-in-flight operation was prevented.
+        Never imply this undoes a merchant effect already submitted.
+        """
+        with self._lock:
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._db.execute(
+                    "SELECT expires_at,revoked FROM device_keys "
+                    "WHERE tenant=? AND session=?",
+                    (tenant, session)).fetchone()
+                if row is None or row[1] or row[0] <= int(self._clock()):
+                    raise EnrollmentDenied("device enrollment revoked or expired")
+                outcome = on_valid()
+                self._db.execute("COMMIT")
+                return outcome
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+
     def _verify_locked(self, *, tenant: str, session: str, challenge: bytes,
                        signature: str) -> bool:
         if (not isinstance(tenant, str) or not isinstance(session, str)

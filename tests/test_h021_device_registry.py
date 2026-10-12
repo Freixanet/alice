@@ -198,6 +198,38 @@ class DeviceRegistryCheckoutContractTests(unittest.TestCase):
             self.assertEqual(runner.resume_job(coord.job_id, tenant="tenant-a",
                                                session="session-a")["status"], "awaiting_approval")
 
+    def test_revoking_after_signed_approval_blocks_unsubmitted_checkout(self):
+        with tempfile.TemporaryDirectory(prefix="alice-device-after-approval-") as tmp:
+            folder = Path(tmp)
+            private, public = _keypair(folder, "approval")
+            registry = RevocableP256DeviceConsent(folder / "registry.sqlite3")
+            self.addCleanup(registry.close)
+            version = registry.enroll(
+                tenant="tenant-c", session="session-c", account="owner-c",
+                installation="device-c", public_pem=public,
+                expires_at=int(time.time()) + 3600)
+            runner = AliceRunner(FictionalHTTPSAdapter(
+                origin=self.fixture.shop.url, ca_file=self.fixture.cert,
+                merchant_token=self.fixture.shop_secret), approval_verifier=registry)
+            self.addCleanup(runner.close)
+            coord = Coordinator(runner, tenant="tenant-c", session="session-c",
+                                recipient="Fictional delivery", planner=FictionalPlanner())
+            prepared = coord.run_to_approval()
+            signature = _sign(private, _canonical(prepared["approval_challenge"]), folder)
+            self.assertEqual(runner.approve(
+                coord.job_id, tenant="tenant-c", session="session-c",
+                signature=signature)["status"], "approved")
+            with self.fixture.store._lock:
+                before = self.fixture.store.submit_attempts
+            registry.revoke(tenant="tenant-c", session="session-c",
+                            account="owner-c", expected_version=version)
+            with self.assertRaises(Denied):
+                runner.commit(coord.job_id, tenant="tenant-c", session="session-c")
+            with self.fixture.store._lock:
+                self.assertEqual(self.fixture.store.submit_attempts, before)
+            self.assertEqual(runner.resume_job(coord.job_id, tenant="tenant-c",
+                                               session="session-c")["status"], "approved")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -553,6 +553,8 @@ class AliceRunner:
                                       challenge=_canonical(self._challenge(job)),
                                       signature=signature, on_valid=persist_approval)
                 except ValueError as exc:
+                    if isinstance(exc, Denied):
+                        raise
                     raise Denied("device enrollment or consent not valid") from exc
             if self.__approval_verifier is not None:
                 valid = self.__approval_verifier.verify(
@@ -567,6 +569,24 @@ class AliceRunner:
 
     def commit(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
         """Trusted Alice coordinator only. Never expose as a model tool."""
+        with self.__lock:
+            effect_guard = getattr(self.__approval_verifier, "guard_effect", None)
+            if callable(effect_guard):
+                try:
+                    return effect_guard(
+                        tenant=tenant, session=session,
+                        on_valid=lambda: self._commit_locked(job_id, tenant=tenant,
+                                                              session=session))
+                except ValueError as exc:
+                    if isinstance(exc, Denied):
+                        raise
+                    raise Denied("device enrollment revoked or expired") from exc
+            return self._commit_locked(job_id, tenant=tenant, session=session)
+
+    def _commit_locked(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Caller holds runner lock; external device revoke fenced if supported."""
+        # Also preserve the former standalone in-memory state semantics for
+        # existing test-only HMAC/static public-key verifiers.
         with self.__lock:
             job = self._job(job_id, tenant, session)
             if job.state != "approved":

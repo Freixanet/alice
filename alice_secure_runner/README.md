@@ -74,6 +74,14 @@ planner is deterministic. The optional `alice_secure_plan` Hermes tool returns
 proposals, not privileged runner operations. Real model calls are deliberately
 **not** made in tests, and genuine multi-step reliability is **not proven**.
 
+The optional official remote-planner tool now exchanges ONE typed proposal
+with an Alice-owned disposable loopback HTTPS mailbox. Trusted Alice stages
+sanitized observations, validates and executes runner actions, persists
+one-time claims and allows expiry/rotation/revocation of proposal-only bearer
+credentials. See the linked [proposal mailbox contract](../docs/r02-proposal-mailbox.md).
+Neither live Hermes/model pairing nor production hosted identity and secure
+iOS approval are proven. Real purchases remain prohibited.
+
 **Hermes compatibility inspection:** the official plugin LLM API exists in
 the sampled upstream source tags `v2026.5.16`, `v2026.7.1`, `v2026.8.13` and
 `v2026.9.24`, and in the read-only installed checkout
@@ -175,8 +183,8 @@ plugin with appropriate user consent.
   effect-in-flight fence is implemented. There is still **no real
   browser-session recovery**, no
   encryption-at-rest/key-management strategy, no high-availability coordinator
-  and no independent merchant status reconciliation. Production-grade durable
-  recovery remains a release blocker.
+  and no certified production merchant status reconciliation. Production-grade
+  durable recovery remains a release blocker.
 - No merchant/PSP adapter is certified; only the strictly loopback fictional
   contract can submit. Cloud/browser availability, region, WebAuthn, 3DS,
   Apple Pay and merchant anti-bot/ToS compatibility remain unresolved.

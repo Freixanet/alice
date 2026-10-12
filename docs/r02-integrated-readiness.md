@@ -215,6 +215,37 @@ Mac Python environment. Record those omissions rather than marking PASS.
 
 ## Attacks and negative outcomes
 
+### Continued local proposal-only bridge (additional worktree, pending CI)
+
+The [Hermes-to-Alice proposal mailbox](r02-proposal-mailbox.md) introduces
+an optional official Hermes plugin tool, separate trusted Alice ownership of
+the SQLite proposal-only pairing ledger, expiring/revocable capabilities, a
+sanitized one-step observation and a durable one-shot claim. The trusted
+PairedRemoteCoordinator resumes known jobs and rejects replay after a
+claimed effect; tests drive a fake Hermes-model tool over disposable HTTPS
+through five actual fictional merchant steps to awaiting_approval with zero
+checkout submissions. This DOES NOT prove live Hermes installation,
+actual cloud pairing, hardware consent, independent-host isolation or
+release suitability.
+
+Current local validation: Python **120 tests PASS (9 skipped)**; focused
+R02 Hermes plugin **26 PASS**; remote proposal-mailbox **8 PASS** and
+device registry **5 PASS** (both included in the 120); Prettier and
+git whitespace PASS. An
+isolated Python wheel was built and installed outside the checkout; its
+mailbox and coordinator imported successfully. The wheel file was **59,787
+bytes** on this Mac, which is a packaging measurement, not RAM, hosting
+cost, secure distribution or a tested product installation. Exact-SHA
+hosted GitHub CI and iOS are pending for this subsequent bridge.
+
+The device registry also fences approved fictional
+checkout submission against revocation and expiry with a SQLite writer
+transaction. A revocation that completed first denies commit before the
+merchant is contacted; a revocation racing an already-admitted dispatch
+cannot falsely claim it prevented that in-flight effect. The new regression
+test checks revocation after approval produces zero checkout submissions.
+Exact-SHA GitHub CI remains required separately from these local checks.
+
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |
