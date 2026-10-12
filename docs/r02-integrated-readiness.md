@@ -246,6 +246,18 @@ cannot falsely claim it prevented that in-flight effect. The new regression
 test checks revocation after approval produces zero checkout submissions.
 Exact-SHA GitHub CI remains required separately from these local checks.
 
+### Device key-rotation fence (new candidate SHA)
+
+The approved job now durably records the exact version of its public P-256
+device key. The fictional commit path rechecks both active enrollment and
+that precise version before dispatch. A subsequent key rotation **invalidates
+an existing approval** even after restart, rather than silently treating the
+new key as approval of the old checkout. Older records without a recorded
+version fail closed when using the revocable registry. A new synthetic
+restart/rotation test passes; the full local Python suite now has **121
+tests PASS, 9 optional Chromium skipped**; focused R02 Hermes **26 PASS**.
+This still cannot prove a live iOS Secure Enclave or production user identity.
+
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
 | Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |

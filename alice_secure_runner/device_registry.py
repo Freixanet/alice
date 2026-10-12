@@ -144,14 +144,17 @@ class RevocableP256DeviceConsent:
                 if not self._verify_locked(tenant=tenant, session=session,
                                            challenge=challenge, signature=signature):
                     raise EnrollmentDenied("device approval invalid, expired or revoked")
-                outcome = on_valid()
+                key_version = self._db.execute(
+                    "SELECT version FROM device_keys WHERE tenant=? AND session=?",
+                    (tenant, session)).fetchone()[0]
+                outcome = on_valid(key_version)
                 self._db.execute("COMMIT")
                 return outcome
             except BaseException:
                 self._db.execute("ROLLBACK")
                 raise
 
-    def guard_effect(self, *, tenant: str, session: str, on_valid):
+    def guard_effect(self, *, tenant: str, session: str, expected_version: int, on_valid):
         """Fence an already-approved dispatch against subsequent revocation.
 
         If revocation completed before this reservation, deny without sending.
@@ -163,11 +166,13 @@ class RevocableP256DeviceConsent:
             self._db.execute("BEGIN IMMEDIATE")
             try:
                 row = self._db.execute(
-                    "SELECT expires_at,revoked FROM device_keys "
+                    "SELECT expires_at,revoked,version FROM device_keys "
                     "WHERE tenant=? AND session=?",
                     (tenant, session)).fetchone()
-                if row is None or row[1] or row[0] <= int(self._clock()):
-                    raise EnrollmentDenied("device enrollment revoked or expired")
+                if (type(expected_version) is not int or expected_version < 1
+                        or row is None or row[1] or row[0] <= int(self._clock())
+                        or row[2] != expected_version):
+                    raise EnrollmentDenied("device approval key rotated, revoked or expired")
                 outcome = on_valid()
                 self._db.execute("COMMIT")
                 return outcome

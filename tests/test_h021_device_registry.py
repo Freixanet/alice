@@ -124,7 +124,8 @@ class DeviceRegistryContractTests(unittest.TestCase):
         revoked = threading.Event()
         failures = []
 
-        def grant():
+        def grant(version):
+            self.assertEqual(version, 1)
             inside_grant.set()
             if not allow_grant.wait(4):
                 raise AssertionError("timed out waiting for grant release")
@@ -229,6 +230,46 @@ class DeviceRegistryCheckoutContractTests(unittest.TestCase):
                 self.assertEqual(self.fixture.store.submit_attempts, before)
             self.assertEqual(runner.resume_job(coord.job_id, tenant="tenant-c",
                                                session="session-c")["status"], "approved")
+
+    def test_rotating_key_after_approval_invalidates_old_checkout_consent(self):
+        with tempfile.TemporaryDirectory(prefix="alice-device-rotate-after-approval-") as tmp:
+            folder = Path(tmp)
+            private, old_public = _keypair(folder, "old")
+            _, replacement_public = _keypair(folder, "replacement")
+            registry = RevocableP256DeviceConsent(folder / "registry.sqlite3")
+            self.addCleanup(registry.close)
+            registry.enroll(
+                tenant="tenant-d", session="session-d", account="owner-d",
+                installation="device-d", public_pem=old_public,
+                expires_at=int(time.time()) + 3600)
+            runner = AliceRunner(FictionalHTTPSAdapter(
+                origin=self.fixture.shop.url, ca_file=self.fixture.cert,
+                merchant_token=self.fixture.shop_secret), approval_verifier=registry,
+                ledger_path=folder / "runner.sqlite3")
+            coord = Coordinator(runner, tenant="tenant-d", session="session-d",
+                                recipient="Fictional delivery", planner=FictionalPlanner())
+            prepared = coord.run_to_approval()
+            signature = _sign(private, _canonical(prepared["approval_challenge"]), folder)
+            runner.approve(coord.job_id, tenant="tenant-d", session="session-d",
+                           signature=signature)
+            # The version binding must survive a full Alice process restart;
+            # losing it must never silently upgrade an old approval.
+            runner.close()
+            runner = AliceRunner(FictionalHTTPSAdapter(
+                origin=self.fixture.shop.url, ca_file=self.fixture.cert,
+                merchant_token=self.fixture.shop_secret), approval_verifier=registry,
+                ledger_path=folder / "runner.sqlite3")
+            self.addCleanup(runner.close)
+            self.assertEqual(registry.rotate(
+                tenant="tenant-d", session="session-d", account="owner-d",
+                installation="device-d", expected_version=1,
+                public_pem=replacement_public, expires_at=int(time.time()) + 3600), 2)
+            with self.fixture.store._lock:
+                before = self.fixture.store.submit_attempts
+            with self.assertRaises(Denied):
+                runner.commit(coord.job_id, tenant="tenant-d", session="session-d")
+            with self.fixture.store._lock:
+                self.assertEqual(self.fixture.store.submit_attempts, before)
 
 
 if __name__ == "__main__":

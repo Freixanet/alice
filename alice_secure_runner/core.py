@@ -74,6 +74,9 @@ class Job:
     challenge_nonce: str = ""
     challenge_expires: int = 0
     commit_expires: int = 0
+    # Version of the exact enrolled public device key that approved checkout.
+    # A later key rotation must invalidate this previously signed authorization.
+    approval_device_version: int = 0
     human_handle_digest: str = ""
     # Runner-only browser ownership marker, not a security boundary. A new
     # process must not claim it closed a previous process's browser.
@@ -529,7 +532,9 @@ class AliceRunner:
                 raise Denied("not awaiting user approval")
             if time.time() >= job.challenge_expires:
                 raise Denied("checkout consent expired")
-            def persist_approval():
+            def persist_approval(device_version: int = 0):
+                if type(device_version) is not int or device_version < 0:
+                    raise Denied("invalid consent key version")
                 cid = self._pending(job)["checkout_id"]
                 rc = self.__db.execute(
                     "UPDATE authorizations SET status='approved' WHERE checkout_id=? AND status='pending'",
@@ -539,6 +544,7 @@ class AliceRunner:
                 job.challenge_nonce = ""
                 job.challenge_expires = 0
                 job.commit_expires = int(time.time()) + 300
+                job.approval_device_version = device_version
                 job.state = "approved"
                 self._persist_job(job)
                 return {"status": "approved", "checkout_id": cid}
@@ -575,6 +581,7 @@ class AliceRunner:
                 try:
                     return effect_guard(
                         tenant=tenant, session=session,
+                        expected_version=self._job(job_id, tenant, session).approval_device_version,
                         on_valid=lambda: self._commit_locked(job_id, tenant=tenant,
                                                               session=session))
                 except ValueError as exc:
