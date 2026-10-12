@@ -65,6 +65,14 @@ machines in **one Hermes-administrated account do not qualify**.
    HTTP/DNS/UDP/WebRTC/redirect/rebinding/IPv6 egress policy. A future browser
    with approved Internet access needs a separate locked-down egress
    proxy, DNS resolution policy and network firewall.
+6. `h021_transport.py`: bounded 24-connection HTTP admission **before**
+   spawning handler threads, TLS handshakes in admitted workers rather than
+   blocking the only accept loop, and absolute five-second request-header and
+   request-body deadlines. A test with an idle TCP client and a concurrent
+   verified TLS request passes locally. These fixture-level protections
+   limit, but do **not** eliminate, denial-of-service; production requires
+   an independently configured reverse proxy with connection and per-source
+   rate limits, request budgets and load-tested cloud firewall behavior.
 
 **H01/H02 preservation:** the #76/#77/#78/#79 commits are not modified. H02.1
 is a separate draft PR stacked on #79. Because H02.1 extends the shared

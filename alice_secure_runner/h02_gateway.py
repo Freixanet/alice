@@ -16,6 +16,7 @@ from pathlib import Path
 
 from .h02_identity import InvalidCapability, Keyring, ReplayLedger, ROLE_PATHS
 from .h021_crypto import PublicVerifier
+from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 
 MAX_BODY = 16384
 BACKEND_ORIGIN = "https://asr:8443"  # fixed Docker-internal origin; never user-controlled
@@ -99,6 +100,17 @@ class H02Gateway:
 def make_handler(gateway: H02Gateway):
     admission = threading.BoundedSemaphore(12)
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            if gateway.verify_only:
+                self.rfile = HeaderDeadlineReader(self.rfile, self.connection)
+
+        def parse_request(self):
+            accepted = super().parse_request()
+            if gateway.verify_only:
+                self.rfile.headers_complete()
+            return accepted
+
         def log_message(self, *_):
             return
 
@@ -141,7 +153,8 @@ def make_handler(gateway: H02Gateway):
                 length = int(self.headers.get("Content-Length", "-1"))
                 if not 2 <= length <= MAX_BODY:
                     raise InvalidCapability("body size outside limit")
-                raw = self.rfile.read(length)
+                raw = (read_body_with_deadline(self, length) if gateway.verify_only
+                       else self.rfile.read(length))
                 if len(raw) != length:
                     raise InvalidCapability("truncated request")
                 actor, role, obj = gateway.authorize(
@@ -184,8 +197,12 @@ def main():
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain("/run/h01-tls/gateway.pem", "/run/h01-tls/gateway.key")
-    server = ThreadingHTTPServer(("0.0.0.0", 8443), make_handler(gateway))
-    server.socket = tls.wrap_socket(server.socket, server_side=True)
+    server_type = LimitedHTTPServer if gateway.verify_only else ThreadingHTTPServer
+    server = server_type(("0.0.0.0", 8443), make_handler(gateway))
+    if gateway.verify_only:
+        server.tls_context = tls
+    else:
+        server.socket = tls.wrap_socket(server.socket, server_side=True)
     print("H02 synthetic scoped gateway: HTTPS ingress", flush=True)
     try:
         server.serve_forever()

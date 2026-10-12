@@ -21,6 +21,7 @@ from .fictional_shop import FictionalStore, FixtureHTTPS
 from .h01_host import secret
 from .h02_identity import InvalidCapability, ReplayLedger
 from .h021_crypto import PublicVerifier
+from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 from .http_service import FixturePrincipal, make_handler
 
 
@@ -29,6 +30,15 @@ def protected_handler(runner, principals, verifier: PublicVerifier, replay: Repl
     original = make_handler(runner, principals)
     admission = threading.BoundedSemaphore(12)
     class H021Handler(original):
+        def setup(self):
+            super().setup()
+            self.rfile = HeaderDeadlineReader(self.rfile, self.connection)
+
+        def parse_request(self):
+            accepted = super().parse_request()
+            self.rfile.headers_complete()
+            return accepted
+
         def do_POST(self):
             if not admission.acquire(blocking=False):
                 self._write(503, {"error": "verification_busy_no_effect"})
@@ -45,7 +55,7 @@ def protected_handler(runner, principals, verifier: PublicVerifier, replay: Repl
                 length = int(self.headers.get("Content-Length", "-1"))
                 if not 2 <= length <= 16384:
                     raise InvalidCapability("bad request size")
-                raw = self.rfile.read(length)
+                raw = read_body_with_deadline(self, length)
                 if len(raw) != length:
                     raise InvalidCapability("incomplete request")
                 authorization = self.headers.get("Authorization", "")
@@ -115,9 +125,9 @@ def main():
         with open("/run/h021-auth/subjects.json", encoding="utf-8") as subject_file:
             subject_map = json.load(subject_file)
         replay = ReplayLedger("/var/lib/h01/h021_requests.sqlite3")
-        server = ThreadingHTTPServer(("0.0.0.0", 8443),
-                                     protected_handler(runner, principals, verifier, replay, subject_map))
-        server.socket = tls.wrap_socket(server.socket, server_side=True)
+        server = LimitedHTTPServer(("0.0.0.0", 8443),
+                                   protected_handler(runner, principals, verifier, replay, subject_map))
+        server.tls_context = tls
         print("H021 private ASR: independent public-key scope and durable replay", flush=True)
         try:
             server.serve_forever()
