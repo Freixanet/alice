@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 
 from alice_secure_runner.core import AliceRunner, FictionalHTTPSAdapter
-from alice_secure_runner.http_service import RunnerHTTPS
+from alice_secure_runner.http_service import FixturePrincipal, RunnerHTTPS
 
 import test_alice_secure_runner as shop_tests
 
@@ -47,12 +47,21 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.device_key = secrets.token_bytes(32)
         self.runner_token = secrets.token_urlsafe(40)
         self.human_token = secrets.token_urlsafe(40)
+        self.other_tenant_token = secrets.token_urlsafe(40)
+        self.other_human_token = secrets.token_urlsafe(40)
+        self.other_session_token = secrets.token_urlsafe(40)
+        self.other_session_human_token = secrets.token_urlsafe(40)
         self.runner = AliceRunner(FictionalHTTPSAdapter(
             origin=self.shared.shop.url, ca_file=self.shared.cert, merchant_token=self.shared.shop_secret),
             approval_key=self.device_key)
-        self.host = RunnerHTTPS(self.runner, coordinator_token=self.runner_token,
-                                human_token=self.human_token,
-                                cert_file=self.shared.cert, key_file=self.shared.key)
+        self.host = RunnerHTTPS(self.runner, principals={
+            self.runner_token: FixturePrincipal("coordinator", "user-A", "paired"),
+            self.human_token: FixturePrincipal("human", "user-A", "paired"),
+            self.other_tenant_token: FixturePrincipal("coordinator", "user-B", "paired"),
+            self.other_human_token: FixturePrincipal("human", "user-B", "paired"),
+            self.other_session_token: FixturePrincipal("coordinator", "user-A", "other-session"),
+            self.other_session_human_token: FixturePrincipal("human", "user-A", "other-session"),
+        }, cert_file=self.shared.cert, key_file=self.shared.key)
         self.host.__enter__()
         self.ctx = ssl.create_default_context(cafile=self.shared.cert)
 
@@ -182,8 +191,61 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
 
     def test_backend_and_human_capabilities_cannot_be_shared(self):
         with self.assertRaises(ValueError):
-            RunnerHTTPS(self.runner, coordinator_token=self.runner_token, human_token=self.runner_token,
+            RunnerHTTPS(self.runner, principals={self.runner_token: FixturePrincipal("coordinator", "user-A", "paired")},
                         cert_file=self.shared.cert, key_file=self.shared.key)
+        with self.assertRaises(ValueError):
+            RunnerHTTPS(self.runner, principals={
+                self.runner_token: FixturePrincipal("coordinator", "user-A", "paired"),
+                self.human_token: FixturePrincipal("human", "user-B", "paired")},
+                cert_file=self.shared.cert, key_file=self.shared.key)
+        with self.assertRaises(ValueError):
+            RunnerHTTPS(self.runner, principals={
+                "short": FixturePrincipal("coordinator", "user-A", "paired"),
+                self.human_token: FixturePrincipal("human", "user-A", "paired")},
+                cert_file=self.shared.cert, key_file=self.shared.key)
+
+    def test_cross_tenant_principal_binding_blocks_claimed_identity_and_human_reissue(self):
+        start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fictional delivery"})
+        jid = start["job_id"]
+        # Valid bearer for B must not gain A's authority by supplying A's
+        # tenant/session, even though it knows A's job ID and A's session name.
+        attempts = (
+            ("/v1/resume", {"job_id": jid, "tenant": "user-A", "session": "paired"}, self.other_tenant_token, 403),
+            ("/v1/resume", {"job_id": jid, "tenant": "user-B", "session": "paired"}, self.other_tenant_token, 403),
+            ("/v1/propose", {"job_id": jid, "tenant": "user-A", "session": "paired",
+                              "proposal": {"action": "search", "query": "keyboard", "epoch": 0}}, self.other_tenant_token, 403),
+            ("/v1/challenge", {"job_id": jid, "tenant": "user-A", "session": "paired"}, self.other_tenant_token, 403),
+            ("/v1/human-handoff", {"job_id": jid, "tenant": "user-A", "session": "paired"}, self.other_tenant_token, 403),
+            ("/v1/resume", {"job_id": jid, "tenant": "user-A", "session": "paired"}, self.other_session_token, 403),
+        )
+        for endpoint, body, token, code in attempts:
+            with self.subTest(endpoint=endpoint, token=token[:5]), self.assertRaises(urllib.error.HTTPError) as err:
+                self.request(endpoint, body, token=token)
+            self.assertEqual(err.exception.code, code)
+
+        handoff = self.request("/v1/human-handoff", {"job_id": jid, "tenant": "user-A", "session": "paired"})
+        human_payload = {"job_id": jid, "tenant": "user-A", "session": "paired",
+                         "human_handle": handoff["human_handle"]}
+        for endpoint in ("/v1/human-reissue", "/v1/human-finish"):
+            for body in (human_payload, {**human_payload, "tenant": "user-B"}):
+                with self.subTest(endpoint=endpoint, tenant=body["tenant"]), self.assertRaises(urllib.error.HTTPError) as err:
+                    self.request(endpoint, body, token=self.other_human_token)
+                self.assertEqual(err.exception.code, 403)
+        # Even a correct human handle cannot be used by the wrong principal.
+        self.assertEqual(self.request("/v1/human-finish", human_payload, token=self.human_token)["payment_claim"],
+                         "NOT_VERIFIED")
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_principal_identity_is_not_inferred_from_json_job_creation(self):
+        # Omitted identity is supplied from authenticated token; false claims
+        # fail closed before creating another tenant's job.
+        own = self.request("/v1/jobs", {"recipient": "Fictional recipient"}, token=self.other_tenant_token)
+        self.assertEqual(self.request("/v1/resume", {"job_id": own["job_id"]},
+                                      token=self.other_tenant_token)["job_id"], own["job_id"])
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake"},
+                         token=self.other_tenant_token)
+        self.assertEqual(err.exception.code, 403)
 
     def test_resume_endpoint_returns_epoch_but_never_human_handle(self):
         start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake shipping"})

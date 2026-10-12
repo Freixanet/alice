@@ -110,7 +110,11 @@ class BrowserFixtureReadAdapter(FictionalHTTPSAdapter):
         return self._command({"op": "read_product", "session": browser_session, "sku": sku})
 
     def release_session(self, browser_session: str) -> None:
-        reply = self._command({"op": "close", "session": browser_session})
+        try:
+            reply = self._command({"op": "close", "session": browser_session})
+        except Denied:
+            self._force_terminate()
+            raise
         if reply != {"closed": True, "session": browser_session}:
             self._force_terminate()
             raise Denied("browser close not acknowledged")

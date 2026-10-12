@@ -142,6 +142,13 @@ class RealChromiumFixtureTests(unittest.TestCase):
         self.assertEqual(self.store.submit_attempts, 0)
         self.adapter.release_session(two.job_id)
 
+    def test_unseen_browser_session_never_gets_a_false_close_ack(self):
+        # Run after other browser tests (alphabetic unittest ordering). A new
+        # process cannot attest to termination of a prior-process browser.
+        with self.assertRaises(Denied):
+            self.adapter.release_session("unowned-real-browser-job-123")
+        self.assertIsNotNone(self.adapter._child.poll())
+
     def test_real_browser_merchant_failure_stays_unknown_no_retry(self):
         client = self.client()
         client.run_to_approval()

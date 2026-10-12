@@ -71,10 +71,12 @@ async function getPage(id) {
 async function dispatch(command) {
   if (!command || typeof command !== "object") throw Error("invalid command");
   if (command.op === "close") {
-    if (contexts.has(command.session)) {
-      await contexts.get(command.session).context.close();
-      contexts.delete(command.session);
-    }
+    // A fresh replacement Node process MUST NOT attest to the closure of a
+    // context that may still exist in a prior, orphaned Chrome process.
+    if (!contexts.has(command.session))
+      throw Error("no owned browser session to close; fencing not verified");
+    await contexts.get(command.session).context.close();
+    contexts.delete(command.session);
     return { closed: true, session: command.session };
   }
   if (command.op === "stats") {

@@ -86,7 +86,8 @@ security path.
 alice_secure_runner` is intentionally **disabled by default** and requires
 `ALICE_RUNNER_FIXTURE_ONLY=yes`, pinned fictional HTTPS origin/CA, fixture
 merchant token, 32-byte approval key, separate backend/human authorization
-tokens of at least 32 characters each, service TLS
+tokens of at least 32 characters each, fixed test principal identity via
+`ALICE_RUNNER_FIXTURE_TENANT` and `ALICE_RUNNER_FIXTURE_SESSION`, service TLS
 certificate/key and SQLite file. It only binds `127.0.0.1` and refuses
 non-loopback merchant destinations. Its keys must never be supplied to Hermes.
 
@@ -118,12 +119,12 @@ plugin with appropriate user consent.
   inspect same-user processes, memory and environment. An authenticated local
   HTTPS bearer is insufficient against that threat; remote isolation and
   adversarial process/network tests are mandatory before release.
-- Tenant/session are supplied by a trusted coordinator, not a production OIDC
-  identity provider. The synthetic service now separates its static coordinator
-  and simulated human-completion bearers, but **neither is real user/device
-  authentication**. A compromised trusted backend could still impersonate
-  tenant/session values. No multi-tenant authentication, quotas, user/device key
-  lifecycle or audit.
+- Tenant/session and coordinator/human role are now derived from explicit
+  server-provisioned **fixture principals**, NOT untrusted JSON claims. Other
+  tenants' tokens cannot impersonate this job even when the job ID is known.
+  These are still static bearer secrets, **not production authentication**:
+  there is no real user/device identity provider, expiry, key rotation, quotas,
+  independently authenticated enrollment or audit. No OS tenant isolation.
 - HMAC is a fictional device consent stand-in, not an iOS Secure Enclave
   signature or biometric-attested approval. `human_handoff()` is a pure state
   transition, not an authenticated browser viewer or PSP handoff.

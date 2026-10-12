@@ -35,7 +35,21 @@ jobs:
           mkdir -p "$RUNNER_TEMP/r02_wheels" "$RUNNER_TEMP/r02_install"
           python -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/r02_wheels" .
           python -m pip install --no-index --no-deps --find-links "$RUNNER_TEMP/r02_wheels" --target "$RUNNER_TEMP/r02_install" alice-secure-runner-prototype
-          PYTHONPATH="$RUNNER_TEMP/r02_install" python -c 'from alice_secure_runner import AliceRunner; print("WHEEL_IMPORT_OK", AliceRunner.__name__)'
+          # Run outside the checkout: Python must import the installed wheel.
+          cd "$RUNNER_TEMP"
+          PYTHONPATH="$RUNNER_TEMP/r02_install" python - <<'PY'
+          from pathlib import Path
+          import os
+          import alice_secure_runner
+          from alice_secure_runner import AliceRunner
+          from alice_secure_runner.browser_fixture import BrowserFixtureReadAdapter
+          path = Path(alice_secure_runner.__file__).resolve()
+          target = (Path(os.environ["RUNNER_TEMP"]) / "r02_install").resolve()
+          assert path.is_relative_to(target), (path, target)
+          js = path.with_name("browser_fixture.mjs")
+          assert js.is_file() and js.stat().st_size > 1000, js
+          print("WHEEL_BUNDLE_OK", AliceRunner.__name__, BrowserFixtureReadAdapter.__name__)
+          PY
       - name: No privileged Hermes/browser access or real payments in CI
         run: |
           python -m compileall -q alice_secure_runner hermes-plugin/r02_planner.py

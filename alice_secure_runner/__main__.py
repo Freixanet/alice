@@ -11,7 +11,7 @@ import os
 import sys
 
 from .core import AliceRunner, FictionalHTTPSAdapter
-from .http_service import make_handler
+from .http_service import FixturePrincipal, make_handler
 
 
 def main() -> int:
@@ -20,7 +20,8 @@ def main() -> int:
         return 2
     required = ("ALICE_FIXTURE_ORIGIN", "ALICE_FIXTURE_CA_FILE", "ALICE_FIXTURE_MERCHANT_TOKEN",
                 "ALICE_RUNNER_APPROVAL_KEY_HEX", "ALICE_RUNNER_COORDINATOR_TOKEN", "ALICE_RUNNER_HUMAN_TOKEN",
-                "ALICE_RUNNER_TLS_CERT_FILE", "ALICE_RUNNER_TLS_KEY_FILE", "ALICE_RUNNER_LEDGER_FILE")
+                "ALICE_RUNNER_TLS_CERT_FILE", "ALICE_RUNNER_TLS_KEY_FILE", "ALICE_RUNNER_LEDGER_FILE",
+                "ALICE_RUNNER_FIXTURE_TENANT", "ALICE_RUNNER_FIXTURE_SESSION")
     missing = [field for field in required if not os.environ.get(field)]
     if missing:
         print("Runner unavailable: required Alice-owned configuration is missing.", file=sys.stderr)
@@ -40,8 +41,12 @@ def main() -> int:
             merchant_token=os.environ["ALICE_FIXTURE_MERCHANT_TOKEN"])
         runner = AliceRunner(adapter, approval_key=approval_key,
                              ledger_path=os.environ["ALICE_RUNNER_LEDGER_FILE"])
-        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(
-            runner, coordinator_token, human_token))
+        tenant = os.environ["ALICE_RUNNER_FIXTURE_TENANT"]
+        session = os.environ["ALICE_RUNNER_FIXTURE_SESSION"]
+        server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner, {
+            coordinator_token: FixturePrincipal("coordinator", tenant, session),
+            human_token: FixturePrincipal("human", tenant, session),
+        }))
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(os.environ["ALICE_RUNNER_TLS_CERT_FILE"],
                             os.environ["ALICE_RUNNER_TLS_KEY_FILE"])
