@@ -144,6 +144,10 @@ def check_private_connectivity(label):
 
 
 def verify_live_container_policy():
+    # Python -O removes assert statements; never allow a security proof to
+    # succeed after its Docker policy checks were optimized away.
+    if not __debug__:
+        raise AssertionError('H01 Docker policy inspection requires Python without -O')
     checks = []
     for service in ('asr', 'gateway'):
         container_id = docker('ps', '-q', service).stdout.strip()

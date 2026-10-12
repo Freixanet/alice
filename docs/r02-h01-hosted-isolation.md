@@ -108,8 +108,8 @@ operated cloud VM, real official Hermes host or real PSP.
 | --------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
 | Valid structured product-search proposal                        | **ALLOWED** via gateway                                | Read/search changes no irreversible charge                             |
 | Read ASR backend bearer, device key, SQLite file                | **BLOCKED (TECH)** separate container mounts           | Trusted operator checks the real files exist; host admin out of scope  |
-| List ASR Chromium's live, actual private profile directory     | **BLOCKED (TECH)** separate temporary filesystem       | Operator attests live directory first; not a full cookie-exfil audit   |
-| Read `/var/run/docker.sock` from hostile container             | **UNAVAILABLE/config**: socket is not mounted          | ASR/gateway mount configuration inspected separately                   |
+| List ASR Chromium's live, actual private profile directory      | **BLOCKED (TECH)** separate temporary filesystem       | Operator attests live directory first; not a full cookie-exfil audit   |
+| Read `/var/run/docker.sock` from hostile container              | **UNAVAILABLE/config**: socket is not mounted          | ASR/gateway mount configuration inspected separately                   |
 | Read ASR `/proc/<real_host_pid>/environ` or memory              | **BLOCKED (TECH)** PID/mount namespaces                | Same-host kernel escape not tested                                     |
 | Connect to ASR's actual private IP:8443 or :9222                | **BLOCKED (TECH)** Docker network separation           | Host routing, custom NAT/iptables outside fixture unknown              |
 | Connect to public internet from Hermes container                | **BLOCKED (TECH)** internal-only frontend bridge       | No general internet permission in adversarial lab                      |
@@ -127,6 +127,10 @@ operated cloud VM, real official Hermes host or real PSP.
 An initial independently hosted Docker lab run **passed** on H01 commit
 `d13e88f08bdbb267f20e2f8fa7f5475f2492a7ec`:
 [run 38203633534, job 114662209072](https://github.com/Freixanet/alice/actions/runs/38203633534).
+After strengthening the network verifier and replacing the missing browser
+path probe with an ASR-attested **live** Chromium profile, the full Docker
+lab passed again on commit `f282124bf83065f6251372cd0b187b0af950e739`:
+[run 38268271326, job 114875892695](https://github.com/Freixanet/alice/actions/runs/38268271326).
 The hostile container returned **35 passing checks**, the fake 4998-minor-unit
 checkout confirmed once and rejected replay, a recreated runner rejected
 stale browser ownership, and SIGKILL during synthetic dispatch recovered
@@ -138,15 +142,17 @@ Chromium 9/9 PASS alone are **not evidence of Docker network isolation**.
 
 ### Public execution record (non-sensitive)
 
-| Stage | Evidence | Outcome / restriction |
-| --- | --- | --- |
-| H01 executable packaging | Standalone wheel via two-stage runner and gateway Docker builds | Installed outside source on disposable CI VM; no client-side Docker |
-| Hostile Hermes probe | Run `38203633534`, SHA `d13e88f` | 35 selected checks passed; privileged same-host adversary not covered |
-| Durable restart regression | `tests/test_alice_secure_runner.py`; same Docker run | Fixed SQLite live-cursor replacement loop; test restores 10 jobs in two new processes |
-| Orphan browser ownership | Same Docker run | Replacement process rejects old browser generation; not cross-host attestation |
-| Interrupted payment effect | Same Docker run | `unknown`, 0 automatic retries; fake merchant was co-located with ASR |
-| Independent security and correctness reviews | Two read-only reviews of H01 code and CI | Security isolation limits and functional recovery gaps remain open |
-| Hosted production, genuine identity/PSP and Hermes end-to-end | No such test performed | **P0 / NO-GO** |
+| Stage                                                         | Evidence                                                                   | Outcome / restriction                                                                               |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| H01 executable packaging                                      | Standalone wheel via two-stage runner and gateway Docker builds            | Installed outside source on disposable CI VM; no client-side Docker                                 |
+| Hostile Hermes probe                                          | Runs `38203633534` (`d13e88f`) and `38268271326` (`f282124`)               | 35 selected checks passed; privileged same-host adversary not covered                               |
+| Proof-verifier regression                                     | 6 synthetic negative unit tests, run `38268271326`                         | Extra network, public gateway or unexpectedly routable private bridge are rejected                  |
+| Real browser private storage                                  | `38268271326`, trusted ASR presence check + hostile directory-list attempt | Live Chromium profile visible to ASR but not to hostile container; no real cookie exfiltration test |
+| Durable restart regression                                    | `tests/test_alice_secure_runner.py`; same Docker run                       | Fixed SQLite live-cursor replacement loop; test restores 10 jobs in two new processes               |
+| Orphan browser ownership                                      | Same Docker run                                                            | Replacement process rejects old browser generation; not cross-host attestation                      |
+| Interrupted payment effect                                    | Same Docker run                                                            | `unknown`, 0 automatic retries; fake merchant was co-located with ASR                               |
+| Independent security and correctness reviews                  | Two read-only reviews of H01 code and CI                                   | Security isolation limits and functional recovery gaps remain open                                  |
+| Hosted production, genuine identity/PSP and Hermes end-to-end | No such test performed                                                     | **P0 / NO-GO**                                                                                      |
 
 The private execution ledger referenced by `docs/continuity.md` is not part of
 this repository; this public record intentionally does **not** claim to have
