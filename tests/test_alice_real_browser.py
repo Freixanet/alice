@@ -17,6 +17,7 @@ import urllib.request
 from alice_secure_runner.browser_fixture import BrowserFixtureReadAdapter
 from alice_secure_runner.coordinator import Coordinator, FictionalPlanner
 from alice_secure_runner.core import AliceRunner, Denied, Indeterminate
+from alice_secure_runner.fictional_shop import FictionalStore, FixtureHTTPS
 
 import test_alice_secure_runner as fixture
 
@@ -52,6 +53,7 @@ class RealChromiumFixtureTests(unittest.TestCase):
             self.store.fail_next_submit = False
             self.store.price_override = None
             self.store.certified_adapter = True
+            self.store.redirect_browser_to = None
         self.key = secrets.token_bytes(32)
         self.runner = AliceRunner(self.adapter, approval_key=self.key)
 
@@ -96,6 +98,24 @@ class RealChromiumFixtureTests(unittest.TestCase):
             urllib.request.urlopen(req, context=ctx, timeout=3)
         self.assertEqual(err.exception.code, 403)
         self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_browser_redirect_does_not_forward_read_secret_to_other_origin(self):
+        canary_store = FictionalStore(secret=secrets.token_urlsafe(32))
+        with FixtureHTTPS(canary_store, self.shop_fixture.cert, self.shop_fixture.key) as other:
+            job = self.client()
+            try:
+                for target in (other.url + "/r02-redirect-canary",
+                               self.shop_fixture.shop.url + "/r02-redirect-canary"):
+                    self.store.redirect_browser_to = target
+                    with self.assertRaises(Denied):
+                        job.step()
+            finally:
+                self.store.redirect_browser_to = None
+                self.adapter.release_session(job.job_id)
+            self.assertEqual(canary_store.redirect_hits, 0)
+            self.assertFalse(canary_store.redirect_auth_header_seen)
+            self.assertEqual(self.store.redirect_hits, 0)
+            self.assertEqual(self.store.submit_attempts, 0)
 
     def test_real_browser_rejects_privileged_operations_and_price_change(self):
         client = self.client()

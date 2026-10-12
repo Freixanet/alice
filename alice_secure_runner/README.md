@@ -18,6 +18,8 @@ The browser child receives only a scoped **read token**; the merchant fixture
 rejects this token for cart/quote/commit operations. The Python runner keeps
 the independent checkout-effect token. The browser attaches its read token
 only to specifically allowlisted GET requests, not global context headers;
+all HTTP redirects are denied using `route.fetch(maxRedirects=0)` before any
+HTML is fulfilled, preventing the scoped token from following a 302;
 WebSocket interception is required, otherwise the browser session fails closed.
 Browser IPC has per-command IDs and
 operation-specific close acknowledgements; missing/mismatched replies kill the

@@ -32,6 +32,9 @@ class FictionalStore:
         self.fail_next_submit = False
         self.fail_next_quote = False
         self.certified_adapter = True
+        self.redirect_browser_to: str | None = None
+        self.redirect_hits = 0
+        self.redirect_auth_header_seen = False
 
     def quote(self, cart_id: str, recipient: str) -> dict:
         with self._lock:
@@ -76,9 +79,21 @@ def make_handler(store: FictionalStore):
             return True
 
         def do_GET(self):
+            url = urlsplit(self.path)
+            if url.path == "/r02-redirect-canary":
+                with store._lock:
+                    store.redirect_hits += 1
+                    store.redirect_auth_header_seen |= bool(self.headers.get("Authorization"))
+                self._send(200, {"fictional_canary": True})
+                return
             if not self._auth():
                 return
-            url = urlsplit(self.path)
+            if url.path == "/browse/search" and store.redirect_browser_to:
+                self.send_response(302)
+                self.send_header("Location", store.redirect_browser_to)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             if url.path == "/search":
                 q = parse_qs(url.query).get("q", [""])[0].lower()
                 self._send(200, {"products": [{"sku": store.product["sku"], "name": store.product["name"]}]

@@ -55,14 +55,31 @@ async function getPage(id) {
         await route.abort("blockedbyclient");
         return;
       }
-      // Attach the fictional READ-ONLY credential only to allowlisted GETs;
-      // never put it in the context's global headers for arbitrary requests.
-      await route.continue({
+      // route.continue({headers}) carries those headers through redirects!
+      // Fetch with redirects DISABLED, reject all 3xx, then fulfill only the
+      // verified first response. Never forward the read bearer to a Location.
+      const response = await route.fetch({
         headers: {
           ...request.headers(),
           Authorization: `Bearer ${process.env.ALICE_FIXTURE_BROWSER_READ_TOKEN}`,
         },
+        maxRedirects: 0,
       });
+      if (
+        response.status() !== 200 ||
+        new URL(response.url()).origin !== origin
+      ) {
+        blockedRequests += 1;
+        await route.abort("blockedbyclient");
+        return;
+      }
+      const body = await response.body();
+      if (body.length > 16384) {
+        blockedRequests += 1;
+        await route.abort("blockedbyclient");
+        return;
+      }
+      await route.fulfill({ response, body });
     });
     if (typeof context.routeWebSocket !== "function") {
       await context.close();
