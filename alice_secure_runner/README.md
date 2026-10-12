@@ -56,6 +56,12 @@ merchant token, 32-byte approval key, backend authorization token, service TLS
 certificate/key and SQLite file. It only binds `127.0.0.1` and refuses
 non-loopback merchant destinations. Its keys must never be supplied to Hermes.
 
+Packaging smoke check: `python3.11 -m pip wheel --no-deps
+--no-build-isolation .` builds `alice_secure_runner_prototype-0.1.0-py3-none-any.whl`;
+installing that wheel into a disposable target and importing `AliceRunner`
+passed locally. This verifies Python packaging, **not** a cloud deployment or
+automatic onboarding in the iOS app.
+
 For eventual **hosted Alice** operation, deploy a hardened ASR behind Alice's
 authenticated backend, with per-tenant OS/container/VM isolation, managed TLS,
 private secret storage, trusted device-approval verification, a durable job
