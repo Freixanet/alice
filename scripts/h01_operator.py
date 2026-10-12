@@ -122,6 +122,23 @@ def inspect_dispatch(job_id):
     return r.stdout.strip() if r.returncode == 0 else 'UNAVAILABLE'
 
 
+def check_private_connectivity(label):
+    # Disposable operator reads only IPs and exit-code; never reads private
+    # tokens or browser data and never grants Hermes Docker access.
+    for service, host in (('gateway', 'asr'), ('asr', '127.0.0.1')):
+        code = ("import socket,json; h=__import__('sys').argv[1]; "
+                "ips=[a[4][0] for a in socket.getaddrinfo(h,8443,type=socket.SOCK_STREAM)]; "
+                "results=[]; "
+                "\nfor ip in ips:\n"
+                " s=socket.socket();s.settimeout(2);results.append([ip,s.connect_ex((ip,8443))]);s.close()\n"
+                "print(json.dumps(results))")
+        interpreter = '/opt/asr-python/bin/python' if service == 'asr' else 'python'
+        report = docker('exec', '-T', service, interpreter, '-c', code, host, check=False)
+        print('H01_DIAG_CONNECTIVITY', label, service, host,
+              'returncode=' + str(report.returncode),
+              (report.stdout or report.stderr)[-320:].strip(), flush=True)
+
+
 def verify_live_container_policy():
     checks = []
     for service in ('asr', 'gateway'):
@@ -152,10 +169,31 @@ def verify_live_container_policy():
     return checks
 
 
+def verify_private_runner_external_egress():
+    # Actual outbound kernel connect attempts FROM the ASR network namespace.
+    # The private bridge intentionally permits gateway + localhost merchant;
+    # this checks only forbidden Internet/metadata, not a full egress allowlist.
+    code = ("import socket,json; result={}; "
+            "targets=[('public_internet','1.1.1.1',443),('metadata_ip','169.254.169.254',80)]; "
+            "\nfor name,host,port in targets:\n"
+            "  try:\n"
+            "    c=socket.create_connection((host,port),timeout=2);c.close();result[name]=False\n"
+            "  except OSError:\n"
+            "    result[name]=True\n"
+            "print(json.dumps(result))")
+    out = docker('exec', '-T', 'asr', '/opt/asr-python/bin/python', '-c', code)
+    result = json.loads(out.stdout.strip())
+    if not result or not all(result.values()):
+        raise AssertionError('ASR private Linux network unexpectedly reached external target')
+    return {'phase': 'asr-kernel-outbound-policy', 'blocked': result,
+            'limitation': 'gateway and other backplane services remain reachable'}
+
+
 def full_test():
     ready()
     evidence = []
     evidence.append({'phase': 'actual-docker-inspect', 'config': verify_live_container_policy()})
+    evidence.append(verify_private_runner_external_egress())
     a = job('a')
     b = job('b')
     # The operator knows the ASR private IP and deliberately hands only the IP
@@ -201,7 +239,9 @@ def full_test():
     # generation is never implicitly adopted by a replacement container.
     orphan = job('a')
     step(orphan, 'a', 0, 'search', query='keyboard')
+    check_private_connectivity('before-ASR-restart')
     docker('restart', 'asr')
+    check_private_connectivity('after-ASR-restart')
     ready()  # authentic private ASR readiness, not merely container Up.
     for _ in range(30):
         s, out = query('/v1/resume', {'job_id': orphan}, actor='a')
