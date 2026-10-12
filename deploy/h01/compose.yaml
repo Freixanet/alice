@@ -1,4 +1,4 @@
-name: alice-h01-fictional
+name: ${H01_COMPOSE_PROJECT:?Set a fresh disposable project name; never reuse a real Docker project}
 
 services:
   asr:
@@ -67,6 +67,7 @@ services:
     image: alice-h01-fictional-attacker:local
     environment:
       H01_ASR_BACKPLANE_IP: "${H01_ASR_BACKPLANE_IP:-}"
+      H01_ASR_HOST_PID: "${H01_ASR_HOST_PID:-}"
       H01_BROWSER_JOB_ID: "${H01_BROWSER_JOB_ID:-}"
     networks: [hermes_front]
     volumes:

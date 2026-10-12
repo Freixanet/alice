@@ -107,7 +107,18 @@ def make_handler(gateway: Gateway):
 
         def do_GET(self):
             if self.path == '/health':
-                self.reply(200, {'status': 'ready_synthetic'})
+                # A listening gateway is not sufficient: require a live,
+                # correctly authenticated private broker before reporting
+                # readiness after image startup or ASR container replacement.
+                try:
+                    status, _ = gateway.forward('a', '/v1/resume',
+                                                {'job_id': '__h01_readiness_nonexistent__'}, human=False)
+                    if status == 403:
+                        self.reply(200, {'status': 'private_broker_ready_synthetic'})
+                    else:
+                        self.reply(503, {'status': 'private_broker_unavailable'})
+                except Exception:
+                    self.reply(503, {'status': 'private_broker_unavailable'})
             else:
                 self.reply(404, {'error': 'not_found'})
 

@@ -129,10 +129,13 @@ def full_test():
     asr_container = docker('ps', '-q', 'asr').stdout.strip()
     ip = subprocess.check_output(['docker', 'inspect', '-f',
         '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}', asr_container], text=True).strip()
+    pid = subprocess.check_output(['docker', 'inspect', '-f', '{{.State.Pid}}',
+                                   asr_container], text=True).strip()
     if not ip:
         raise RuntimeError('missing real ASR backplane IP: cannot claim isolation')
     attacker = docker('--profile', 'attack', 'run', '--rm', '--no-deps',
                       '-e', 'H01_ASR_BACKPLANE_IP=' + ip,
+                      '-e', 'H01_ASR_HOST_PID=' + pid,
                       '-e', 'H01_BROWSER_JOB_ID=' + a, 'hostile-hermes')
     output = json.loads(attacker.stdout.strip().splitlines()[-1])
     if not output['passed']:

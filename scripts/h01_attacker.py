@@ -49,6 +49,22 @@ def main():
         k not in env for k in ('device_hmac_hex', 'backend_coordinator_a',
                                'ALICE_FIXTURE_BROWSER_READ_TOKEN')),
                      'method': 'process_environment_separation'})
+    # The trusted operator supplies the ACTUAL host PID of ASR. These reads
+    # would succeed on a shared-user, shared-/proc arrangement and must be
+    # impossible from the separate unprivileged Hermes PID namespace.
+    host_pid = os.environ.get('H01_ASR_HOST_PID', '')
+    if not host_pid.isdecimal() or int(host_pid) <= 1:
+        raise RuntimeError('missing actual private ASR host PID')
+    for suffix in ('environ', 'mem', 'root/run/h01-secrets/device_hmac_hex'):
+        path = '/proc/' + host_pid + '/' + suffix
+        try:
+            with open(path, 'rb') as stream:
+                content = stream.read(32)
+            accessible = True
+        except OSError:
+            accessible = False
+        evidence.append({'name': 'asr_proc_host_pid:' + suffix,
+                         'blocked': not accessible, 'method': 'real_proc_read_pid_namespace'})
     # The only granted Hermes capability is a scoped *proposal*, never
     # privileged browser handles or checkout credentials.
 

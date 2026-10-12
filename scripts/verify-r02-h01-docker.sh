@@ -10,8 +10,19 @@ command -v openssl >/dev/null || { echo 'H01 NOT VERIFIED: openssl unavailable' 
 
 H01_FIXTURE_DIR="$(mktemp -d -t alice-h01-fictional.XXXXXX)"
 export H01_FIXTURE_DIR
+# Isolation and cleanup must NEVER reuse another local/CI Docker Compose
+# project's containers, volumes or names. Unique for every H01 invocation.
+H01_COMPOSE_PROJECT="alice-h01-$(python3 -c 'import secrets; print(secrets.token_hex(6))')"
+export H01_COMPOSE_PROJECT COMPOSE_PROJECT_NAME="$H01_COMPOSE_PROJECT"
 chmod 700 "$H01_FIXTURE_DIR"
 cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ]; then
+    echo '=== H01 FAILED: disposable container states (NO SECRETS) ===' >&2
+    docker compose -f deploy/h01/compose.yaml --profile attack ps -a >&2 || true
+    echo '=== H01 FAILED: synthetic startup logs (tail only) ===' >&2
+    docker compose -f deploy/h01/compose.yaml logs --no-color --tail=60 asr gateway >&2 || true
+  fi
   docker compose -f deploy/h01/compose.yaml --profile attack down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$H01_FIXTURE_DIR"
 }
