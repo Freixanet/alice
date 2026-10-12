@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
+from unittest import mock
 
 from alice_secure_runner.coordinator import PairedRemoteCoordinator
 from alice_secure_runner.core import AliceRunner, Denied, FictionalHTTPSAdapter
@@ -33,6 +34,25 @@ def load(filename):
 
 remote = load("r02_remote.py")
 planner = load("r02_planner.py")
+
+
+class RemoteHTTPSDeadlineContractTests(unittest.TestCase):
+    def test_remote_plugin_does_not_wait_forever_on_drip_body(self):
+        socket = mock.Mock()
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=socket)),
+                                   read1=mock.Mock(side_effect=[b"a", b"b", b"c"]))
+        with mock.patch.object(remote.time, "monotonic",
+                               side_effect=[0.0, 0.2, 0.7, 1.1]):
+            with self.assertRaisesRegex(remote.RemotePlanningDenied, "absolute proposal HTTPS deadline"):
+                remote._read_bounded_response(response, max_bytes=10, seconds=1)
+        self.assertEqual(response.read1.call_count, 2)
+        self.assertEqual(socket.settimeout.call_count, 2)
+
+    def test_remote_plugin_fails_closed_without_observable_socket(self):
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace()),
+                                   read1=lambda n: b"ok")
+        with self.assertRaisesRegex(remote.RemotePlanningDenied, "no bounded HTTPS transport"):
+            remote._read_bounded_response(response)
 
 
 class StubModel:
@@ -392,11 +412,11 @@ class PlannerMailboxHTTPSContractTests(unittest.TestCase):
         self.mailbox.publish(
             self.pair_id, tenant="tenant-a", session="session-a",
             job_id=self.job["job_id"], epoch=0,
-            goal="Research Marc; meet at 12 Baker St; dial +34 61234",
+            goal="Research Fictional Customer; meet at 12 Example St; dial +34 61234",
             observation={
                 "epoch": 0, "status": "researching",
-                "products": [{"sku": "FAKE-ALICE-1", "name": "12 Baker St"},
-                             {"sku": "USER-TOKEN", "name": "Marc"}],
+                "products": [{"sku": "FAKE-ALICE-1", "name": "12 Example St"},
+                             {"sku": "USER-TOKEN", "name": "Fictional Customer"}],
                 "description": "Call +34 61234",
                 "variant": "apartment 12",
                 "currency": "EUR"})
@@ -404,7 +424,7 @@ class PlannerMailboxHTTPSContractTests(unittest.TestCase):
         text = json.dumps(pending)
         self.assertEqual(pending["goal"], "Research the fictional catalogue")
         self.assertIn("FAKE-ALICE-1", text)
-        for sensitive in ("12 Baker St", "+34 61234", "Marc", "USER-TOKEN",
+        for sensitive in ("12 Example St", "+34 61234", "Fictional Customer", "USER-TOKEN",
                           "apartment 12"):
             self.assertNotIn(sensitive, text)
         self.assertEqual(pending["observation"]["description"], "[redacted]")

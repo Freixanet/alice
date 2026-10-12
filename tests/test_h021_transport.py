@@ -17,11 +17,63 @@ from unittest import mock
 
 from alice_secure_runner.h021_transport import (
     HeaderDeadlineReader, LimitedHTTPServer, handshake_with_deadline,
-    read_body_with_deadline,
+    _ResponseWithHeaderDeadline, read_body_with_deadline,
+    read_https_response_with_deadline,
 )
 
 
 class H021TransportTests(unittest.TestCase):
+    def test_https_header_wrapper_parses_status_and_keeps_body_readable(self):
+        connection = mock.Mock()
+
+        class FakeStream(io.BytesIO):
+            raw = SimpleNamespace(_sock=connection)
+
+        source = FakeStream(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        sock = SimpleNamespace(makefile=lambda *_args, **_kwargs: source)
+        response = _ResponseWithHeaderDeadline(sock)
+        try:
+            response.begin()
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.read1(2), b"OK")
+            self.assertGreater(connection.settimeout.call_count, 0)
+        finally:
+            response.close()
+
+    def test_https_header_wrapper_rejects_absolute_deadline(self):
+        connection = mock.Mock()
+
+        class FakeStream(io.BytesIO):
+            raw = SimpleNamespace(_sock=connection)
+
+        source = FakeStream(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK")
+        response = _ResponseWithHeaderDeadline(
+            SimpleNamespace(makefile=lambda *_args, **_kwargs: source))
+        try:
+            with mock.patch("alice_secure_runner.h021_transport.time.monotonic",
+                            side_effect=[0.0, 5.1]):
+                with self.assertRaisesRegex(socket.timeout, "absolute HTTP header deadline"):
+                    response.begin()
+        finally:
+            response.close()
+
+    def test_https_body_absolute_deadline_blocks_trickle(self):
+        connection = mock.Mock()
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=connection)))
+        response.read1 = mock.Mock(side_effect=[b"a", b"b", b"c"])
+        with mock.patch("alice_secure_runner.h021_transport.time.monotonic",
+                        side_effect=[0.0, 0.2, 0.7, 1.1]):
+            with self.assertRaisesRegex(TimeoutError, "absolute HTTPS response deadline"):
+                read_https_response_with_deadline(response, 10, seconds=1)
+        self.assertEqual(response.read1.call_count, 2)
+        self.assertEqual(connection.settimeout.call_count, 2)
+
+    def test_https_body_deadline_rejects_unobservable_socket(self):
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace()),
+                                   read1=lambda n: b"synthetic")
+        with self.assertRaisesRegex(TimeoutError, "cannot enforce"):
+            read_https_response_with_deadline(response, 100)
+
     def test_absolute_tls_deadline_even_if_peer_drips_records(self):
         fake = mock.Mock()
         fake.do_handshake.side_effect = ssl.SSLWantReadError()

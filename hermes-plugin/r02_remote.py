@@ -13,6 +13,7 @@ import os
 import re
 import ssl
 import stat
+import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -40,6 +41,32 @@ class RemotePlanningDenied(ValueError):
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *_args, **_kwargs):
         raise RemotePlanningDenied("planner redirect denied")
+
+
+def _read_bounded_response(response, *, max_bytes: int = 8193, seconds: float = 5.0) -> bytes:
+    """Enforce a monotonic TOTAL response deadline against slow drip peers.
+
+    Keep the Hermes plugin independent of the Alice runner package. The
+    stdlib HTTPSResponse socket and read1 are required here; absent either,
+    fail closed rather than using an unbounded buffered read.
+    """
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if sock is None or not callable(getattr(response, "read1", None)):
+        raise RemotePlanningDenied("no bounded HTTPS transport")
+    deadline = time.monotonic() + seconds
+    fragments = []
+    received = 0
+    while received < max_bytes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RemotePlanningDenied("absolute proposal HTTPS deadline")
+        sock.settimeout(min(5.0, remaining))
+        fragment = response.read1(min(4096, max_bytes - received))
+        if not fragment:
+            break
+        received += len(fragment)
+        fragments.append(fragment)
+    return b"".join(fragments)
 
 
 def _settings(config: dict[str, str]) -> tuple[str, ssl.SSLContext, str]:
@@ -85,7 +112,7 @@ def _exchange(config: dict[str, str], *, method: str, path: str,
                  "Content-Type": "application/json"})
     try:
         with opener.open(request, timeout=5) as response:
-            raw = response.read(8193)
+            raw = _read_bounded_response(response)
     except (OSError, ValueError, RemotePlanningDenied) as exc:
         raise RemotePlanningDenied("remote proposal-only transport unavailable") from exc
     if len(raw) > 8192:

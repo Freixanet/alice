@@ -415,7 +415,7 @@ H02 gateway private-origin bearer and signed capability requests refuse
 all HTTP 3xx responses; no redirect may carry them outside their destination.
 The proposal mailbox declassifies only an exact, fixed fictional product
 catalogue: arbitrary names, addresses, fragments of phone numbers and
-goals remain redacted. The allowlist is a *test-fixture policy*, not a
+goals remain redacted. The allowlist is a _test-fixture policy_, not a
 general-purpose personal-data classification solution.
 
 Focused local validation before committing this increment: **42 PASS**
@@ -441,6 +441,55 @@ SHA and its exact GitHub checks must be recorded separately after completion.
 | Root Host A scans B private Docker bridge IP                       | Cannot assert firewall success from routing failure; independent evidence PENDING             |
 
 ## Cost, distribution and operations
+
+### Additional local security remediation (pending exact-SHA CI)
+
+The official Hermes plugin's advisory egress hook previously inspected shell
+command text for known upload patterns; GET URLs, Python socket clients,
+`git push`, or command-substitution/build hooks could bypass that heuristic.
+The new plugin hook uses a tiny exact allowlist of purely local commands,
+requires Hermes user approval for other known code/terminal executors even
+when taint history is absent, and blocks if its guard raises an exception.
+A scoped private SQLite ledger records the first network read before dispatch
+and survives plugin reloads; further recognised web/browser network requests
+require approval. Missing session identity or a corrupt ledger fails closed.
+Its approval key binds the complete tool and argument object. This is
+**defense in depth, not an OS-enforced network boundary**:
+unknown Hermes tools, privileged extensions and independent processes may
+still reach the network, and the first authorised-session web call is not
+reviewed, so Host A must remain untrusted.
+
+Installer changes are tested with a fake `hermes` CLI and a throwaway
+`HERMES_HOME`, never against the owner's Hermes profile. Installation stages
+an entire validated plugin before activating it, saves the previous copy and
+configuration for rollback, rejects package/vendor symlinks, and orders
+the gateway restart before the dashboard. Offline rollback/manifest tests
+are not equivalent to verifying a clean deployment or upgraded official
+Hermes running on a separately managed host. Neither rollout nor rollback
+grants an authenticated R02 pairing or checkout capability.
+
+Local outbound HTTPS callers now enforce a monotonic **response-body** time
+budget (3 seconds for the synthetic merchant; 10 seconds for H02 private
+ASR; 5 seconds for the proposal-only plugin) in addition to per-socket idle
+timeouts. The Alice runner and H02 private gateway also bound response-header
+parsing to 5 seconds and refuse unobservable transports. A trickle response
+cannot occupy those reads indefinitely. The standalone Hermes plugin still
+has no independently proven absolute response-header deadline, and no
+production DDoS resistance or comprehensive whole-request budget is claimed.
+
+For the published `abfc800` SHA, the H01/H02/H02.1/synthetic GitHub workflows
+passed, while Quality's `verify` job rejected **this ledger's Markdown
+formatting**; browser verification passed and the iOS job had not yet
+completed at inspection time. The format is corrected with offline cached
+Prettier and will be reverified at the next published SHA. Do not attribute
+green CI to this candidate until checks refer to its exact commit.
+
+No real account, keychain, Hermes installation, browser profile, service,
+merchant or payment endpoint was accessed in these local hardening tests.
+The final combined local Python/egress/installer suite for this increment
+reported **165 PASS, 9 SKIPPED** (the skips require optional Chromium), with
+`zsh -n`, `git diff --check` and offline Prettier check successful. Local
+verification is not a substitute for the exact published SHA's GitHub CI.
 
 Configured H02.1 limits are **ceilings**, not measured RSS: ASR 2 GiB /
 2 vCPU, gateway 256 MiB and independent merchant 128 MiB. Docker images,

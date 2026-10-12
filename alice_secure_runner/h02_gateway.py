@@ -16,7 +16,8 @@ from pathlib import Path
 
 from .h02_identity import InvalidCapability, Keyring, ReplayLedger, ROLE_PATHS
 from .h021_crypto import PublicVerifier
-from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
+from .h021_transport import (HeaderBoundHTTPSHandler, HeaderDeadlineReader, LimitedHTTPServer,
+                             read_body_with_deadline, read_https_response_with_deadline)
 
 MAX_BODY = 16384
 BACKEND_ORIGIN = "https://asr:8443"  # fixed Docker-internal origin; never user-controlled
@@ -51,7 +52,7 @@ class H02Gateway:
         self.ca.minimum_version = ssl.TLSVersion.TLSv1_2
         self.opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}),
-            urllib.request.HTTPSHandler(context=self.ca),
+            HeaderBoundHTTPSHandler(context=self.ca),
             _DenyPrivateBackendRedirect())
 
     def authorize(self, authorization: str, path: str, body: bytes):
@@ -97,7 +98,8 @@ class H02Gateway:
             with self.opener.open(req, timeout=10) as response:
                 if response.geturl() != BACKEND_ORIGIN + private_path:
                     raise ValueError("private ASR origin changed")
-                value = response.read(MAX_BODY + 1)
+                value = read_https_response_with_deadline(response, MAX_BODY + 1,
+                                                          seconds=10)
                 if len(value) > MAX_BODY:
                     raise ValueError("private broker oversized response")
                 return response.status, json.loads(value)

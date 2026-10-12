@@ -27,6 +27,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .h021_transport import HeaderBoundHTTPSHandler, read_https_response_with_deadline
+
 
 class Denied(ValueError):
     """Invalid/unauthorized action; no merchant checkout submit attempted."""
@@ -104,7 +106,7 @@ class FictionalHTTPSAdapter:
                 raise Denied("merchant redirect refused: no credential forwarding")
         self._opener = urllib.request.build_opener(
             urllib.request.ProxyHandler({}),  # never inherit host HTTP proxy/credentials
-            urllib.request.HTTPSHandler(context=self._ssl), DenyRedirect())
+            HeaderBoundHTTPSHandler(context=self._ssl), DenyRedirect())
 
     def call(self, method: str, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
         if not path.startswith("/") or path.startswith("//") or "#" in path:
@@ -119,7 +121,7 @@ class FictionalHTTPSAdapter:
             # No implicit redirect to third-party endpoints, even on GET.
             if response.url.split("?", 1)[0].split("/", 3)[:3] != self._base.split("/", 3)[:3]:
                 raise Denied("merchant redirected outside the pinned origin")
-            data = response.read(16_385)
+            data = read_https_response_with_deadline(response, 16_385, seconds=3)
             if len(data) > 16_384:
                 raise Denied("merchant response too large")
         result = json.loads(data)

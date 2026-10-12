@@ -140,9 +140,15 @@ def _egress_guard():
 def _guard_egress(tool_name=None, args=None, session_id="", **_):
     """After reading the web, a command that could send data out or read secrets asks first."""
     try:
+        # The post-tool taint observer uses Hermes' hook session_id directly.
+        # A guessed context fallback here could look "clean" while the
+        # observer never recorded the external read: missing ID stays unknown.
         return _egress_guard().check(tool_name or "", args, session_id or "")
     except Exception:
-        return None
+        # A missing guard, malformed arguments or unavailable session context
+        # must not silently enable the very command this hook is meant to check.
+        return {"action": "block", "message":
+                "No se ha podido comprobar la seguridad del comando. Inténtalo de nuevo más tarde."}
 
 
 def _route_card_fill(tool_name=None, args=None, **_):
