@@ -95,11 +95,30 @@ compatible; H02.1 alone can select P-256 fixture validation.
    when this opt-in mode is off. For flagged ASR errands, iOS displays
    only read-only, unverified status and blocks old payment controls.
    A trusted ASR iOS status/approval transport has **not** been implemented.
+   **Additional PR #81 consolidation:** invocation-time ASR-only quarantine
+   now blocks already registered legacy browser/login/cart/checkout tools,
+   `purchase_outcome` receipt mutations, and old-errand `ask_person` writes.
+   Ordinary non-shopping conversations retain their tools. The reaper uses
+   the shared account root for Hermes named profiles, not a profile folder.
+   Before any legacy `/v1/runs` submission, a cooperative cross-process
+   admission barrier checks the sticky cutover flag and durably records
+   `run_start_uncertain`; the barrier is held until the returned run ID is
+   persisted. A lost remote response forbids another automatic launch and
+   requires operator inspection. **An unidentifiable Hermes run cannot be
+   positively stopped** without an official idempotent launch/recovery API.
+   None of these local guards constitute OS isolation against Host A root.
 7. Host A probe records `PENDING_EXTERNAL_INDEPENDENT_PROOF` even when all
    negative routing checks pass. `--require-attested-proof` exits nonzero
    until independently verified provider IAM/firewall/routing/VM identity
    records can be attached. Failure to route to a Docker bridge address is
    not a demonstrated firewall deny.
+8. The trusted H02.1 ASR process also retries terminal Chromium session
+   cleanup every ten seconds when an earlier close was not acknowledged.
+   It never reissues merchant commits, never clears an uncertain payment,
+   and only attests closures belonging to the **same browser generation**.
+   After process recreation, an old unknown browser owner remains durably
+   fenced. OS-level destruction/isolation of orphan Chromium still needs
+   independently attested host controls; a fresh child cannot certify it.
 
 ## Integrated requirements matrix
 
@@ -118,7 +137,9 @@ compatible; H02.1 alone can select P-256 fixture validation.
   test suite, excluding optional browser tests when local Chromium is absent.
 - `python3 -m unittest discover -s hermes-plugin/tests -p 'test_r02_*.py' -q`:
   legacy payment cutover, restart and official plugin registration fixture
-  tests; complete plugin registration rejects duplicate tool names.
+  tests; complete plugin registration rejects duplicate tool names. Includes
+  handler cutover, named-profile reaper, uncertain remote launch and
+  interleaved marker/dispatch admission tests.
 - `python3 -m unittest discover -s tests -p 'test_h021_external_merchant.py' -v`:
   **independent Python merchant PROCESS over real pinned TLS**,
   merchant crash and ASR reboot, durable receipt, read-only lookup, no
@@ -133,6 +154,29 @@ The Hermes general-plugin suites require an isolated official Hermes
 environment and FastAPI/WebSocket dependencies absent from this minimal
 Mac Python environment. Record those omissions rather than marking PASS.
 
+### PR #81 consolidation validation (post-baseline changes)
+
+- Baseline commit `d769969a6429e7702800d5bc1c47c4f8dce87c3e`:
+  H01, H02, H02.1 same-host Docker, synthetic HTTPS, real Chromium,
+  Quality verify and browser SUCCESS on GitHub; Quality iOS remained in
+  progress at the last baseline check. Results are *not* for later changes.
+- After the new local plugin edits: **24/24 R02 plugin tests PASS** with
+  Python 3.11; `git diff --check` PASS. These are mocked registration and
+  security-contract tests, not installed official-Hermes or remote pairing.
+- Two additional disposable ASR terminal-browser tests pass: a failed close
+  is safely retried and an old-generation close remains unverified. This
+  does not certify orphan cleanup after an OS/container crash.
+- Repository Python test suite before these plugin-only edits: 105 run,
+  9 skipped, no failures. Structured Hermes-to-ASR mock bridge: 7/7 PASS.
+- Attempted full Hermes plugin suite using the Mac's Python 3.9:
+  584 tests, 21 errors, 3 failures, 27 skipped. Missing Hermes modules,
+  FastAPI, WebSockets and incompatible Python 3.9 features were among the
+  causes; **this is not a passing suite or a validated source regression**.
+  A Python 3.11 focused 106-test errands suite had one missing-WebSockets
+  dependency error. An isolated official Hermes test environment is needed.
+- No hardware-backed presence, real payment authorization, administrative
+  separation or provable stop of an unidentifiable old run was demonstrated.
+
 ## Attacks and negative outcomes
 
 | Attempt                                                            | Expected result                                                                   |
@@ -145,6 +189,8 @@ Mac Python environment. Record those omissions rather than marking PASS.
 | Lost merchant reply / both independent processes restarted         | `UNKNOWN` until exact durable merchant receipt read; no POST retry                |
 | Read-only Chromium credential tries merchant cart/receipt          | Denied; cannot access effect token through typed read endpoint                    |
 | Legacy Hermes approval/resume while `ALICE_R02_ASR_ONLY=yes`       | Denied; no fallback to shared browser or saved card                               |
+| Legacy tools registered before cutover                             | Invocation-time quarantine includes login/cart/checkout/receipt paths            |
+| Lost Hermes `/v1/runs` reply after possible acceptance              | Durable uncertain marker prevents another run; remote status/stop needs manual reconciliation |
 | Root Host A scans B private Docker bridge IP                       | Cannot assert firewall success from routing failure; independent evidence PENDING |
 
 ## Cost, distribution and operations

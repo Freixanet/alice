@@ -522,6 +522,15 @@ def _register_purchase_tools(ctx) -> None:
         "properties": {**module.SCHEMA["parameters"]["properties"], **_errands().outcome_properties()}}}
 
     def handler(args, **_):
+        # This tool can rewrite the old Hermes receipt ledger from model
+        # assertions. After ASR cutover it must NOT impersonate a trusted ASR
+        # receipt, including when the plugin was registered before cutover.
+        try:
+            if _errands().legacy_payment_blocked(_hermes_root()):
+                return _agent_json({"ok": False, "mode": "asr_only",
+                                    "error": _errands().LEGACY_DISABLED})
+        except Exception:
+            return _agent_json({"ok": False, "error": "Legacy payment identity unavailable"})
         out = module.run_tool(_hermes_root(), args or {})
         try:
             if isinstance(out, dict) and out.get("ok"):
@@ -1530,6 +1539,13 @@ def _register_ask_tools(ctx) -> None:
         from hermes_constants import get_hermes_home
 
         key = _conversation_key()
+        if key.startswith(_errands().SESSION_PREFIX) or key in _PURCHASE_OPEN:
+            try:
+                if _errands().legacy_payment_blocked(_hermes_root()):
+                    return _agent_json({"ok": False, "mode": "asr_only",
+                                        "error": _errands().LEGACY_DISABLED})
+            except Exception:
+                return _agent_json({"ok": False, "error": "Legacy errand identity unavailable"})
         if key.startswith(_errands().SESSION_PREFIX):
             # Inside an errand only what changes the purchase reaches the person; cards have their own card.
             refused = _errands().vet_questions(module._normalized(args or {}))
@@ -1819,8 +1835,10 @@ def _register_task_tools(ctx) -> None:
     # in-process stop/reconciliation reaper at official plugin startup;
     # never restart or authorize old Hermes native-tool runs.
     try:
-        from hermes_constants import get_hermes_home
-        errands.arm_cutover_reaper(Path(get_hermes_home()))
+        # Bot-agent Hermes homes may be .../profiles/<name>. Errands and the
+        # sticky ASR marker belong to the canonical shared root, not the
+        # individual profile. A profile-local reaper silently misses them.
+        errands.arm_cutover_reaper(_hermes_root())
     except Exception:
         logging.getLogger(__name__).warning(
             "Alice R02 legacy stop recovery requires operator inspection",
@@ -1830,6 +1848,26 @@ def _register_task_tools(ctx) -> None:
     # omitted the explicit state and could plan UNKNOWN/cancelled jobs.
     # Registration here is unprivileged and uses official Hermes plugin ctx.
     _module("r02_planner.py", "alice_r02_planner").register(ctx)
+
+    def legacy_task_handler(handler):
+        """Quarantine old browser/vault/cart tools after an ASR-only cutover.
+
+        Registration-time checks alone are unsafe: a running Hermes process may
+        retain an already-registered handler after the persistent cutover marker
+        appears. Guard each invocation before touching the old CDP or vault.
+        This does NOT sandbox Hermes native tools or grant ASR authority.
+        """
+        def guarded(args=None, **kwargs):
+            try:
+                if errands.legacy_payment_blocked(_hermes_root()):
+                    return _agent_json({"ok": False, "error": errands.LEGACY_DISABLED,
+                                        "mode": "asr_only"})
+            except Exception:
+                # Cannot resolve the canonical account/marker: do not run an
+                # old executor or credential-bearing handler speculatively.
+                return _agent_json({"ok": False, "error": "Legacy tool identity unavailable"})
+            return handler(args, **kwargs)
+        return guarded
 
     # Explicit read-only inspection on the errand's pinned Chrome target.
     # The model supplies selectors, never JS; CDP itself stays forbidden to the
@@ -1847,7 +1885,7 @@ def _register_task_tools(ctx) -> None:
         except Exception:
             return _agent_json({"ok": False, "error": "No se pudo verificar la lectura DOM ni la pestaña propia del recado."})
 
-    ctx.register_tool(name="errand_dom_read", toolset="alice_tasks", handler=dom_read,
+    ctx.register_tool(name="errand_dom_read", toolset="alice_tasks", handler=legacy_task_handler(dom_read),
                       schema=dom.SCHEMA, check_fn=_always,
                       description=dom.SCHEMA["description"], emoji="🔎")
 
@@ -1922,7 +1960,7 @@ def _register_task_tools(ctx) -> None:
             return _agent_json(_module("purchase_prices.py", "alice_purchase_prices").check_cart(_hermes_root(),entry['id'],args or {}))
         except Exception as exc:
             return _agent_json({"ok":False,"error":str(exc) if isinstance(exc,ValueError) else "No se pudo leer la cesta del recado."})
-    ctx.register_tool(name="purchase_check_cart", toolset="alice_tasks", handler=check_cart,
+    ctx.register_tool(name="purchase_check_cart", toolset="alice_tasks", handler=legacy_task_handler(check_cart),
         schema={"name":"purchase_check_cart","description":"Read and revalidate the chosen format, units and current price in this errand's cart, after login or a shop session change. No cart mutation or payment.",
                 "parameters":{"type":"object","properties":{name:{'type':'string','description':desc} for name,desc in (('line','CSS selector for the cart product line/container, e.g. #line. Never product text.'),('price','CSS selector for the current unit price inside that line, e.g. #price. Never an amount.'),('cart_quantity','CSS selector for the cart quantity input/text, e.g. #cart-qty. Never a number.'))},"required":['line','price','cart_quantity']}},
         check_fn=_always, description="Revalidate this errand's cart after login", emoji="🛒")
@@ -1941,7 +1979,7 @@ def _register_task_tools(ctx) -> None:
         except Exception:
             return _agent_json({"ok":False,"error":"No se pudo rellenar el acceso en la página de este recado. Comprueba el origen o solicita login_request."})
 
-    ctx.register_tool(name="login_fill", toolset="alice_tasks", handler=login_fill,
+    ctx.register_tool(name="login_fill", toolset="alice_tasks", handler=legacy_task_handler(login_fill),
         schema={"name":"login_fill","description":"Fill this errand's pinned shop page from an exact-origin vault login. Secrets never enter the tool result.",
                 "parameters":{"type":"object","properties":{"handle":{"type":"string"}},"required":["handle"]}},
         check_fn=_always, description="Fill a saved login in this errand's own page", emoji="🔐")
@@ -1959,7 +1997,7 @@ def _register_task_tools(ctx) -> None:
         except Exception:
             return _agent_json({"ok": False, "error": "Abre la página HTTPS de acceso dentro del recado antes de solicitarlo."})
 
-    ctx.register_tool(name="login_request", toolset="alice_tasks", handler=login_request,
+    ctx.register_tool(name="login_request", toolset="alice_tasks", handler=legacy_task_handler(login_request),
         schema={"name": "login_request", "description": "Ask securely on the iPhone for this errand's exact shop login or OTP. Never ask for secrets in chat.",
                 "parameters": {"type": "object", "properties": {"kind": {"type": "string", "enum": ["vault.save_login", "vault.code"]}}}},
         check_fn=_always, description="Request this shop's login or OTP securely on iPhone", emoji="🔐")
@@ -1998,7 +2036,7 @@ def _register_task_tools(ctx) -> None:
          'recipe':{'type':'object','properties':{name:{'type':'string','description':('Optional observed cart URL; leave empty if add opens the cart on this page. Never guess a /cart URL.' if name=='cart_url' else 'CSS selector for '+name+' in the shop DOM. Never literal product text, amount or number; omit optional selectors that were not observed.')} for name in ('title','variant','quantity','add','cart_url','line','price','cart_quantity','shipping','condition','coupon','apply','unavailable')},'required':['title','add','line','price','cart_quantity']}},['search_id','candidate_id','currency'])):
         description = ('Register every discovered format from the shop DOM before recommending. Search the category, not just the homepage or a different product page.' if method=='discover' else
                        'Verify a format price in a disposable isolated cart without login or payment. For Prozis omit recipe: its observed DOM adapter handles variant selection, counters and public coupons. For other shops provide observed DOM locators for product and cart. After one successful recipe the service checks the remaining formats too; include all other_formats quote ids in purchase_options. Discard only with an unavailable DOM selector proving no stock. Returns trusted quote_ref.')
-        ctx.register_tool(name=tool_name, toolset='alice_tasks', handler=lambda args,_method=method,**_:price_tool(_method,args),
+        ctx.register_tool(name=tool_name, toolset='alice_tasks', handler=legacy_task_handler(lambda args,_method=method,**_:price_tool(_method,args)),
             schema={'name':tool_name,'description':description,'parameters':{'type':'object','properties':properties,'required':required}},
             check_fn=_always, description=description, emoji='🛒')
 
@@ -2022,16 +2060,16 @@ def _register_task_tools(ctx) -> None:
             country=_purchase_locale()[0], currency=_purchase_locale()[1]))
 
     flow, catalog = _purchase_flow(), _catalog()
-    ctx.register_tool(name="purchase_options", toolset="alice_tasks", schema=flow.OPTIONS_SCHEMA, handler=options,
+    ctx.register_tool(name="purchase_options", toolset="alice_tasks", schema=flow.OPTIONS_SCHEMA, handler=legacy_task_handler(options),
                       check_fn=_always, description=flow.OPTIONS_SCHEMA["description"], emoji="🛒")
     ctx.register_tool(name="catalog_search", toolset="alice_tasks", schema=catalog.SEARCH_SCHEMA,
-                      handler=catalog_search, check_fn=_always, description=catalog.SEARCH_SCHEMA["description"],
+                      handler=legacy_task_handler(catalog_search), check_fn=_always, description=catalog.SEARCH_SCHEMA["description"],
                       emoji="🔎")
     ctx.register_tool(name="catalog_product", toolset="alice_tasks", schema=catalog.PRODUCT_SCHEMA,
-                      handler=catalog_product, check_fn=_always, description=catalog.PRODUCT_SCHEMA["description"],
+                      handler=legacy_task_handler(catalog_product), check_fn=_always, description=catalog.PRODUCT_SCHEMA["description"],
                       emoji="🔎")
 
-    ctx.register_tool(name="errand_start", toolset="alice_tasks", schema=errands.START_SCHEMA, handler=start,
+    ctx.register_tool(name="errand_start", toolset="alice_tasks", schema=errands.START_SCHEMA, handler=legacy_task_handler(start),
                       check_fn=_always, description=errands.START_SCHEMA["description"], emoji="🛍️")
     def card(args, **_):
         entry = errands.of_session(_hermes_root(), _session_id())
@@ -2039,10 +2077,10 @@ def _register_task_tools(ctx) -> None:
             return _agent_json({"ok": False, "error": "Only inside an errand."})
         return _agent_json(errands.request_card(_hermes_root(), entry["id"], str((args or {}).get("page") or "")))
 
-    ctx.register_tool(name="card_request", toolset="alice_tasks", schema=errands.CARD_SCHEMA, handler=card,
+    ctx.register_tool(name="card_request", toolset="alice_tasks", schema=errands.CARD_SCHEMA, handler=legacy_task_handler(card),
                       check_fn=_always, description=errands.CARD_SCHEMA["description"], emoji="💳")
     ctx.register_tool(name="checkout_request", toolset="alice_tasks", schema={**errands.CHECKOUT_SCHEMA, "parameters": {**errands.CHECKOUT_SCHEMA["parameters"], "properties": {**errands.CHECKOUT_SCHEMA["parameters"]["properties"], "total_selector": {"type":"string","description":"CSS selector of the final total visible in the chosen shop checkout; server reads the amount directly."}}}},
-                      handler=checkout, check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
+                      handler=legacy_task_handler(checkout), check_fn=_always, description=errands.CHECKOUT_SCHEMA["description"],
                       emoji="🧾")
 
 

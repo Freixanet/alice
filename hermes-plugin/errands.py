@@ -41,6 +41,27 @@ from urllib.parse import urlsplit
 SESSION_PREFIX = "errand-"
 
 
+@contextmanager
+def _cutover_admission_lock(home: Path):
+    """Serialize trusted ASR-marker creation with a legacy /v1/runs dispatch.
+
+    This is a cooperative local admission fence, not an OS sandbox against a
+    hostile Hermes administrator or an already accepted remote run.
+    """
+    directory = Path(home) / ".alice"
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    flags = os.O_CREAT | os.O_RDWR
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(directory / "r02-run-admission.lock", flags, 0o600)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
+
+
 def legacy_payment_blocked(home: Path | None = None) -> bool:
     """Persist opt-in ASR cutover to survive accidental lost environment flags.
 
@@ -55,16 +76,16 @@ def legacy_payment_blocked(home: Path | None = None) -> bool:
     marker = Path(home) / ".alice" / "r02-asr-only-v1"
     if enabled:
         try:
-            marker.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= os.O_NOFOLLOW
-            fd = os.open(marker, flags, 0o600)
-            try:
-                os.write(fd, b"ALICE_R02_ASR_ONLY_V1\n")
-                os.fsync(fd)
-            finally:
-                os.close(fd)
+            with _cutover_admission_lock(home):
+                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+                if hasattr(os, "O_NOFOLLOW"):
+                    flags |= os.O_NOFOLLOW
+                fd = os.open(marker, flags, 0o600)
+                try:
+                    os.write(fd, b"ALICE_R02_ASR_ONLY_V1\n")
+                    os.fsync(fd)
+                finally:
+                    os.close(fd)
         except FileExistsError:
             pass
         except OSError:
@@ -640,7 +661,8 @@ def _record_started_checkout_run(home: Path, errand_id: str, run_id: str,
         entry = next((e for e in entries if e.get("id") == errand_id), None)
         if entry is None:
             return
-        entry.update(run_id=run_id, runs=int(entry.get("runs") or 0) + 1, updated_at=time.time())
+        entry.update(run_id=run_id, run_start_uncertain=False,
+                     runs=int(entry.get("runs") or 0) + 1, updated_at=time.time())
         if (checkout_id and (entry.get("checkout") or {}).get("id") == checkout_id
                 and entry.get("resume_message") == message):
             entry["resume_message"] = None
@@ -1439,9 +1461,10 @@ class Engine:
             except Exception:
                 pass  # Keep checkout uncertain; no retry/restart is permitted.
         entry = self._entry()
-        if entry.get("status") in ACTIVE or entry.get("cutover_stop_pending"):
+        if (entry.get("status") in ACTIVE or entry.get("cutover_stop_pending")
+                or entry.get("run_start_uncertain")):
             update(self.home, self.errand_id, status="stuck",
-                   cutover_stop_pending=bool(run_id),
+                   cutover_stop_pending=bool(run_id or entry.get("run_start_uncertain")),
                    cutover_stop_attempt_at=time.time(),
                    reason=("Alice Secure Runner desactivó el recado anterior de Hermes. "
                            "Si ya se intentó un pago, el resultado es desconocido: "
@@ -1519,6 +1542,14 @@ class Engine:
             return "missing"
         if self._cutover_fence(run_id=entry.get("run_id")):
             return "stuck"
+        if entry.get("run_start_uncertain"):
+            # POST /v1/runs may have been accepted even if its response was
+            # lost. Without an idempotent official API or a known run_id, a
+            # restarted engine must NOT create a second native-tool run.
+            update(self.home, self.errand_id, status="stuck",
+                   reason="No se conoce el resultado del inicio en Hermes: "
+                          "podría seguir ejecutándose. Revisa su sesión; no lo reintentes.")
+            return "stuck"
         text = message or brief(entry)
         previous = ""
         repeat_recoveries = 0
@@ -1567,17 +1598,37 @@ class Engine:
                 if self._cutover_fence(run_id=entry.get("run_id")):
                     return "stuck"
                 steps_before = entry.get("steps") or []
-                run_id = self.gateway.start(entry["session_id"], text,
-                                            model=entry["model"], provider=entry["provider"])
+                with _cutover_admission_lock(self.home):
+                    marker = Path(self.home) / ".alice" / "r02-asr-only-v1"
+                    if (os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+                            or marker.exists() or marker.is_symlink()):
+                        # A competing trusted cutover wins BEFORE dispatch.
+                        blocked = True
+                    else:
+                        blocked = False
+                        # Persist uncertainty BEFORE remote submission. Keep
+                        # the barrier until run_id is durably linked to this
+                        # job, so a cutover can then find and stop the run.
+                        if update(self.home, self.errand_id, run_start_uncertain=True,
+                                  run_start_attempt_at=time.time()) is None:
+                            return "missing"
+                        run_id = self.gateway.start(entry["session_id"], text,
+                                                    model=entry["model"], provider=entry["provider"])
+                        if text.startswith(APPROVED_PREFIX):
+                            _record_started_checkout_run(self.home, self.errand_id, run_id, text,
+                                                         (entry.get("checkout") or {}).get("id"))
+                        else:
+                            update(self.home, self.errand_id, run_id=run_id,
+                                   run_start_uncertain=False,
+                                   runs=int(entry.get("runs") or 0) + 1)
             except Exception as exc:  # noqa: BLE001
                 update(self.home, self.errand_id, status="stuck",
-                       reason=f"No se pudo hablar con Hermes: {type(exc).__name__}.")
+                       reason=(f"Inicio remoto sin respuesta verificable ({type(exc).__name__}). "
+                               "Hermes podría seguir ejecutándose: comprueba la sesión antes de cualquier reintento."))
                 return "stuck"
-            if text.startswith(APPROVED_PREFIX):
-                _record_started_checkout_run(self.home, self.errand_id, run_id, text,
-                                             (entry.get("checkout") or {}).get("id"))
-            else:
-                update(self.home, self.errand_id, run_id=run_id, runs=int(entry.get("runs") or 0) + 1)
+            if blocked:
+                self._cutover_fence(run_id=entry.get("run_id"))
+                return "stuck"
             state = self._wait_run(run_id)
             if self._cutover_fence(run_id=run_id):
                 return "stuck"
@@ -1823,7 +1874,8 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
         # bounded retry if gateway was unavailable.
         now = time.time()
         for entry in listing(home):
-            if entry.get("status") not in ACTIVE and not entry.get("cutover_stop_pending"):
+            if (entry.get("status") not in ACTIVE and not entry.get("cutover_stop_pending")
+                    and not entry.get("run_start_uncertain")):
                 continue
             prior = entry.get("cutover_stop_attempt_at")
             if prior is not None:
@@ -1833,7 +1885,9 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
                 except (TypeError, ValueError):
                     pass
             run_id = entry.get("run_id")
-            stopped = not run_id
+            # Missing run_id is NOT evidence no run exists after a lost POST
+            # response; this needs a trusted Hermes run-list/recovery API.
+            stopped = not run_id and not entry.get("run_start_uncertain")
             if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
                 try:
                     gateway = Gateway(home, entry.get("profile") or "")
@@ -1956,6 +2010,11 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
+    if entry.get("run_start_uncertain"):
+        # No known run_id to cancel. Never falsely acknowledge remote stop.
+        return update(home, errand_id, status="stuck", cutover_stop_pending=True,
+                      reason="Inicio Hermes incierto; puede quedar una ejecución remota activa. "
+                             "Necesita inspección y parada manual; no se ha confirmado cancelación.")
     entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
     try:
         _goal_manager(entry["session_id"]).clear()

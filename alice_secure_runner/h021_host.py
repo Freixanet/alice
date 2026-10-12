@@ -150,10 +150,30 @@ def main():
         server = LimitedHTTPServer(("0.0.0.0", 8443),
                                    protected_handler(runner, principals, verifier, replay, subject_map))
         server.tls_context = tls
+        janitor_stop = threading.Event()
+
+        def reap_terminal_browsers():
+            # A failed terminal close must not retain a live Chromium context
+            # indefinitely within this executor process. NEVER infer closure
+            # of a prior generation or retry a merchant/payment operation.
+            while not janitor_stop.is_set():
+                try:
+                    runner.reap_terminal_browser_sessions()
+                except Exception:
+                    # Retain durable browser ownership markers on failure.
+                    pass
+                if janitor_stop.wait(10):
+                    return
+
+        janitor = threading.Thread(target=reap_terminal_browsers,
+                                  name="h021-terminal-browser-reaper", daemon=True)
+        janitor.start()
         print("H021 private ASR: independent public-key scope and durable replay", flush=True)
         try:
             server.serve_forever()
         finally:
+            janitor_stop.set()
+            janitor.join(timeout=3)
             server.server_close()
             replay.close()
             runner.close()

@@ -6,6 +6,7 @@ import os
 import tempfile
 import threading
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +20,97 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_cutover_created_between_initial_check_and_dispatch_cannot_start_run(self):
+        errands = load("r02_admission_cutover_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-admission-") as directory:
+            home = Path(directory)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            entry = errands._new_entry(
+                "Fictional", now=1_000,
+                model_route={"model": "fixture-model", "provider": "fixture"})
+            errands._write(archive, [entry])
+            gateway = __import__("unittest.mock", fromlist=["Mock"]).Mock()
+            engine = object.__new__(errands.Engine)
+            engine.home, engine.errand_id, engine.gateway = home, entry["id"], gateway
+            real_barrier = errands._cutover_admission_lock
+
+            @contextmanager
+            def marker_arrives(path):
+                with real_barrier(path):
+                    (Path(path) / ".alice" / "r02-asr-only-v1").write_text("fixture cutover")
+                    yield
+
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "prepare_browser", return_value=True), \
+                    patch.object(errands, "_cutover_admission_lock", marker_arrives), \
+                    patch.object(errands, "arm_cutover_reaper"):
+                self.assertEqual(engine.run("before marker"), "stuck")
+            gateway.start.assert_not_called()
+            self.assertEqual(errands.get(home, entry["id"])["status"], "stuck")
+
+    def test_cutover_marker_writer_waits_for_inflight_run_admission_barrier(self):
+        errands = load("r02_admission_serial_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-lock-") as directory:
+            home = Path(directory)
+            entered, finished = threading.Event(), threading.Event()
+
+            def enable_marker():
+                with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}):
+                    entered.set()
+                    errands.legacy_payment_blocked(home)
+                    finished.set()
+
+            with errands._cutover_admission_lock(home):
+                worker = threading.Thread(target=enable_marker, daemon=True)
+                worker.start()
+                self.assertTrue(entered.wait(timeout=1))
+                self.assertFalse(finished.wait(timeout=0.03))
+            worker.join(timeout=1)
+            self.assertTrue(finished.is_set())
+            self.assertTrue((home / ".alice" / "r02-asr-only-v1").is_file())
+
+    def test_lost_hermes_run_start_reply_is_fenced_across_restart_and_cutover(self):
+        """A remote run may exist without a locally observed run_id."""
+        errands = load("r02_uncertain_start_errands", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-lost-start-") as directory:
+            home = Path(directory)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            entry = errands._new_entry(
+                "Fictional task", now=1_000,
+                model_route={"model": "fixture-model", "provider": "fixture"})
+            errands._write(archive, [entry])
+            accepted = []
+
+            class AcceptedButReplyLost:
+                def start(self, session_id, text, **_):
+                    accepted.append((session_id, text))
+                    raise TimeoutError("accepted by Hermes; reply dropped")
+
+            engine = object.__new__(errands.Engine)
+            engine.home, engine.errand_id = home, entry["id"]
+            engine.gateway = AcceptedButReplyLost()
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "prepare_browser", return_value=True):
+                self.assertEqual(engine.run("first run"), "stuck")
+                uncertain = errands.get(home, entry["id"])
+                self.assertTrue(uncertain["run_start_uncertain"])
+                self.assertFalse(uncertain["run_id"])
+                # Recreating an engine, even if a caller resets working, cannot
+                # launch another native-tool run into the same Hermes session.
+                errands.update(home, entry["id"], status="working")
+                self.assertEqual(engine.run("restart attempt"), "stuck")
+                self.assertEqual(len(accepted), 1)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}):
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+                persisted = errands.get(home, entry["id"])
+                self.assertTrue(persisted["cutover_stop_pending"])
+                self.assertTrue(persisted["run_start_uncertain"])
+                stopped = errands.stop(home, entry["id"])
+                self.assertNotEqual(stopped["status"], "stopped")
+                self.assertTrue(stopped["cutover_stop_pending"])
+
     def test_asr_only_disables_every_known_legacy_payment_authority(self):
         errands = load("r02_guarded_errands", "errands.py")
         purchases = load("r02_guarded_purchases", "purchases.py")

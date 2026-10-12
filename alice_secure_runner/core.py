@@ -368,6 +368,25 @@ class AliceRunner:
             job.browser_generation = prior_generation
             return False
 
+    def reap_terminal_browser_sessions(self) -> dict[str, int]:
+        """Trusted ASR-only janitor for failed terminal browser close attempts.
+
+        This can only acknowledge closures owned by the CURRENT browser
+        generation. A browser from an earlier process remains fenced; a fresh
+        process must never invent an ACK for an orphan it cannot identify.
+        Reaping has no access to merchant submit or payment authorization.
+        """
+        with self.__lock:
+            closed = pending = 0
+            for job in self.__jobs.values():
+                if job.state not in ("stopped", "unknown", "confirmed") or not job.browser_opened:
+                    continue
+                if self._cleanup_terminal_browser(job):
+                    closed += 1
+                else:
+                    pending += 1
+            return {"closed": closed, "pending_unverified": pending}
+
     def propose(self, job_id: str, *, tenant: str, session: str, proposal: Any) -> dict[str, Any]:
         """Untrusted model proposals cannot commit an order or read secrets."""
         with self.__lock:
