@@ -91,6 +91,12 @@ class Gateway:
             return (exc.code if exc.code in (401, 403, 409) else 503,
                     {'error': 'denied' if exc.code in (401, 403) else
                      'unknown_outcome_do_not_retry' if exc.code == 409 else 'unavailable'})
+        except urllib.error.URLError as exc:
+            if os.environ.get('H01_SYNTHETIC_ONLY') == 'yes':
+                reason = getattr(exc, 'reason', None)
+                print('H01_PRIVATE_TRANSPORT_FAILURE', api_path,
+                      type(reason).__name__, flush=True)
+            raise
 
 
 def make_handler(gateway: Gateway):

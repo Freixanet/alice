@@ -174,8 +174,10 @@ def full_test():
     output = json.loads(attacker.stdout.strip().splitlines()[-1])
     if not output['passed']:
         raise AssertionError('hostile Hermes attack succeeded: ' + json.dumps(output['failed']))
-    evidence.append({'phase': 'hostile-hermes-real-container', 'checks': len(output['checks']),
+    evidence.append({'phase': 'hostile-hermes-real-container', 'checks': output['checks'],
                      'failed': output['failed']})
+    print('H01_PHASE_PASS ' + json.dumps({'phase': 'hostile-hermes-real-container',
+                                          'checks': len(output['checks'])}), flush=True)
 
     # Alice B's valid owner token cannot read/commit Alice A's known job.
     for path in ('/v1/resume', '/v1/challenge', '/v1/commit', '/v1/human-handoff'):
@@ -193,12 +195,14 @@ def full_test():
     require('no repeat commit', s, out, 403)
     evidence.append({'phase': 'alice-trusted-approval-and-once-only',
                      'amount_minor': 4998, 'submitted_fictional_count': 1})
+    print('H01_PHASE_PASS ' + json.dumps(evidence[-1]), flush=True)
 
     # A real Browser-owned job survives in SQLite but its *prior owner*
     # generation is never implicitly adopted by a replacement container.
     orphan = job('a')
     step(orphan, 'a', 0, 'search', query='keyboard')
     docker('restart', 'asr')
+    ready()  # authentic private ASR readiness, not merely container Up.
     for _ in range(30):
         s, out = query('/v1/resume', {'job_id': orphan}, actor='a')
         if s == 200:
@@ -212,6 +216,7 @@ def full_test():
     s, out = query('/v1/human-handoff', {'job_id': orphan}, actor='a')
     require('unfenced-orphan-handoff-denied', s, out, 403)
     evidence.append({'phase': 'browser-generation-crash-fence', 'prior_browser_reuse': 'denied'})
+    print('H01_PHASE_PASS ' + json.dumps(evidence[-1]), flush=True)
 
     # To test the irreversible dispatch race we use ONLY the fake merchant's
     # deliberate delay. The operator can kill a container; Hermes never can.
