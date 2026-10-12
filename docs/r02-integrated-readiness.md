@@ -296,12 +296,43 @@ After these additions the complete local repository suite ran **127 tests,
 ran **26 PASS**. The complete official Hermes suite and iOS build remain
 separate GitHub CI requirements for the forthcoming SHA.
 
+### Transversal fictional merchant recovery (subsequent local test)
+
+The new
+`test_h021_external_merchant.py::test_paired_hermes_proposals_device_consent_and_external_merchant_recovery`
+drives five proposals over the disposable planner HTTPS channel into the
+typed AliceRunner, obtains a fictional exact checkout and checks a P-256
+**software** signature against a revocable public key. An independently
+running fictional HTTPS merchant durably records one order, then the test
+drops the HTTP reply, producing `UNKNOWN`. The runner and merchant both
+restart; independent receipt lookup reconciles the exact checkout to
+`confirmed_simulated` without a second merchant submission. Targeted
+local test: **1 PASS**. It remains a fixture model and consent signature,
+not proof of real Hermes installation, iOS human presence, PSP payment or
+independent host administration. Its exact SHA CI has not yet run.
+
 Local verification of the changed Python repository: **126 tests,
 9 optional Chromium skipped, no failures**; mailbox **11 PASS**, device
 registry **8 PASS**, focused R02 Hermes plugin **26 PASS**, whitespace
 PASS. General Hermes tests run directly on this Mac lack official Hermes
 modules and are not a validated regression or passing suite. New exact-SHA
 Quality/iOS and official Hermes CI are still required before release claims.
+
+### Shared SQLite merchant race (subsequent local fix)
+
+The fictional `PersistentFictionalStore` now uses SQLite as the authoritative
+cart and receipt source, even when separate store processes opened the
+database before a cart or order was created. `BEGIN IMMEDIATE` serializes
+competing checkout IDs; the first submission persists the immutable exact
+receipt before replying. Another process returns that same persisted
+receipt, cannot alter the recipient/amount using the same checkout ID,
+and generates a unique fictional order ID for a different checkout.
+The focused external-merchant suite **9/9 PASS** includes two concurrent
+connections, a stale cart view, a changed-recipient denial, and the
+independent process restart/UNKNOWN scenario. This is an R03 synthetic
+merchant exercise, not a certified real merchant or PSP integration.
+The latest local repository suite after this fix ran **129 tests, 9 optional
+Chromium skipped, no failures**; a new SHA must be checked by GitHub.
 
 | Attempt                                                            | Expected result                                                                               |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |

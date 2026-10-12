@@ -128,21 +128,64 @@ class PersistentFictionalStore(FictionalStore):
                              (cart_id, sku, quantity, variant))
             super().put_cart(cart_id, sku, quantity, variant)
 
+    def quote(self, cart_id: str, recipient: str) -> dict:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT sku,quantity,variant FROM carts WHERE cart_id=?",
+                (cart_id,)).fetchone()
+            if row is None:
+                raise ValueError("cart missing from durable merchant")
+            self.carts[cart_id] = {
+                "sku": row[0], "quantity": row[1], "variant": row[2]}
+            return super().quote(cart_id, recipient)
+
     def record_order(self, key: str, expected: dict) -> dict:
         with self._lock:
-            # SQLite UNIQUE key and durable commit precede any HTTP receipt.
-            # Only the independent merchant process can write this ledger.
-            original = self.orders.get(key)
-            if original is not None:
-                return super().record_order(key, expected)
-            created = super().record_order(key, expected)
+            # BEGIN IMMEDIATE serializes separate merchant processes, not
+            # merely threads sharing an in-memory dict. A restart or second
+            # process must read the authoritative receipt before responding.
+            fields = ("sku", "variant", "quantity", "recipient", "merchant_id",
+                      "subtotal_minor", "tax_minor", "shipping_minor",
+                      "discount_minor", "amount_minor", "currency")
+            self._db.execute("BEGIN IMMEDIATE")
             try:
-                self._db.execute("INSERT INTO orders VALUES(?,?)",
-                                 (key, json.dumps(created, sort_keys=True)))
+                prior = self._db.execute(
+                    "SELECT receipt_json FROM orders WHERE checkout_id=?",
+                    (key,)).fetchone()
+                if prior is not None:
+                    receipt = json.loads(prior[0])
+                    if any(receipt.get(name) != expected.get(name) for name in fields):
+                        raise ValueError("idempotency key changed checkout")
+                else:
+                    receipt = {
+                        "order_id": "FAKE-ORDER-" + secrets.token_hex(16),
+                        "checkout_id": key,
+                        **{name: expected[name] for name in fields}}
+                    self._db.execute(
+                        "INSERT INTO orders(checkout_id,receipt_json) VALUES(?,?)",
+                        (key, json.dumps(receipt, sort_keys=True)))
+                self._db.execute("COMMIT")
             except BaseException:
-                self.orders.pop(key, None)
+                try:
+                    self._db.execute("ROLLBACK")
+                except sqlite3.Error:
+                    # A failed COMMIT can leave the transaction outcome
+                    # uncertain. Never fabricate a merchant receipt here.
+                    pass
                 raise
-            return created
+            self.orders[key] = receipt.copy()
+            return receipt.copy()
+
+    def receipt(self, key: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT receipt_json FROM orders WHERE checkout_id=?",
+                (key,)).fetchone()
+            if row is None:
+                return None
+            value = json.loads(row[0])
+            self.orders[key] = value.copy()
+            return value
 
     def close(self) -> None:
         self._db.close()

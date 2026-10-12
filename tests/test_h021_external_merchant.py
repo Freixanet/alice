@@ -14,6 +14,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -145,6 +146,101 @@ class ExternalMerchantRecovery(unittest.TestCase):
         finally:
             reopened.close()
 
+    def test_paired_hermes_proposals_device_consent_and_external_merchant_recovery(self):
+        """Whole synthetic route, including independent persistent merchant.
+
+        A fake Hermes LLM has only proposal authority. The P-256 software
+        test key proves an exact fixture signature, NOT Face ID/user presence.
+        """
+        from types import SimpleNamespace
+        from alice_secure_runner.coordinator import PairedRemoteCoordinator
+        from alice_secure_runner.device_registry import RevocableP256DeviceConsent
+        from alice_secure_runner.planner_mailbox import PlannerMailbox, LoopbackPlannerHTTPS
+        from test_alice_remote_planner import StubModel, remote, planner
+        from test_h021_device_registry import _keypair, _sign
+        from alice_secure_runner.core import _canonical
+
+        mailbox = PlannerMailbox(self.dir / "planner.sqlite3")
+        registry = RevocableP256DeviceConsent(self.dir / "device.sqlite3")
+        private, public = _keypair(self.dir, "fixture-device")
+        registry.enroll(
+            tenant="fixture-tenant-A", session="paired-A", account="fixture-account",
+            installation="fixture-device", public_pem=public,
+            expires_at=int(time.time()) + 3600)
+        pairing = mailbox.create_pair(
+            tenant="fixture-tenant-A", session="paired-A",
+            account="fixture-account", installation="fixture-hermes")
+        token_file = self.dir / "proposal-bearer"
+        token_file.write_text(pairing["proposal_only_token"], encoding="ascii")
+        token_file.chmod(0o600)
+        runner = AliceRunner(self.adapter, approval_verifier=registry, ledger_path=self.ledger)
+        model = StubModel([
+            {"action": "search", "query": "keyboard", "epoch": 0},
+            {"action": "read_product", "sku": "FAKE-ALICE-1", "epoch": 1},
+            {"action": "select_product", "sku": "FAKE-ALICE-1", "epoch": 2},
+            {"action": "add_to_cart", "quantity": 2, "epoch": 3},
+            {"action": "prepare_checkout", "epoch": 4},
+        ])
+        controller = PairedRemoteCoordinator(
+            runner, mailbox, tenant="fixture-tenant-A", session="paired-A",
+            pair_id=pairing["pair_id"], goal="Research fictional keyboard",
+            recipient="FICTIONAL addressee")
+        unknown = None
+        reopened = None
+        try:
+            with LoopbackPlannerHTTPS(mailbox, self.cert, self.key) as planning:
+                config = {"origin": planning.url, "ca_file": self.cert,
+                          "bearer_file": str(token_file)}
+                for _ in range(5):
+                    step = controller.stage()
+                    proposed = remote.plan_once(
+                        SimpleNamespace(llm=model), config=config,
+                        planner_module=planner)
+                    self.assertEqual(proposed["status"], "submitted_untrusted")
+                    outcome = controller.consume(step)
+            self.assertEqual(outcome["status"], "awaiting_approval")
+            self.assertEqual(outcome["checkout"]["amount_minor"], 4998)
+            self.assertEqual(len(model.calls), 5)
+            approval = _sign(private, _canonical(outcome["approval_challenge"]), self.dir)
+            self.assertEqual(runner.approve(
+                controller.job_id, tenant="fixture-tenant-A", session="paired-A",
+                signature=approval)["status"], "approved")
+
+            original = self.adapter.commit
+            attempts = []
+            def lost_reply(**kwargs):
+                attempts.append(kwargs["idempotency_key"])
+                original(**kwargs)
+                raise ConnectionResetError("fixture reply lost after durable order")
+            self.adapter.commit = lost_reply
+            with self.assertRaises(Indeterminate):
+                runner.commit(controller.job_id, tenant="fixture-tenant-A", session="paired-A")
+            self.assertEqual(len(attempts), 1)
+            self.assertEqual(runner.resume_job(
+                controller.job_id, tenant="fixture-tenant-A", session="paired-A")["status"], "unknown")
+            runner.close()
+            runner = None
+            self.stop_merchant()
+            self.start_merchant()
+            reopened = AliceRunner(
+                self.adapter, approval_verifier=registry, ledger_path=self.ledger)
+            with self.assertRaises(Denied):
+                reopened.commit(controller.job_id, tenant="fixture-tenant-A", session="paired-A")
+            unknown = reopened.reconcile_unknown(
+                controller.job_id, tenant="fixture-tenant-A", session="paired-A")
+            self.assertEqual(unknown["reconciliation"], "merchant_receipt")
+            self.assertEqual(unknown["status"], "confirmed_simulated")
+            with sqlite3.connect(self.db) as merchant:
+                self.assertEqual(
+                    merchant.execute("SELECT COUNT(*) FROM orders").fetchone()[0], 1)
+        finally:
+            if runner is not None:
+                runner.close()
+            if reopened is not None:
+                reopened.close()
+            mailbox.close()
+            registry.close()
+
     def test_no_receipt_remains_unknown_without_checkout_retry(self):
         runner, job, checkout = self.prepared()
         self.adapter.commit = lambda **kw: (_ for _ in ()).throw(ConnectionResetError("before send"))
@@ -260,6 +356,60 @@ class ExternalMerchantRecovery(unittest.TestCase):
             self.assertEqual(done["amount_minor"], 5998)
         finally:
             runner.close()
+
+
+class PersistentMerchantConcurrentDatabaseContract(unittest.TestCase):
+    def test_two_independent_sqlite_connections_reuse_one_exact_order(self):
+        from alice_secure_runner.fictional_shop import PersistentFictionalStore
+
+        with tempfile.TemporaryDirectory(prefix="r03-merchant-race-") as folder:
+            db = Path(folder) / "merchant.sqlite3"
+            options = {"secret": "fictional-effect-only",
+                       "browser_read_secret": "fictional-read-only",
+                       "ledger_path": db}
+            first = PersistentFictionalStore(**options)
+            second = PersistentFictionalStore(**options)
+            try:
+                first.put_cart("fictional-cart", "FAKE-ALICE-1", 2, "graphite")
+                # Second merchant initialized before the cart existed:
+                # its quote must read the shared authoritative SQLite state.
+                quoted = second.quote("fictional-cart", "fictional-recipient")
+                self.assertEqual(quoted["amount_minor"], 5998)
+                barrier = threading.Barrier(3)
+                receipts = []
+                errors = []
+
+                def submit(store):
+                    barrier.wait()
+                    try:
+                        receipts.append(store.record_order("same-checkout", quoted))
+                    except Exception as exc:
+                        errors.append(exc)
+
+                threads = [
+                    threading.Thread(target=submit, args=(first,)),
+                    threading.Thread(target=submit, args=(second,))]
+                for thread in threads:
+                    thread.start()
+                barrier.wait()
+                for thread in threads:
+                    thread.join(timeout=5)
+                self.assertFalse(any(thread.is_alive() for thread in threads))
+                self.assertEqual(errors, [])
+                self.assertEqual(len(receipts), 2)
+                self.assertEqual(receipts[0], receipts[1])
+                self.assertEqual(second.receipt("same-checkout"), receipts[0])
+                with sqlite3.connect(db) as reader:
+                    self.assertEqual(reader.execute(
+                        "SELECT COUNT(*) FROM orders").fetchone()[0], 1)
+                changed = {**quoted, "recipient": "another-recipient"}
+                with self.assertRaises(ValueError):
+                    second.record_order("same-checkout", changed)
+                other = second.record_order("another-checkout", quoted)
+                self.assertNotEqual(other["order_id"], receipts[0]["order_id"])
+            finally:
+                first.close()
+                second.close()
 
 
 if __name__ == "__main__":
