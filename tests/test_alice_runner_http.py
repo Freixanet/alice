@@ -46,10 +46,12 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
             self.store.fail_next_quote = False
         self.device_key = secrets.token_bytes(32)
         self.runner_token = secrets.token_urlsafe(40)
+        self.human_token = secrets.token_urlsafe(40)
         self.runner = AliceRunner(FictionalHTTPSAdapter(
             origin=self.shared.shop.url, ca_file=self.shared.cert, merchant_token=self.shared.shop_secret),
             approval_key=self.device_key)
         self.host = RunnerHTTPS(self.runner, coordinator_token=self.runner_token,
+                                human_token=self.human_token,
                                 cert_file=self.shared.cert, key_file=self.shared.key)
         self.host.__enter__()
         self.ctx = ssl.create_default_context(cafile=self.shared.cert)
@@ -132,6 +134,30 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
                                          "proposal": {"action": "search", "query": "keyboard", "epoch": 0}})
         self.assertEqual(err.exception.code, 403)
         self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_human_completion_requires_separate_capability_and_one_use_handle(self):
+        start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake shipping"})
+        handoff = self.request("/v1/human-handoff", {"job_id": start["job_id"],
+                                                      "tenant": "user-A", "session": "paired"})
+        body = {"job_id": start["job_id"], "tenant": "user-A", "human_handle": handoff["human_handle"]}
+        for wrong in (None, self.runner_token, "the-Hermes-agent-has-no-capability"):
+            with self.subTest(wrong=wrong), self.assertRaises(urllib.error.HTTPError) as err:
+                self.request("/v1/human-finish", body, token=wrong)
+            self.assertEqual(err.exception.code, 401)
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/human-finish", {**body, "human_handle": "wrong"}, token=self.human_token)
+        self.assertEqual(err.exception.code, 403)
+        done = self.request("/v1/human-finish", body, token=self.human_token)
+        self.assertEqual(done["payment_claim"], "NOT_VERIFIED")
+        with self.assertRaises(urllib.error.HTTPError) as err:
+            self.request("/v1/human-finish", body, token=self.human_token)
+        self.assertEqual(err.exception.code, 403)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_backend_and_human_capabilities_cannot_be_shared(self):
+        with self.assertRaises(ValueError):
+            RunnerHTTPS(self.runner, coordinator_token=self.runner_token, human_token=self.runner_token,
+                        cert_file=self.shared.cert, key_file=self.shared.key)
 
 
 if __name__ == "__main__":

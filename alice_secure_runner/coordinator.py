@@ -46,6 +46,8 @@ class Coordinator:
             out = self.step()
             if out["status"] == "awaiting_approval":
                 return out
+            if out["status"] == "stopped":
+                raise Denied("planner stopped without preparing a checkout")
         raise Denied("planner did not prepare checkout within bounded steps")
 
 

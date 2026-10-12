@@ -18,7 +18,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .core import AliceRunner, Denied, Indeterminate
 
 
-def make_handler(runner: AliceRunner, coordinator_token: str):
+def make_handler(runner: AliceRunner, coordinator_token: str, human_token: str):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             return
@@ -34,7 +34,11 @@ def make_handler(runner: AliceRunner, coordinator_token: str):
 
         def do_POST(self):
             bearer = self.headers.get("Authorization") or ""
-            if not hmac.compare_digest(bearer, "Bearer " + coordinator_token):
+            # A distinct Alice-owned human-facing capability is necessary even
+            # for this mock endpoint; the planner and backend bearer cannot
+            # claim human completion. This is NOT real user authentication.
+            expected = human_token if self.path == "/v1/human-finish" else coordinator_token
+            if not hmac.compare_digest(bearer, "Bearer " + expected):
                 self._write(401, {"error": "unauthorized"})
                 return
             try:
@@ -78,10 +82,12 @@ def make_handler(runner: AliceRunner, coordinator_token: str):
 class RunnerHTTPS:
     """One ephemeral HTTPS server. Do not expose to the public internet."""
 
-    def __init__(self, runner: AliceRunner, *, coordinator_token: str, cert_file: str, key_file: str):
-        if len(coordinator_token) < 32:
-            raise ValueError("bad coordinator token")
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner, coordinator_token))
+    def __init__(self, runner: AliceRunner, *, coordinator_token: str, human_token: str,
+                 cert_file: str, key_file: str):
+        if (len(coordinator_token) < 32 or len(human_token) < 32
+                or hmac.compare_digest(coordinator_token, human_token)):
+            raise ValueError("invalid or shared Alice backend/human token")
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner, coordinator_token, human_token))
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(cert_file, key_file)
         self.server.socket = ctx.wrap_socket(self.server.socket, server_side=True)

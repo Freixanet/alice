@@ -11,6 +11,7 @@ import hmac
 import json
 import os
 import secrets
+import sqlite3
 import subprocess
 import tempfile
 import threading
@@ -114,6 +115,14 @@ class RunnerHTTPSContractTests(unittest.TestCase):
                 self.runner.approve(self.client.job_id, tenant="user-A", session="alice-paired-1", signature=signature)
         self.assertEqual(self.store.submit_attempts, 0)
 
+    def test_approved_checkout_execution_window_expires_before_submit(self):
+        self.ready()
+        self.authorize()
+        with mock.patch("alice_secure_runner.core.time.time", return_value=time.time() + 600):
+            with self.assertRaisesRegex(Denied, "execution window expired"):
+                self.runner.commit(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertEqual(self.store.submit_attempts, 0)
+
     def test_simultaneous_commits_do_not_send_twice(self):
         self.ready()
         self.authorize()
@@ -190,6 +199,8 @@ class RunnerHTTPSContractTests(unittest.TestCase):
         self.ready()
         handoff = self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
         self.assertEqual(handoff["status"], "awaiting_human_finalization")
+        with self.assertRaises(Denied):
+            self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
         for cmd in ("search", "checkout_commit"):
             with self.assertRaises(Denied):
                 self.runner.propose(self.client.job_id, tenant="user-A", session="alice-paired-1",
@@ -200,6 +211,8 @@ class RunnerHTTPSContractTests(unittest.TestCase):
         self.assertEqual(result["payment_claim"], "NOT_VERIFIED")
         with self.assertRaises(Denied):
             self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+        with self.assertRaises(Denied):
+            self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
         self.assertEqual(self.store.submit_attempts, 0)
 
     def test_failing_certificate_or_untrusted_origin_is_rejected(self):
@@ -210,6 +223,160 @@ class RunnerHTTPSContractTests(unittest.TestCase):
         rogue = FictionalHTTPSAdapter(origin=self.shop.url, ca_file=self.cert, merchant_token="wrong-key")
         with self.assertRaises(urllib.error.HTTPError):
             rogue.search("keyboard")
+
+    def test_approved_job_recovers_after_restart_with_exactly_one_submit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coordinator = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                      planner=FictionalPlanner())
+            result = coordinator.run_to_approval()
+            chall = first.challenge(coordinator.job_id, tenant="user-A", session="paired")
+            first.approve(coordinator.job_id, tenant="user-A", session="paired",
+                          signature=signed(chall, self.device_key))
+            first.close()
+            second = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            receipt = second.commit(coordinator.job_id, tenant="user-A", session="paired")
+            self.assertEqual(receipt["checkout_id"], result["checkout"]["checkout_id"])
+            self.assertEqual(self.store.submit_attempts, 1)
+            second.close()
+            third = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            with self.assertRaises(Denied):
+                third.commit(coordinator.job_id, tenant="user-A", session="paired")
+            self.assertEqual(self.store.submit_attempts, 1)
+            third.close()
+
+    def test_same_ledger_rejects_concurrent_runner_instances(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            with self.assertRaisesRegex(Denied, "another runner owns"):
+                AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            first.close()
+            second = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            second.close()
+
+    def test_symlink_alias_cannot_bypass_one_ledger_owner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "ledger.db"
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            alias = Path(tmp) / "alias.db"
+            try:
+                alias.symlink_to(ledger)
+            except (OSError, NotImplementedError):
+                first.close()
+                self.skipTest("platform does not permit symlink creation")
+            with self.assertRaisesRegex(Denied, "another runner owns"):
+                AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=alias)
+            first.close()
+
+    def test_empty_merchant_order_id_is_indeterminate_not_confirmed(self):
+        self.ready()
+        self.authorize()
+        checkout_id = self.runner._AliceRunner__jobs[self.client.job_id].checkout["checkout_id"]
+        fake_receipt = {"checkout_id": checkout_id, "amount_minor": 4998, "currency": "EUR", "order_id": ""}
+        with mock.patch.object(self.adapter, "commit", return_value=fake_receipt):
+            with self.assertRaisesRegex(Indeterminate, "cannot be verified"):
+                self.runner.commit(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        with self.assertRaises(Denied):
+            self.runner.commit(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_cannot_handoff_if_authorization_already_dispatching(self):
+        self.ready()
+        self.authorize()
+        with self.runner._AliceRunner__lock:
+            self.runner._AliceRunner__db.execute("UPDATE authorizations SET status='dispatching'")
+        with self.assertRaisesRegex(Denied, "may be in flight"):
+            self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_cannot_finalize_human_when_ledger_no_longer_exclusive(self):
+        self.ready()
+        handoff = self.runner.human_handoff(self.client.job_id, tenant="user-A", session="alice-paired-1")
+        self.runner._AliceRunner__db.execute("UPDATE authorizations SET status='unknown'")
+        with self.assertRaisesRegex(Denied, "no longer exclusive"):
+            self.runner.human_finalize(self.client.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_model_stop_does_not_replan_after_terminal_decision(self):
+        class StopPlanner:
+            calls = 0
+
+            def next_action(self, observation):
+                self.calls += 1
+                return {"action": "stop", "epoch": observation["epoch"]}
+
+        planner = StopPlanner()
+        coord = Coordinator(self.runner, tenant="user-A", session="new-paired",
+                            recipient="Fake delivery", planner=planner)
+        with self.assertRaisesRegex(Denied, "planner stopped"):
+            coord.run_to_approval()
+        self.assertEqual(planner.calls, 1)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_uncertain_effect_stays_unknown_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.run_to_approval()
+            first.approve(coord.job_id, tenant="user-A", session="paired",
+                          signature=signed(first.challenge(coord.job_id, tenant="user-A", session="paired"), self.device_key))
+            self.store.fail_next_submit = True
+            with self.assertRaises(Indeterminate):
+                first.commit(coord.job_id, tenant="user-A", session="paired")
+            first.close()
+            second = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            with self.assertRaises(Denied):
+                second.commit(coord.job_id, tenant="user-A", session="paired")
+            self.assertEqual(self.store.submit_attempts, 1)
+            second.close()
+
+    def test_crash_after_marking_dispatch_unknown_no_blind_retry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.run_to_approval()
+            first.approve(coord.job_id, tenant="user-A", session="paired",
+                          signature=signed(first.challenge(coord.job_id, tenant="user-A", session="paired"), self.device_key))
+            with mock.patch.object(self.adapter, "commit", side_effect=SystemExit("synthetic crash")):
+                with self.assertRaises(SystemExit):
+                    first.commit(coord.job_id, tenant="user-A", session="paired")
+            first.close()
+            second = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            with self.assertRaises(Denied):
+                second.commit(coord.job_id, tenant="user-A", session="paired")
+            checkout_id = second._AliceRunner__jobs[coord.job_id].checkout["checkout_id"]
+            with sqlite3.connect(ledger) as db:
+                self.assertEqual(db.execute("SELECT status FROM authorizations WHERE checkout_id=?",
+                                            (checkout_id,)).fetchone()[0], "unknown")
+            self.assertEqual(self.store.submit_attempts, 0)
+            second.close()
+
+    def test_human_handoff_persists_only_handle_digest_on_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.run_to_approval()
+            handoff = first.human_handoff(coord.job_id, tenant="user-A", session="paired")
+            with sqlite3.connect(ledger) as db:
+                record = db.execute("SELECT state_json FROM jobs WHERE job_id=?", (coord.job_id,)).fetchone()[0]
+                self.assertNotIn(handoff["human_handle"], record)
+            first.close()
+            second = AliceRunner(self.adapter, approval_key=self.device_key, ledger_path=ledger)
+            with self.assertRaises(Denied):
+                second.commit(coord.job_id, tenant="user-A", session="paired")
+            result = second.human_finalize(coord.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+            self.assertEqual(result["payment_claim"], "NOT_VERIFIED")
+            with self.assertRaises(Denied):
+                second.human_finalize(coord.job_id, tenant="user-A", human_handle=handoff["human_handle"])
+            second.close()
 
 
 if __name__ == "__main__":

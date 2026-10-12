@@ -75,6 +75,15 @@ class PlannerTests(unittest.TestCase):
             self.assertNotIn(secret, serialized)
         self.assertIn("S1", serialized)
 
+    def test_common_phone_address_token_and_full_url_removed_from_llm_payload(self):
+        ctx, llm = self.ctx({"action": "stop", "epoch": 0})
+        planner.propose(ctx, goal="look at https://example.test/private?access=1234", epoch=0,
+                        observations=[{"description": "Call 612345678, Carrer Major 12, 08260 Suria",
+                                       "sku": "sk-proj-audit-demo", "status": "researching"}])
+        payload = llm.call_args.kwargs["input"][0]["text"]
+        for sensitive in ("612345678", "Carrer Major 12", "sk-proj-audit-demo", "example.test/private"):
+            self.assertNotIn(sensitive, payload)
+
     def test_input_bounds_and_no_llm_when_invalid(self):
         ctx, llm = self.ctx({"action": "stop", "epoch": 0})
         for args in ({"epoch": True, "observations": []},

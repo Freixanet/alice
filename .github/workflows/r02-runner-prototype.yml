@@ -5,7 +5,12 @@ on:
     paths:
       - "alice_secure_runner/**"
       - "hermes-plugin/r02_planner.py"
+      - "hermes-plugin/__init__.py"
+      - "hermes-plugin/plugin.yaml"
+      - "hermes-plugin/tests/test_r02_*.py"
       - "tests/test_alice_*.py"
+      - "pyproject.toml"
+      - "setup.py"
       - ".github/workflows/r02-runner-prototype.yml"
   workflow_dispatch:
 
@@ -23,6 +28,14 @@ jobs:
           python-version: "3.11"
       - name: HTTPS fictional checkout and structured Hermes planner stub
         run: python -m unittest discover -s tests -p 'test_alice*.py' -v
+      - name: Validate unprivileged Hermes proposal adapter
+        run: python -m unittest discover -s hermes-plugin/tests -p 'test_r02_*.py' -v
+      - name: Build and install distributable prototype wheel in a clean target
+        run: |
+          mkdir -p "$RUNNER_TEMP/r02_wheels" "$RUNNER_TEMP/r02_install"
+          python -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/r02_wheels" .
+          python -m pip install --no-index --no-deps --find-links "$RUNNER_TEMP/r02_wheels" --target "$RUNNER_TEMP/r02_install" alice-secure-runner-prototype
+          PYTHONPATH="$RUNNER_TEMP/r02_install" python -c 'from alice_secure_runner import AliceRunner; print("WHEEL_IMPORT_OK", AliceRunner.__name__)'
       - name: No privileged Hermes/browser access or real payments in CI
         run: |
           python -m compileall -q alice_secure_runner hermes-plugin/r02_planner.py

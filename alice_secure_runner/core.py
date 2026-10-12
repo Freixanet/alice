@@ -22,7 +22,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +69,8 @@ class Job:
     checkout: dict[str, Any] | None = None
     challenge_nonce: str = ""
     challenge_expires: int = 0
-    human_token: str = ""
+    commit_expires: int = 0
+    human_handle_digest: str = ""
 
 
 class FictionalHTTPSAdapter:
@@ -135,12 +136,87 @@ class AliceRunner:
     def __init__(self, adapter: FictionalHTTPSAdapter, *, approval_key: bytes, ledger_path: str | Path = ":memory:"):
         if len(approval_key) < 32:
             raise ValueError("prototype device HMAC key must be >=32 bytes")
+        ledger_path = ":memory:" if str(ledger_path) == ":memory:" else str(Path(ledger_path).expanduser().resolve())
         self.__adapter = adapter
         self.__approval_key = approval_key
         self.__jobs: dict[str, Job] = {}
         self.__lock = threading.RLock()
-        self.__db = sqlite3.connect(str(ledger_path), check_same_thread=False, isolation_level=None)
-        self.__db.execute("CREATE TABLE IF NOT EXISTS authorizations (checkout_id TEXT PRIMARY KEY, digest TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT)")
+        self.__owner: sqlite3.Connection | None = None
+        if str(ledger_path) != ":memory:":
+            # A distinct SQLite lock database provides cross-process ownership
+            # on Windows/macOS/Linux; sqlite3's main ledger remains autocommit.
+            # Losing the owner process releases its transaction lock automatically.
+            self.__owner = sqlite3.connect(str(ledger_path) + ".owner.sqlite3",
+                                           timeout=0, isolation_level=None)
+            try:
+                self.__owner.execute("CREATE TABLE IF NOT EXISTS singleton (id INTEGER PRIMARY KEY)")
+                self.__owner.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError as exc:
+                self.__owner.close()
+                self.__owner = None
+                raise Denied("another runner owns this persistent ledger") from exc
+        try:
+            self.__db = sqlite3.connect(str(ledger_path), check_same_thread=False, isolation_level=None)
+            self.__db.execute("CREATE TABLE IF NOT EXISTS authorizations (checkout_id TEXT PRIMARY KEY, digest TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT)")
+            self.__db.execute("CREATE TABLE IF NOT EXISTS jobs (job_id TEXT PRIMARY KEY, state_json TEXT NOT NULL)")
+            self._recover_jobs()
+        except Exception:
+            if hasattr(self, "_AliceRunner__db"):
+                self.__db.close()
+            if self.__owner is not None:
+                self.__owner.close()
+                self.__owner = None
+            raise
+
+    def _persist_job(self, job: Job) -> None:
+        # Synthetic fixtures only: the durable record never stores raw human handles.
+        self.__db.execute("INSERT OR REPLACE INTO jobs(job_id,state_json) VALUES(?,?)",
+                          (job.id, _canonical(asdict(job)).decode("utf-8")))
+
+    def _recover_jobs(self) -> None:
+        """Reconcile crash windows with the authoritative payment-attempt ledger.
+
+        A recorded dispatch is UNKNOWN after restart, never an invitation to
+        resend. Inconsistent/missing authorization rows fail closed.
+        """
+        for job_id, serialized in self.__db.execute("SELECT job_id,state_json FROM jobs"):
+            saved = json.loads(serialized)
+            if not isinstance(saved, dict) or saved.get("id") != job_id:
+                raise ValueError("invalid persisted job")
+            saved["found"] = tuple(saved.get("found", ()))
+            job = Job(**saved)
+            if job.checkout is not None:
+                cid = job.checkout.get("checkout_id")
+                row = self.__db.execute("SELECT digest,status FROM authorizations WHERE checkout_id=?", (cid,)).fetchone()
+                if row is None or row[0] != _digest(job.checkout):
+                    raise ValueError("job authorization state inconsistent; refusing startup")
+                authorization_state = row[1]
+                if authorization_state == "dispatching":
+                    self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (cid,))
+                    job.state = "unknown"
+                elif authorization_state in ("approved", "unknown", "confirmed", "human_only"):
+                    job.state = authorization_state
+                elif authorization_state == "human_simulated":
+                    job.state = "completed_by_human_simulated"
+                elif authorization_state == "pending" and job.state == "awaiting_approval":
+                    pass
+                else:
+                    raise ValueError("invalid persisted authorization transition")
+                if job.state != "awaiting_approval":
+                    job.challenge_nonce = ""
+                    job.challenge_expires = 0
+                if job.state == "completed_by_human_simulated":
+                    job.human_handle_digest = ""
+            self.__jobs[job.id] = job
+            self._persist_job(job)
+
+    def close(self) -> None:
+        """Stop this synthetic runner after closing its test listener."""
+        with self.__lock:
+            self.__db.close()
+            if self.__owner is not None:
+                self.__owner.close()
+                self.__owner = None
 
     def new_job(self, tenant: str, session: str, recipient: str) -> dict[str, Any]:
         if not all(isinstance(v, str) and 0 < len(v) <= 120 for v in (tenant, session, recipient)):
@@ -148,6 +224,7 @@ class AliceRunner:
         job = Job(secrets.token_urlsafe(16), tenant, session, recipient)
         with self.__lock:
             self.__jobs[job.id] = job
+            self._persist_job(job)
         return {"job_id": job.id, "epoch": 0, "status": job.state}
 
     def _job(self, job_id: str, tenant: str, session: str) -> Job:
@@ -230,6 +307,7 @@ class AliceRunner:
                 job.state = "stopped"
                 output = {"stopped": True}
             job.epoch += 1
+            self._persist_job(job)
             return {"ok": True, "epoch": job.epoch, "status": job.state, **output}
 
     def _validate_quote(self, job: Job, quote: dict[str, Any]) -> None:
@@ -269,7 +347,9 @@ class AliceRunner:
                 raise Denied("approval already consumed")
             job.challenge_nonce = ""
             job.challenge_expires = 0
+            job.commit_expires = int(time.time()) + 300
             job.state = "approved"
+            self._persist_job(job)
             return {"status": "approved", "checkout_id": cid}
 
     def commit(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
@@ -278,6 +358,8 @@ class AliceRunner:
             job = self._job(job_id, tenant, session)
             if job.state != "approved":
                 raise Denied("not approved or checkout already attempted")
+            if time.time() >= job.commit_expires:
+                raise Denied("approved checkout execution window expired")
             snapshot = self._pending(job)
             # Recheck the real fictional merchant total before any submission.
             fresh = self.__adapter.quote(job.cart_id, job.recipient)
@@ -290,21 +372,31 @@ class AliceRunner:
             if rc != 1:
                 raise Denied("checkout attempt already consumed")
             job.state = "dispatching"
+            self._persist_job(job)  # fail before sending if persistence fails
             try:
                 response = self.__adapter.commit(cart_id=job.cart_id, recipient=job.recipient,
                                                  snapshot=snapshot, idempotency_key=checkout_id)
             except Exception as exc:
                 self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (checkout_id,))
                 job.state = "unknown"
+                self._persist_job(job)
                 raise Indeterminate("submission result unknown; do not retry automatically") from exc
             if (response.get("checkout_id") != checkout_id or response.get("amount_minor") != snapshot["amount_minor"]
-                    or response.get("currency") != snapshot["currency"] or not isinstance(response.get("order_id"), str)):
+                    or response.get("currency") != snapshot["currency"]
+                    or not isinstance(response.get("order_id"), str)
+                    or not 1 <= len(response["order_id"].strip()) <= 120):
                 self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (checkout_id,))
                 job.state = "unknown"
+                self._persist_job(job)
                 raise Indeterminate("merchant order receipt cannot be verified")
-            self.__db.execute("UPDATE authorizations SET status='confirmed',order_id=? WHERE checkout_id=? AND status='dispatching'",
-                              (response["order_id"], checkout_id))
+            confirmed = self.__db.execute("UPDATE authorizations SET status='confirmed',order_id=? WHERE checkout_id=? AND status='dispatching'",
+                                          (response["order_id"], checkout_id)).rowcount
+            if confirmed != 1:
+                job.state = "unknown"
+                self._persist_job(job)
+                raise Indeterminate("order received but durable authorization changed; reconcile manually")
             job.state = "confirmed"
+            self._persist_job(job)
             return {"status": "confirmed_simulated", "order_id": response["order_id"],
                     "checkout_id": checkout_id, "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
 
@@ -312,21 +404,41 @@ class AliceRunner:
         """Revokes agent writes. Human token stays exclusively with Alice UI."""
         with self.__lock:
             job = self._job(job_id, tenant, session)
-            if job.state in ("dispatching", "unknown", "confirmed", "stopped"):
-                raise Denied("cannot hand off an already-sent or terminal checkout")
+            if job.state in ("dispatching", "unknown", "confirmed", "stopped", "human_only",
+                             "completed_by_human_simulated"):
+                raise Denied("cannot hand off an already-sent or terminal checkout twice")
+            if job.checkout is not None:
+                transitioned = self.__db.execute(
+                    "UPDATE authorizations SET status='human_only' WHERE checkout_id=? AND status IN ('pending','approved')",
+                    (job.checkout["checkout_id"],)).rowcount
+                if transitioned != 1:
+                    raise Denied("cannot hand off while checkout submission may be in flight")
             job.epoch += 1
             job.state = "human_only"
-            job.human_token = secrets.token_urlsafe(32)
+            job.challenge_nonce = ""
+            job.challenge_expires = 0
+            job.commit_expires = 0
+            human_handle = secrets.token_urlsafe(32)
+            job.human_handle_digest = _digest(human_handle)
+            self._persist_job(job)
             # Only the trusted caller/UI receives this; never feed it to Hermes.
-            return {"status": "awaiting_human_finalization", "human_handle": job.human_token}
+            return {"status": "awaiting_human_finalization", "human_handle": human_handle}
 
     def human_finalize(self, job_id: str, *, tenant: str, human_handle: str) -> dict[str, Any]:
         """Simulated explicit human finalization, not an agent action."""
         with self.__lock:
             job = self.__jobs.get(job_id)
             if (job is None or job.tenant != tenant or job.state != "human_only"
-                    or not isinstance(human_handle, str) or not hmac.compare_digest(job.human_token, human_handle)):
+                    or not isinstance(human_handle, str) or not hmac.compare_digest(
+                        job.human_handle_digest, _digest(human_handle))):
                 raise Denied("not an authorized human session")
-            job.human_token = ""
+            if job.checkout is not None:
+                transitioned = self.__db.execute(
+                    "UPDATE authorizations SET status='human_simulated' WHERE checkout_id=? AND status='human_only'",
+                    (job.checkout["checkout_id"],)).rowcount
+                if transitioned != 1:
+                    raise Denied("human completion is no longer exclusive")
+            job.human_handle_digest = ""
             job.state = "completed_by_human_simulated"
+            self._persist_job(job)
             return {"status": job.state, "payment_claim": "NOT_VERIFIED"}

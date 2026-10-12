@@ -19,7 +19,7 @@ def main() -> int:
         print("Refusing to start: R02 runner prototype only supports the fictional merchant.", file=sys.stderr)
         return 2
     required = ("ALICE_FIXTURE_ORIGIN", "ALICE_FIXTURE_CA_FILE", "ALICE_FIXTURE_MERCHANT_TOKEN",
-                "ALICE_RUNNER_APPROVAL_KEY_HEX", "ALICE_RUNNER_COORDINATOR_TOKEN",
+                "ALICE_RUNNER_APPROVAL_KEY_HEX", "ALICE_RUNNER_COORDINATOR_TOKEN", "ALICE_RUNNER_HUMAN_TOKEN",
                 "ALICE_RUNNER_TLS_CERT_FILE", "ALICE_RUNNER_TLS_KEY_FILE", "ALICE_RUNNER_LEDGER_FILE")
     missing = [field for field in required if not os.environ.get(field)]
     if missing:
@@ -30,6 +30,10 @@ def main() -> int:
         from http.server import ThreadingHTTPServer
 
         approval_key = bytes.fromhex(os.environ["ALICE_RUNNER_APPROVAL_KEY_HEX"])
+        coordinator_token = os.environ["ALICE_RUNNER_COORDINATOR_TOKEN"]
+        human_token = os.environ["ALICE_RUNNER_HUMAN_TOKEN"]
+        if min(len(coordinator_token), len(human_token)) < 32 or coordinator_token == human_token:
+            raise ValueError("invalid or shared Alice tokens")
         adapter = FictionalHTTPSAdapter(
             origin=os.environ["ALICE_FIXTURE_ORIGIN"],
             ca_file=os.environ["ALICE_FIXTURE_CA_FILE"],
@@ -37,7 +41,7 @@ def main() -> int:
         runner = AliceRunner(adapter, approval_key=approval_key,
                              ledger_path=os.environ["ALICE_RUNNER_LEDGER_FILE"])
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(
-            runner, os.environ["ALICE_RUNNER_COORDINATOR_TOKEN"]))
+            runner, coordinator_token, human_token))
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(os.environ["ALICE_RUNNER_TLS_CERT_FILE"],
                             os.environ["ALICE_RUNNER_TLS_KEY_FILE"])

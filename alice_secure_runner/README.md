@@ -9,8 +9,8 @@ test CA and token; only `tests/test_alice_secure_runner.py` and
 `tests/test_alice_runner_http.py` start/stop these services automatically.
 
 ```shell
-python3 -m unittest discover -s tests -p 'test_alice*.py' -v
-PYTHONPATH=~/.hermes/hermes-agent python3 -m unittest discover -s hermes-plugin/tests -p test_r02_planner.py -v
+python3.11 -m unittest discover -s tests -p 'test_alice*.py' -v
+python3.11 -m unittest discover -s hermes-plugin/tests -p test_r02_planner.py -v
 ```
 
 The first suite obtains product information and updates a cart through fixed,
@@ -19,7 +19,9 @@ checkout digest, applies a **test HMAC** signature, and performs at most one
 synthetic `/commit`. It tests rejected scripts/CDP/terminal, stale epoch,
 wrong tenant/session, changed amount, forged/expired/replayed approval,
 simultaneous submits, failure before dispatch, unknown outcome after dispatch,
-and simulated exclusive human completion. No checkout is a real-world purchase.
+crash/restart reconciliation, and simulated exclusive human completion. No
+checkout is a real-world purchase. After restarting, `dispatching` becomes
+`unknown`, so **a potentially dispatched operation cannot be retried**.
 
 The Hermes adapter `hermes-plugin/r02_planner.py` uses official
 `ctx.llm.complete_structured()` to request **one JSON proposal**, validates it
@@ -52,7 +54,8 @@ security path.
 (`python -m build` with normal package build dependencies). `python -m
 alice_secure_runner` is intentionally **disabled by default** and requires
 `ALICE_RUNNER_FIXTURE_ONLY=yes`, pinned fictional HTTPS origin/CA, fixture
-merchant token, 32-byte approval key, backend authorization token, service TLS
+merchant token, 32-byte approval key, separate backend/human authorization
+tokens of at least 32 characters each, service TLS
 certificate/key and SQLite file. It only binds `127.0.0.1` and refuses
 non-loopback merchant destinations. Its keys must never be supplied to Hermes.
 
@@ -82,15 +85,21 @@ plugin with appropriate user consent.
   HTTPS bearer is insufficient against that threat; remote isolation and
   adversarial process/network tests are mandatory before release.
 - Tenant/session are supplied by a trusted coordinator, not a production OIDC
-  identity provider; service uses a single static trusted-backend bearer. No
-  multi-tenant authentication, quotas, user/device key lifecycle or audit.
+  identity provider. The synthetic service now separates its static coordinator
+  and simulated human-completion bearers, but **neither is real user/device
+  authentication**. A compromised trusted backend could still impersonate
+  tenant/session values. No multi-tenant authentication, quotas, user/device key
+  lifecycle or audit.
 - HMAC is a fictional device consent stand-in, not an iOS Secure Enclave
   signature or biometric-attested approval. `human_handoff()` is a pure state
   transition, not an authenticated browser viewer or PSP handoff.
-- Checkout attempts are recorded durably in SQLite, but jobs and their browser
-  epoch live only in memory. A process restart **fails closed and loses job
-  recovery**, rather than delivering a usable ongoing cart. Durable recovery
-  and merchant status reconciliation are required before deployment.
+- Synthetic jobs, epochs and checkout attempts are now persisted in SQLite;
+  startup reconciles their states, invalidates in-flight checkout attempts to
+  `unknown` and never automatically retries them. Human handoff handles are
+  stored only as hashes. There is still **no real browser-session recovery**, no
+  encryption-at-rest/key-management strategy, no high-availability coordinator
+  and no independent merchant status reconciliation. Production-grade durable
+  recovery remains a release blocker.
 - No merchant/PSP adapter is certified; only the strictly loopback fictional
   contract can submit. Cloud/browser availability, region, WebAuthn, 3DS,
   Apple Pay and merchant anti-bot/ToS compatibility remain unresolved.
