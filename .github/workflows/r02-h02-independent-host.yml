@@ -1,0 +1,32 @@
+name: R02 H02 Independent Host Preparation
+
+on:
+  pull_request:
+    paths:
+      - "deploy/h02/**"
+      - "scripts/h02_*.py"
+      - "scripts/verify-r02-h02-docker.sh"
+      - "alice_secure_runner/h02_*.py"
+      - "tests/test_h02_*.py"
+      - "pyproject.toml"
+      - "setup.py"
+      - ".github/workflows/r02-h02-independent-host.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scoped-identity-and-same-host-synthetic:
+    name: H02 synthetic identity and Docker smoke (NOT two-host proof)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - name: Reject real endpoints and credentials
+        run: |
+          test -z "${H02_REAL_PAYMENT_ENDPOINT:-}"
+          test -z "${H02_PERSONAL_HERMES_HOME:-}"
+          docker info >/dev/null
+      - name: Build clean packages and run synthetic H02 security smoke
+        run: bash scripts/verify-r02-h02-docker.sh
