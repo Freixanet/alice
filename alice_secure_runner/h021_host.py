@@ -15,6 +15,7 @@ import ssl
 import threading
 from contextlib import nullcontext
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from .browser_fixture import BrowserFixtureReadAdapter
 from .core import AliceRunner, Denied
@@ -23,6 +24,7 @@ from .h01_host import secret
 from .h02_identity import InvalidCapability, ReplayLedger
 from .h021_crypto import PublicVerifier
 from .device_approval import P256DeviceConsent
+from .device_registry import RevocableP256DeviceConsent
 from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 from .http_service import FixturePrincipal, make_handler
 
@@ -131,7 +133,18 @@ def main():
             origin=origin, ca_file=merchant_ca,
             merchant_token=effect_token, browser_read_token=read_token,
             playwright_module="/opt/h01/node_modules/playwright")
-        if os.environ.get("H021_DEVICE_CONSENT_P256_FIXTURE_ONLY") == "yes":
+        registry = None
+        if os.environ.get("H021_DEVICE_CONSENT_REGISTRY_FIXTURE_ONLY") == "yes":
+            # Alice-administered, pre-enrolled public-only keys on a durable
+            # private volume. Never auto-seed a key on restart: doing so could
+            # silently undo a security revocation.
+            registry_path = Path("/var/lib/h01/device_enrollments.sqlite3")
+            if not registry_path.is_file() or registry_path.is_symlink():
+                raise SystemExit("H021 device registry must be pre-enrolled by trusted Alice")
+            registry = RevocableP256DeviceConsent(registry_path)
+            runner = AliceRunner(adapter, approval_verifier=registry,
+                                 ledger_path="/var/lib/h01/state.sqlite3")
+        elif os.environ.get("H021_DEVICE_CONSENT_P256_FIXTURE_ONLY") == "yes":
             runner = AliceRunner(adapter,
                 approval_verifier=P256DeviceConsent.load("/run/h021-auth/devices.json"),
                 ledger_path="/var/lib/h01/state.sqlite3")
@@ -178,6 +191,8 @@ def main():
             replay.close()
             runner.close()
             adapter.close()
+            if registry is not None:
+                registry.close()
 
 
 if __name__ == "__main__":

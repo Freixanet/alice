@@ -529,6 +529,31 @@ class AliceRunner:
                 raise Denied("not awaiting user approval")
             if time.time() >= job.challenge_expires:
                 raise Denied("checkout consent expired")
+            def persist_approval():
+                cid = self._pending(job)["checkout_id"]
+                rc = self.__db.execute(
+                    "UPDATE authorizations SET status='approved' WHERE checkout_id=? AND status='pending'",
+                    (cid,)).rowcount
+                if rc != 1:
+                    raise Denied("approval already consumed")
+                job.challenge_nonce = ""
+                job.challenge_expires = 0
+                job.commit_expires = int(time.time()) + 300
+                job.state = "approved"
+                self._persist_job(job)
+                return {"status": "approved", "checkout_id": cid}
+
+            # A revocable trusted Alice public-key registry may fence its
+            # administrative revoke/rotate transaction across this persistence.
+            # Static legacy fixture verifiers continue to use verify().
+            authorizer = getattr(self.__approval_verifier, "authorize", None)
+            if callable(authorizer):
+                try:
+                    return authorizer(tenant=job.tenant, session=job.owner_session,
+                                      challenge=_canonical(self._challenge(job)),
+                                      signature=signature, on_valid=persist_approval)
+                except ValueError as exc:
+                    raise Denied("device enrollment or consent not valid") from exc
             if self.__approval_verifier is not None:
                 valid = self.__approval_verifier.verify(
                     tenant=job.tenant, session=job.owner_session,
@@ -538,17 +563,7 @@ class AliceRunner:
                 valid = isinstance(signature, str) and hmac.compare_digest(signature, wanted)
             if not valid:
                 raise Denied("invalid or replayed user approval")
-            cid = self._pending(job)["checkout_id"]
-            rc = self.__db.execute("UPDATE authorizations SET status='approved' WHERE checkout_id=? AND status='pending'",
-                                   (cid,)).rowcount
-            if rc != 1:
-                raise Denied("approval already consumed")
-            job.challenge_nonce = ""
-            job.challenge_expires = 0
-            job.commit_expires = int(time.time()) + 300
-            job.state = "approved"
-            self._persist_job(job)
-            return {"status": "approved", "checkout_id": cid}
+            return persist_approval()
 
     def commit(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
         """Trusted Alice coordinator only. Never expose as a model tool."""

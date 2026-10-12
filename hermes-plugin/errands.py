@@ -661,7 +661,8 @@ def _record_started_checkout_run(home: Path, errand_id: str, run_id: str,
         entry = next((e for e in entries if e.get("id") == errand_id), None)
         if entry is None:
             return
-        entry.update(run_id=run_id, run_start_uncertain=False,
+        entry.update(run_id=run_id, run_start_uncertain=False, run_start_key=None,
+                     run_start_payload=None,
                      runs=int(entry.get("runs") or 0) + 1, updated_at=time.time())
         if (checkout_id and (entry.get("checkout") or {}).get("id") == checkout_id
                 and entry.get("resume_message") == message):
@@ -1308,19 +1309,41 @@ class Gateway:
             key = _env_value(Path(home) / "profiles" / profile / ".env", "API_SERVER_KEY")
         self._key = key or _env_value(env, "API_SERVER_KEY")
 
-    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None, timeout: float = 15) -> Dict[str, Any]:
+    def _call(self, method: str, path: str, body: Optional[Dict[str, Any]] = None,
+              timeout: float = 15, *, headers: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         request = urllib.request.Request(self.base + path, data=data, method=method)
         request.add_header("Content-Type", "application/json")
         if self._key:
             request.add_header("Authorization", f"Bearer {self._key}")
+        for name, value in (headers or {}).items():
+            request.add_header(name, value)
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 — loopback only
             raw = response.read().decode("utf-8")
         return json.loads(raw) if raw else {}
 
-    def start(self, session_id: str, text: str, *, model: str, provider: str) -> str:
-        out = self._call("POST", "/v1/runs", {"input": text, "session_id": session_id,
-                                               "model": model, "provider": provider})
+    def durable_run_idempotency(self) -> bool:
+        """Only advertise safe run-id recovery when the LIVE gateway has durable support."""
+        try:
+            features = self._call("GET", "/v1/capabilities").get("features", {})
+            supported = features.get("runs_idempotency", {}) if isinstance(features, dict) else {}
+            return (isinstance(supported, dict) and supported.get("supported") is True
+                    and supported.get("durable") is True)
+        except Exception:
+            return False
+
+    def start(self, session_id: str, text: str, *, model: str, provider: str,
+              idempotency_key: Optional[str] = None) -> str:
+        body = {"input": text, "session_id": session_id,
+                "model": model, "provider": provider}
+        if idempotency_key is not None:
+            if (not isinstance(idempotency_key, str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]{32,128}", idempotency_key)):
+                raise ValueError("invalid Hermes run admission key")
+            out = self._call("POST", "/v1/runs", body,
+                             headers={"Idempotency-Key": idempotency_key})
+        else:
+            out = self._call("POST", "/v1/runs", body)
         run_id = str(out.get("run_id") or out.get("id") or "")
         if not run_id:
             raise RuntimeError("the gateway did not return a run id")
@@ -1609,17 +1632,34 @@ class Engine:
                         # Persist uncertainty BEFORE remote submission. Keep
                         # the barrier until run_id is durably linked to this
                         # job, so a cutover can then find and stop the run.
+                        # The pinned official Hermes API supports durable
+                        # Idempotency-Key reservations, but an older gateway
+                        # or memory-only degraded store must fail closed.
+                        capability = getattr(self.gateway, "durable_run_idempotency", None)
+                        durable = callable(capability) and capability() is True
+                        run_key = secrets.token_urlsafe(32) if durable else None
+                        run_body = ({"session_id": entry["session_id"], "text": text,
+                                     "model": entry["model"], "provider": entry["provider"]}
+                                    if durable else None)
                         if update(self.home, self.errand_id, run_start_uncertain=True,
-                                  run_start_attempt_at=time.time()) is None:
+                                  run_start_attempt_at=time.time(),
+                                  run_start_key=run_key,
+                                  run_start_payload=run_body) is None:
                             return "missing"
-                        run_id = self.gateway.start(entry["session_id"], text,
-                                                    model=entry["model"], provider=entry["provider"])
+                        if durable:
+                            run_id = self.gateway.start(entry["session_id"], text,
+                                                        model=entry["model"], provider=entry["provider"],
+                                                        idempotency_key=run_key)
+                        else:
+                            run_id = self.gateway.start(entry["session_id"], text,
+                                                        model=entry["model"], provider=entry["provider"])
                         if text.startswith(APPROVED_PREFIX):
                             _record_started_checkout_run(self.home, self.errand_id, run_id, text,
                                                          (entry.get("checkout") or {}).get("id"))
                         else:
                             update(self.home, self.errand_id, run_id=run_id,
-                                   run_start_uncertain=False,
+                                   run_start_uncertain=False, run_start_key=None,
+                                   run_start_payload=None,
                                    runs=int(entry.get("runs") or 0) + 1)
             except Exception as exc:  # noqa: BLE001
                 update(self.home, self.errand_id, status="stuck",

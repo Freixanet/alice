@@ -159,7 +159,7 @@ Mac Python environment. Record those omissions rather than marking PASS.
 - Baseline commit `d769969a6429e7702800d5bc1c47c4f8dce87c3e`:
   H01, H02, H02.1 same-host Docker, synthetic HTTPS, real Chromium,
   Quality verify and browser SUCCESS on GitHub; Quality iOS remained in
-  progress at the last baseline check. Results are *not* for later changes.
+  progress at the last baseline check. Results are _not_ for later changes.
 - After the new local plugin edits: **24/24 R02 plugin tests PASS** with
   Python 3.11; `git diff --check` PASS. These are mocked registration and
   security-contract tests, not installed official-Hermes or remote pairing.
@@ -177,21 +177,57 @@ Mac Python environment. Record those omissions rather than marking PASS.
 - No hardware-backed presence, real payment authorization, administrative
   separation or provable stop of an unidentifiable old run was demonstrated.
 
+### Continued local hardening after SHA `7192e262` (not yet release evidence)
+
+- The exact previous SHA's Quality `verify` job **FAILED**, at
+  `npm run format:check`, because Prettier rejected this ledger's Markdown.
+  Its `browser` job passed; `ios` was in progress at investigation time.
+  Formatting was corrected in the subsequent local worktree. The previous
+  failed job cannot be relabeled green. Every new SHA needs its own CI.
+- The exact Hermes source pinned by Quality
+  (`b889e4e91cfc5a4a1d7738d8943c801143bf7c7c`) implements durable,
+  credential-scoped `Idempotency-Key` reservations for `POST /v1/runs`.
+  The gateway now probes `GET /v1/capabilities` and sends a unique
+  admission key **only** when `features.runs_idempotency` advertises both
+  `supported=true` and `durable=true`. That key and the exact request
+  are saved before network admission and cleared after a durable `run_id`.
+  A lost response still produces `stuck` and **never triggers an automatic
+  replay**. With old/memory-only gateways, the conservative keyless state
+  remains. A durable reservation alone is not evidence that a run is
+  stopped, nor proof that an old key survives arbitrary gateway database
+  replacement, retention expiry or adversarial control of Host A.
+- A separate Alice-administered SQLite P-256 public-key registry now supports
+  exactly one enrolled key for a trusted tenant/session/account/installation
+  association, finite expiry, CAS-style rotation and durable revocation.
+  The runner can serialize a verified approval and its durable state update
+  against concurrent administrative revocation, including through another
+  SQLite connection. H02.1 offers an explicitly **synthetic-only opt-in**,
+  `H021_DEVICE_CONSENT_REGISTRY_FIXTURE_ONLY=yes`, requiring a previously
+  populated private `/var/lib/h01/device_enrollments.sqlite3` file.
+  Restart does not auto-enroll a key or resurrect a revoked one. This is
+  NOT account authentication, Secure Enclave attestation, Face ID, real
+  user-presence proof, remote enrollment or a production device service.
+- Local checks before publication: repository Python **111 tests PASS**
+  (**9 skipped**, optional Chromium); focused R02 Hermes plugin **26 PASS**;
+  device enrollment/rotation/revocation/concurrency tests **4 PASS**.
+  H02.1 Docker, official live model, iOS XCTest and whole-suite Hermes
+  verification of these NEW edits are still pending exact SHA checks.
+
 ## Attacks and negative outcomes
 
-| Attempt                                                            | Expected result                                                                   |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                |
-| Mutated Ed25519 role/path/job/body/tenant/session/replayed token   | Denied by both verifiers and durable replay                                       |
-| Forged/expired P-256 exact checkout consent                        | Denied by public-key device verifier and one-use job ledger                       |
-| Alter variant/tax/shipping/discount while keeping same final total | Denied before any merchant commit                                                 |
-| Different recipient with reused merchant checkout ID               | Merchant rejects immutable receipt conflict                                       |
-| Lost merchant reply / both independent processes restarted         | `UNKNOWN` until exact durable merchant receipt read; no POST retry                |
-| Read-only Chromium credential tries merchant cart/receipt          | Denied; cannot access effect token through typed read endpoint                    |
-| Legacy Hermes approval/resume while `ALICE_R02_ASR_ONLY=yes`       | Denied; no fallback to shared browser or saved card                               |
-| Legacy tools registered before cutover                             | Invocation-time quarantine includes login/cart/checkout/receipt paths            |
-| Lost Hermes `/v1/runs` reply after possible acceptance              | Durable uncertain marker prevents another run; remote status/stop needs manual reconciliation |
-| Root Host A scans B private Docker bridge IP                       | Cannot assert firewall success from routing failure; independent evidence PENDING |
+| Attempt                                                            | Expected result                                                                               |
+| ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| Stolen gateway backend bearer without signed OWNER/COMMIT          | Denied by independent ASR verifier                                                            |
+| Mutated Ed25519 role/path/job/body/tenant/session/replayed token   | Denied by both verifiers and durable replay                                                   |
+| Forged/expired P-256 exact checkout consent                        | Denied by public-key device verifier and one-use job ledger                                   |
+| Alter variant/tax/shipping/discount while keeping same final total | Denied before any merchant commit                                                             |
+| Different recipient with reused merchant checkout ID               | Merchant rejects immutable receipt conflict                                                   |
+| Lost merchant reply / both independent processes restarted         | `UNKNOWN` until exact durable merchant receipt read; no POST retry                            |
+| Read-only Chromium credential tries merchant cart/receipt          | Denied; cannot access effect token through typed read endpoint                                |
+| Legacy Hermes approval/resume while `ALICE_R02_ASR_ONLY=yes`       | Denied; no fallback to shared browser or saved card                                           |
+| Legacy tools registered before cutover                             | Invocation-time quarantine includes login/cart/checkout/receipt paths                         |
+| Lost Hermes `/v1/runs` reply after possible acceptance             | Durable uncertain marker prevents another run; remote status/stop needs manual reconciliation |
+| Root Host A scans B private Docker bridge IP                       | Cannot assert firewall success from routing failure; independent evidence PENDING             |
 
 ## Cost, distribution and operations
 

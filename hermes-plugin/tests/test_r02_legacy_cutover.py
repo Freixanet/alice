@@ -20,6 +20,73 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_pinned_hermes_gateway_durable_idempotency_feature_gate(self):
+        errands = load("r02_pinned_run_idempotency", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-idempotency-") as directory:
+            gateway = errands.Gateway(Path(directory))
+            with patch.object(gateway, "_call", return_value={
+                    "features": {"runs_idempotency": {"supported": True, "durable": True}}}) as remote:
+                self.assertTrue(gateway.durable_run_idempotency())
+                remote.assert_called_once_with("GET", "/v1/capabilities")
+            for flags in ({}, {"runs_idempotency": {"supported": True, "durable": False}},
+                          {"runs_idempotency": {"supported": False, "durable": True}}):
+                with patch.object(gateway, "_call", return_value={"features": flags}):
+                    self.assertFalse(gateway.durable_run_idempotency())
+            with patch.object(gateway, "_call", return_value={"run_id": "run_fixture"}) as remote:
+                key = "A" * 43
+                self.assertEqual(gateway.start(
+                    "session", "fixture text", model="fixture-model", provider="fixture",
+                    idempotency_key=key), "run_fixture")
+                remote.assert_called_once_with(
+                    "POST", "/v1/runs",
+                    {"input": "fixture text", "session_id": "session",
+                     "model": "fixture-model", "provider": "fixture"},
+                    headers={"Idempotency-Key": key})
+            with self.assertRaises(ValueError):
+                gateway.start("session", "text", model="fixture-model",
+                              provider="fixture", idempotency_key="bad header\r\n")
+
+    def test_lost_response_persists_durable_request_identity_without_auto_replay(self):
+        errands = load("r02_durable_lost_start", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-durable-start-") as directory:
+            home = Path(directory)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            entry = errands._new_entry("Fictional only", now=1000, model_route={
+                "model": "fictional-model", "provider": "fixture"})
+            errands._write(archive, [entry])
+            attempts = []
+
+            class DurableFake:
+                def durable_run_idempotency(self):
+                    return True
+
+                def start(self, session_id, text, *, model, provider, idempotency_key):
+                    attempts.append((session_id, text, model, provider, idempotency_key))
+                    raise TimeoutError("simulated accepted request with lost reply")
+
+            engine = object.__new__(errands.Engine)
+            engine.home, engine.errand_id = home, entry["id"]
+            engine.gateway = DurableFake()
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "prepare_browser", return_value=True):
+                self.assertEqual(engine.run("fictional first attempt"), "stuck")
+                after = errands.get(home, entry["id"])
+                self.assertTrue(after["run_start_uncertain"])
+                self.assertRegex(after["run_start_key"], r"^[A-Za-z0-9_-]{32,128}$")
+                self.assertEqual(after["run_start_key"], attempts[0][-1])
+                self.assertEqual(after["run_start_payload"], {
+                    "session_id": entry["session_id"], "text": "fictional first attempt",
+                    "model": entry["model"], "provider": entry["provider"]})
+                # This is a future *manual* recovery identifier, never an
+                # authorization to relaunch a potentially payment-capable run.
+                errands.update(home, entry["id"], status="working")
+                self.assertEqual(engine.run("another"), "stuck")
+                self.assertEqual(len(attempts), 1)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}):
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+                self.assertTrue(errands.get(home, entry["id"])["cutover_stop_pending"])
+
     def test_cutover_created_between_initial_check_and_dispatch_cannot_start_run(self):
         errands = load("r02_admission_cutover_errands", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-admission-") as directory:
