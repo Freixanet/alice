@@ -35,9 +35,11 @@ def main():
     parser.add_argument("--proposal", required=True, help="one-use capability only")
     parser.add_argument("--approved-target", action="store_true",
                         help="operator confirms B IP belongs to authorized disposable fixture")
+    parser.add_argument("--approved-private-target", action="store_true",
+                        help="operator independently confirms private ASR bridge IP is B's live listener")
     args = parser.parse_args()
-    if not args.approved_target or os.geteuid() != 0:
-        raise SystemExit("requires explicit approved target and HOST A root privileges")
+    if not args.approved_target or not args.approved_private_target or os.geteuid() != 0:
+        raise SystemExit("requires BOTH approved public/private targets and HOST A root privileges")
     info = json.loads(Path(args.manifest).read_text())
     if info.get("kind") != "H021_REMOTE_FIXTURE_NOT_INDEPENDENT_PROOF":
         raise SystemExit("incorrect fixture manifest")
@@ -54,11 +56,19 @@ def main():
         raise SystemExit("B target must be an explicitly approved IPv4 address") from exc
     if target.version != 4 or target.is_loopback or target.is_multicast or target.is_unspecified:
         raise SystemExit("refuse local/broadcast or non-IPv4 destination")
+    b_private_ip = info.get("private_runner_ip_B_only")
+    try:
+        b_private = ipaddress.ip_address(b_private_ip)
+    except ValueError as exc:
+        raise SystemExit("B manifest must specify its attested private ASR IPv4 listener") from exc
+    if b_private.version != 4 or not b_private.is_private or b_private.is_loopback:
+        raise SystemExit("refuse any unexpected private target address")
     # The B-side attestation is NOT authenticated by this file alone; an Alice
     # administrator must independently verify its origin/VM timestamps.
     command = [sys.executable, str(Path(__file__).with_name("h02_remote_probe.py")),
                "--gateway", info["gateway"], "--ca", args.ca,
-               "--token-file", args.proposal, "--job", info["job"]]
+               "--token-file", args.proposal, "--job", info["job"],
+               "--private-ip", str(b_private)]
     result = subprocess.run(command, check=False, text=True, capture_output=True, timeout=100)
     if result.returncode:
         print(result.stderr[-1200:], file=sys.stderr)
@@ -77,6 +87,7 @@ def main():
             else platform.node().encode()).hexdigest()[:20],
         "host_A_time_utc_epoch": int(time.time()),
         "target_B": b_ip,
+        "private_B_ASR_listener": str(b_private),
         "gateway_proposal": evidence,
         "selected_private_and_administrative_ports": negative,
         "actual_independent_administrative_control": "PENDING MANUAL CLOUD/IAM ATTESTATION",

@@ -84,6 +84,14 @@ class H021Tests(unittest.TestCase):
         with self.assertRaises(InvalidCapability):
             self.mint(role="proposal", path="/v1/commit")
 
+    def test_expired_request_does_not_invoke_crypto_subprocess(self):
+        expired = self.mint(now=int(time.time()) - 600, ttl=30)
+        with mock.patch("alice_secure_runner.h021_crypto._verify",
+                        side_effect=AssertionError("should never spawn verifier")) as verify:
+            with self.assertRaises(InvalidCapability):
+                self.verifier.verify(expired, path="/v1/proposals", body=self.body)
+            verify.assert_not_called()
+
     def test_public_trust_anchors_revocable_without_private_key(self):
         token = self.mint()
         manifest = self.root / "public" / "public.json"

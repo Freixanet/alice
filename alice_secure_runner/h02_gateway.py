@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import ssl
+import threading
 import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -96,6 +97,7 @@ class H02Gateway:
 
 
 def make_handler(gateway: H02Gateway):
+    admission = threading.BoundedSemaphore(12)
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_):
             return
@@ -117,6 +119,18 @@ def make_handler(gateway: H02Gateway):
                 self.reply(404, {"error": "not_found"})
 
         def do_POST(self):
+            if gateway.verify_only:
+                if not admission.acquire(blocking=False):
+                    self.reply(503, {"error": "verification_busy_no_effect"})
+                    return
+                try:
+                    self._do_post_bounded()
+                finally:
+                    admission.release()
+            else:
+                self._do_post_bounded()
+
+        def _do_post_bounded(self):
             if self.path not in set().union(*ROLE_PATHS.values()):
                 self.reply(404, {"error": "not_found"})
                 return

@@ -12,6 +12,7 @@ import json
 import os
 import secrets
 import ssl
+import threading
 from http.server import ThreadingHTTPServer
 
 from .browser_fixture import BrowserFixtureReadAdapter
@@ -26,8 +27,18 @@ from .http_service import FixturePrincipal, make_handler
 def protected_handler(runner, principals, verifier: PublicVerifier, replay: ReplayLedger,
                       subject_map: dict | None = None):
     original = make_handler(runner, principals)
+    admission = threading.BoundedSemaphore(12)
     class H021Handler(original):
         def do_POST(self):
+            if not admission.acquire(blocking=False):
+                self._write(503, {"error": "verification_busy_no_effect"})
+                return
+            try:
+                self._do_post_guarded()
+            finally:
+                admission.release()
+
+        def _do_post_guarded(self):
             try:
                 if self.headers.get("Transfer-Encoding") or self.headers.get("Content-Type") != "application/json":
                     raise InvalidCapability("content type denied")

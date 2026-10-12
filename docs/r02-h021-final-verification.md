@@ -148,12 +148,16 @@ sudo python3 scripts/h021_host_a_attack.py \
   --manifest remote_manifest.json \
   --ca gateway.pem \
   --proposal untrusted_one_use_proposal \
-  --approved-target
+  --approved-target \
+  --approved-private-target
 ```
 
 This verifies a positive scoped proposal through B's TLS gateway, consumed
 token and body alteration rejection, forbidden owner/human operations and
-selected TCP exposures on B's public address. An unreachable TCP port is
+selected TCP exposures on B's public address **AND B's exact attested private
+ASR IP:8443**. A route overlapping a local service on A is not conclusive:
+independently verify that the private IP belongs to B before using the
+second explicit approval flag. An unreachable TCP port is
 classified **NOT REACHABLE OR ABSENT**, not a verified firewall block.
 Confirm a **real live B-side ASR listener** at the same time with B's
 operator output, Docker/OS inspection and (for firewall claims) denied

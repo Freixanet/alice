@@ -7,7 +7,10 @@ on:
       - "deploy/h021/**"
       - "scripts/h021_*.py"
       - "scripts/h021_*.sh"
+      - "scripts/h02_operator.py"
+      - "scripts/h02_remote_probe.py"
       - "scripts/verify-r02-h021-docker.sh"
+      - "deploy/h02/Dockerfile.attacker"
       - "tests/test_h021_*.py"
       - "pyproject.toml"
       - "setup.py"
@@ -26,7 +29,7 @@ jobs:
       - uses: actions/checkout@v5
       - name: Reject external payment/runtime configuration
         run: |
-          test -z "${H021_EXTERNAL_RUN_APPROVED:-}"
+          test -z "${H021_EXTERNAL_APPROVED:-}"
           test -z "${HERMES_PERSONAL_HOME:-}"
           test -z "${REAL_PAYMENT_ENDPOINT:-}"
           docker info >/dev/null

@@ -130,10 +130,13 @@ class PublicVerifier:
         keypath = self._paths.get(claims["kid"])
         if not keypath:
             raise InvalidCapability("unknown or revoked signing key")
-        _verify(keypath, raw, _decode(signature))
         now = int(time.time()) if now is None else now
+        # This *rejection-only* fast path is safe on unsigned claims: expired
+        # or early requests cannot gain authority, and must not spawn a
+        # costly OpenSSL subprocess under hostile traffic.
         if now < claims["nbf"] or now >= claims["exp"] or claims["iat"] > now + 5:
             raise InvalidCapability("expired or not-yet-valid request")
+        _verify(keypath, raw, _decode(signature))
         if claims["path"] != path or not hmac.compare_digest(
                 claims["sha256"], hashlib.sha256(body).hexdigest()):
             raise InvalidCapability("request changed")

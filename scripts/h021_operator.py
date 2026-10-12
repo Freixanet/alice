@@ -50,30 +50,52 @@ def send(path, raw, token):
         return exc.code, json.loads(exc.read())
 
 
-def assert_live_private_asr():
+def assert_live_private_asr(private_ip: str | None = None):
     code = ("import socket;"
-            "s=socket.create_connection(('127.0.0.1',8443),timeout=3);s.close();print('LIVE_ASR_LISTENER')")
+            "s=socket.create_connection(('127.0.0.1',8443),timeout=3);s.close();"
+            "print('LIVE_ASR_LISTENER')")
     out = legacy.docker("exec", "-T", "asr", "/opt/asr-python/bin/python", "-c", code)
     if "LIVE_ASR_LISTENER" not in out.stdout:
         raise AssertionError("cannot attest actual private ASR listener")
+    if private_ip:
+        # Check the exact Docker-private address that A will later probe,
+        # not a guessed path or an absent public port.
+        remote_code = ("import socket;"
+                       "s=socket.create_connection((" + repr(private_ip) + ",8443),timeout=3);"
+                       "s.close();print('LIVE_PRIVATE_BRIDGE_ASR_LISTENER')")
+        out = legacy.docker("exec", "-T", "gateway", "python", "-c", remote_code)
+        if "LIVE_PRIVATE_BRIDGE_ASR_LISTENER" not in out.stdout:
+            raise AssertionError("B gateway cannot reach ASR private exact IP")
 
 
 def simulate_gateway_compromise(token, raw, job):
-    """Backend bearer alone is powerless WITHOUT independent Alice signature."""
-    code = (
-        "import json,ssl,urllib.request,urllib.error,pathlib;"
-        "t=pathlib.Path('/run/h01-secrets/backend_coordinator_a').read_text().strip();"
-        "ctx=ssl.create_default_context(cafile='/run/h01-ca/asr.pem');"
-        "req=urllib.request.Request('https://asr:8443/v1/commit',"
-        "data=b'{\"job_id\":\"fake\"}',method='POST',"
-        "headers={'Authorization':'Bearer '+t,'Content-Type':'application/json'});"
-        "\ntry:\n urllib.request.urlopen(req,context=ctx,timeout=5);print('BYPASS')\n"
-        "except urllib.error.HTTPError as exc:\n print('DENIED',exc.code)\n"
-    )
-    outcome = legacy.docker("exec", "-T", "gateway", "python", "-c", code)
-    if "DENIED 403" not in outcome.stdout:
-        raise AssertionError("COMPROMISED GATEWAY backend bearer bypassed ASR verifier")
-    print("H021_BACKEND_BEARER_ALONE_DENIED", flush=True)
+    """Real existing job: H01 backend would permit resume with bearer ALONE."""
+    correct = json.dumps({"job_id": job}, separators=(",", ":")).encode()
+    # A captured owner capability for exact-body resume cannot authorize an
+    # additional JSON field, even if gateway holds every backend bearer.
+    _, captured_owner_token = signed("/v1/resume", {"job_id": job}, "owner", job)
+    altered = json.dumps({"job_id": job, "extra": "malicious"},
+                         separators=(",", ":")).encode()
+    attempts = ((correct, None, "NO_SIGNATURE"),
+                (altered, captured_owner_token, "MODIFIED_BODY"))
+    for body, signed_capability, label in attempts:
+        headers = "{'Authorization':'Bearer '+t,'Content-Type':'application/json'"
+        if signed_capability:
+            headers += ",'X-Alice-H021-Capability':" + repr(signed_capability)
+        headers += "}"
+        code = (
+            "import ssl,urllib.request,urllib.error,pathlib;"
+            "t=pathlib.Path('/run/h01-secrets/backend_coordinator_a').read_text().strip();"
+            "ctx=ssl.create_default_context(cafile='/run/h01-ca/asr.pem');"
+            "req=urllib.request.Request('https://asr:8443/v1/resume',"
+            "data=" + repr(body) + ",method='POST',headers=" + headers + ");"
+            "\ntry:\n urllib.request.urlopen(req,context=ctx,timeout=5);print('BYPASS')\n"
+            "except urllib.error.HTTPError as exc:\n print('DENIED',exc.code)\n"
+        )
+        outcome = legacy.docker("exec", "-T", "gateway", "python", "-c", code)
+        if "DENIED 403" not in outcome.stdout:
+            raise AssertionError("gateway bearer/signed-body bypass: " + label)
+        print("H021_GATEWAY_COMPROMISE_DENIED " + label, flush=True)
 
 
 def main():
@@ -101,7 +123,7 @@ def main():
         raise AssertionError("create_request_id changed recipient")
     ip = legacy.verify_policy()
     legacy.verify_sampled_asr_egress()
-    assert_live_private_asr()
+    assert_live_private_asr(ip)
     proposal_body = {"job_id":job,"proposal":{"action":"search","epoch":0,"query":"keyboard"}}
     raw, token = signed("/v1/proposals", proposal_body, role="proposal", job=job)
     (FIX/"untrusted_one_use_proposal").write_text("Alice-H02 " + token)
@@ -149,7 +171,7 @@ def prepare_remote():
     job = result["job_id"]
     ip = legacy.verify_policy()
     legacy.verify_sampled_asr_egress()
-    assert_live_private_asr()
+    assert_live_private_asr(ip)
     proposal = {"job_id": job, "proposal": {
         "action": "search", "epoch": 0, "query": "keyboard"}}
     raw, token = signed("/v1/proposals", proposal, role="proposal", job=job, ttl=300)
