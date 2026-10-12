@@ -36,15 +36,29 @@ def main():
     for target in ('/run/h01-secrets/backend_coordinator_a',
                    '/run/h01-secrets/device_hmac_hex',
                    '/var/run/docker.sock',
-                   '/var/lib/h01/state.sqlite3',
-                   '/home/alice-h01/.cache/ms-playwright'):
+                   '/var/lib/h01/state.sqlite3'):
         try:
             with open(target, 'rb') as stream:
                 accessible = stream.read(1) is not None
         except (OSError, PermissionError):
             accessible = False
         evidence.append({'name': 'private_fs:' + target, 'blocked': not accessible,
-                         'method': 'distinct_container_mount_namespace'})
+                         'method': ('unmounted_docker_socket' if target == '/var/run/docker.sock'
+                                    else 'distinct_container_mount_namespace')})
+    # Operator has independently checked this actual Chromium profile exists
+    # in ASR's /tmp mount while the browser is still running. This is a real
+    # directory-list attempt against that same absolute path from Hermes.
+    private_profile = os.environ.get('H01_BROWSER_PROFILE_PATH', '')
+    if not private_profile.startswith('/tmp/playwright_chromiumdev_profile-'):
+        raise RuntimeError('missing ASR-attested browser profile path')
+    try:
+        list(Path(private_profile).iterdir())
+        profile_accessible = True
+    except OSError:
+        profile_accessible = False
+    evidence.append({'name': 'private_browser_profile_directory',
+                     'blocked': not profile_accessible,
+                     'method': 'actual_profile_dir_read_separate_tmp_mount'})
     env = json.dumps(dict(os.environ), sort_keys=True)
     evidence.append({'name': 'private_env', 'blocked': all(
         k not in env for k in ('device_hmac_hex', 'backend_coordinator_a',

@@ -107,7 +107,9 @@ operated cloud VM, real official Hermes host or real PSP.
 | Attack/action from Hermes stand-in                              | Expected / evidence kind                               | Limits                                                                 |
 | --------------------------------------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------- |
 | Valid structured product-search proposal                        | **ALLOWED** via gateway                                | Read/search changes no irreversible charge                             |
-| Read ASR backend bearer, device key, SQLite file                | **BLOCKED (TECH)** separate container mounts           | Host admin/Docker operator not hostile in this test                    |
+| Read ASR backend bearer, device key, SQLite file                | **BLOCKED (TECH)** separate container mounts           | Trusted operator checks the real files exist; host admin out of scope  |
+| List ASR Chromium's live, actual private profile directory     | **BLOCKED (TECH)** separate temporary filesystem       | Operator attests live directory first; not a full cookie-exfil audit   |
+| Read `/var/run/docker.sock` from hostile container             | **UNAVAILABLE/config**: socket is not mounted          | ASR/gateway mount configuration inspected separately                   |
 | Read ASR `/proc/<real_host_pid>/environ` or memory              | **BLOCKED (TECH)** PID/mount namespaces                | Same-host kernel escape not tested                                     |
 | Connect to ASR's actual private IP:8443 or :9222                | **BLOCKED (TECH)** Docker network separation           | Host routing, custom NAT/iptables outside fixture unknown              |
 | Connect to public internet from Hermes container                | **BLOCKED (TECH)** internal-only frontend bridge       | No general internet permission in adversarial lab                      |

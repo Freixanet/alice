@@ -209,6 +209,24 @@ def verify_private_runner_external_egress():
             'limitation': 'gateway and other backplane services remain reachable'}
 
 
+def verify_private_browser_profile_exists():
+    # The hostile probe must target an ACTUAL, currently existing private
+    # Chromium profile directory, not a guessed nonexistent browser path.
+    # Only paths/booleans cross to the disposable operator, never file contents.
+    code = ("import glob,json,os,pathlib; "
+            "targets=['/run/h01-secrets/backend_coordinator_a',"
+            "'/run/h01-secrets/device_hmac_hex','/var/lib/h01/state.sqlite3']; "
+            "profiles=[p for p in glob.glob('/tmp/playwright_chromiumdev_profile-*') "
+            "if pathlib.Path(p).is_dir()]; "
+            "print(json.dumps({'files_present':all(pathlib.Path(p).is_file() for p in targets), "
+            "'profiles':profiles}))")
+    report = docker('exec', '-T', 'asr', '/opt/asr-python/bin/python', '-c', code)
+    observed = json.loads(report.stdout.strip())
+    if not observed['files_present'] or len(observed['profiles']) != 1:
+        raise AssertionError('trusted ASR cannot attest private secrets/ledger and one live Chromium profile')
+    return observed['profiles'][0]
+
+
 def full_test():
     ready()
     evidence = []
@@ -216,6 +234,11 @@ def full_test():
     evidence.append(verify_private_runner_external_egress())
     a = job('a')
     b = job('b')
+    # Separate read-only browser job so the attacker still owns the untouched
+    # epoch-zero positive-control proposal on job a.
+    profile_probe = job('a')
+    step(profile_probe, 'a', 0, 'search', query='keyboard')
+    private_profile = verify_private_browser_profile_exists()
     # The operator knows the ASR private IP and deliberately hands only the IP
     # to hostile Hermes for a real failed direct-TCP attempt.
     asr_container = docker('ps', '-q', 'asr').stdout.strip()
@@ -228,6 +251,7 @@ def full_test():
     attacker = docker('--profile', 'attack', 'run', '--rm', '--no-deps',
                       '-e', 'H01_ASR_BACKPLANE_IP=' + ip,
                       '-e', 'H01_ASR_HOST_PID=' + pid,
+                      '-e', 'H01_BROWSER_PROFILE_PATH=' + private_profile,
                       '-e', 'H01_BROWSER_JOB_ID=' + a, 'hostile-hermes')
     output = json.loads(attacker.stdout.strip().splitlines()[-1])
     if not output['passed']:
