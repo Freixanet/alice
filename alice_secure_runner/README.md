@@ -16,7 +16,10 @@ inherited stdin/stdout (no published CDP), one ephemeral browser context per
 job, and allows only typed product search/read on one fictional HTTPS origin.
 The browser child receives only a scoped **read token**; the merchant fixture
 rejects this token for cart/quote/commit operations. The Python runner keeps
-the independent checkout-effect token. Browser IPC has per-command IDs and
+the independent checkout-effect token. The browser attaches its read token
+only to specifically allowlisted GET requests, not global context headers;
+WebSocket interception is required, otherwise the browser session fails closed.
+Browser IPC has per-command IDs and
 operation-specific close acknowledgements; missing/mismatched replies kill the
 disposable process group rather than accepting a stale acknowledgement.
 The real Chromium fixture deliberately uses `ignoreHTTPSErrors` for its
@@ -142,6 +145,22 @@ plugin with appropriate user consent.
   before human-only authority is issued. A failed close blocks both agent and
   human reissue. This does not prove prior Chrome processes have been destroyed
   after a power loss/restart, because no verified OS/VM lease fencing exists.
+  The ledger now records whether a browser was ever opened and its synthetic
+  owner generation: a job that never opened Chrome does not close other jobs'
+  sessions; after restart a different browser generation cannot falsely
+  confirm closure of the previous owner's session. That conservative denial
+  can prevent recovery until a trusted OS/VM destruction fence exists. An
+  adapter downgrade from browser-backed to HTTP-only does not bypass the fence.
+  **Legacy SQLite jobs written before the browser-ownership fields existed
+  are intentionally considered potentially browser-backed on restore**;
+  this may block even genuinely HTTP-only legacy jobs. No automatic unsafe
+  migration/reset is performed; a future explicit trusted recovery mechanism
+  must distinguish them or safely invalidate and restart without replaying
+  any uncertain checkout attempt.
+  Stopped, confirmed and unknown jobs now attempt best-effort browser-session
+  cleanup AFTER persisting the terminal state. Cleanup failure does not alter
+  an unknown/confirmed payment result or restore agent authority. A malicious
+  or crashed process may still survive without a verified OS-level fence.
   That rotation is NOT safe
   to apply during real human/PSP payment execution until an additional
   effect-in-flight fence is implemented. There is still **no real

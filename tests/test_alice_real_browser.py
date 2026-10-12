@@ -77,7 +77,7 @@ class RealChromiumFixtureTests(unittest.TestCase):
         with self.assertRaises(Denied):
             self.runner.commit(client.job_id, tenant="tenant-A", session="paired-A")
         self.assertEqual(self.store.submit_attempts, 1)
-        self.adapter.release_session(client.job_id)
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 0)
 
     def test_browser_read_token_cannot_call_effect_or_merchant_api(self):
         ctx = ssl.create_default_context(cafile=self.shop_fixture.cert)
@@ -147,7 +147,19 @@ class RealChromiumFixtureTests(unittest.TestCase):
         # process cannot attest to termination of a prior-process browser.
         with self.assertRaises(Denied):
             self.adapter.release_session("unowned-real-browser-job-123")
-        self.assertIsNotNone(self.adapter._child.poll())
+        self.assertIsNone(self.adapter._child.poll())
+
+    def test_unopened_job_handoff_does_not_kill_other_browser_sessions(self):
+        unopened = self.client(tenant="tenant-A", session="paired-A")
+        researching = self.client(tenant="tenant-B", session="paired-B")
+        researching.step()
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 1)
+        handoff = self.runner.human_handoff(unopened.job_id, tenant="tenant-A", session="paired-A")
+        self.assertEqual(handoff["status"], "awaiting_human_finalization")
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 1)
+        researching.step()
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 1)
+        self.adapter.release_session(researching.job_id)
 
     def test_real_browser_merchant_failure_stays_unknown_no_retry(self):
         client = self.client()
@@ -161,4 +173,18 @@ class RealChromiumFixtureTests(unittest.TestCase):
         with self.assertRaises(Denied):
             self.runner.commit(client.job_id, tenant="tenant-A", session="paired-A")
         self.assertEqual(self.store.submit_attempts, 1)
-        self.adapter.release_session(client.job_id)
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 0)
+
+    def test_stopped_browser_job_releases_only_its_own_session(self):
+        a = self.client(tenant="tenant-A", session="paired-A")
+        b = self.client(tenant="tenant-B", session="paired-B")
+        a.step()
+        b.step()
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 2)
+        result = self.runner.propose(a.job_id, tenant="tenant-A", session="paired-A",
+                                     proposal={"action": "stop", "epoch": 1})
+        self.assertTrue(result["browser_cleanup_verified"])
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 1)
+        b.step()
+        self.assertEqual(self.adapter.fixture_stats()["sessions"], 1)
+        self.adapter.release_session(b.job_id)

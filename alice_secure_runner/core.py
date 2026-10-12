@@ -71,6 +71,10 @@ class Job:
     challenge_expires: int = 0
     commit_expires: int = 0
     human_handle_digest: str = ""
+    # Runner-only browser ownership marker, not a security boundary. A new
+    # process must not claim it closed a previous process's browser.
+    browser_opened: bool = False
+    browser_generation: str = ""
 
 
 class FictionalHTTPSAdapter:
@@ -183,6 +187,12 @@ class AliceRunner:
             saved = json.loads(serialized)
             if not isinstance(saved, dict) or saved.get("id") != job_id:
                 raise ValueError("invalid persisted job")
+            if "browser_opened" not in saved:
+                # Pre-migration jobs may have opened Chromium even though the
+                # old ledger did not record ownership. Never infer no browser,
+                # even if a different (API-only) adapter is active on restart.
+                saved["browser_opened"] = True
+                saved["browser_generation"] = "unknown-prior-generation"
             saved["found"] = tuple(saved.get("found", ()))
             job = Job(**saved)
             if job.checkout is not None:
@@ -261,6 +271,41 @@ class AliceRunner:
             raise Denied("checkout has not been prepared")
         return job.checkout
 
+    def _claim_browser(self, job: Job) -> None:
+        generation = getattr(self.__adapter, "generation_id", None)
+        if job.browser_opened and job.browser_generation != generation:
+            raise Denied("old browser owner not isolated; cannot resume")
+        if generation is None:
+            return
+        if not job.browser_opened:
+            job.browser_opened = True
+            job.browser_generation = generation
+            self._persist_job(job)  # before the process could create a context
+
+    def _cleanup_terminal_browser(self, job: Job) -> bool:
+        """Best-effort read-session cleanup AFTER irreversibly recording state.
+
+        Failure cannot undo a confirmed or uncertain merchant effect. Human
+        handoff still uses a STRICT acknowledged close instead of this helper.
+        """
+        if not job.browser_opened:
+            return True
+        if (not hasattr(self.__adapter, "release_session")
+                or job.browser_generation != getattr(self.__adapter, "generation_id", None)):
+            return False
+        prior_generation = job.browser_generation
+        try:
+            self.__adapter.release_session(job.id)
+            job.browser_opened = False
+            job.browser_generation = ""
+            self._persist_job(job)
+            return True
+        except Exception:
+            # Keep durable prior-owner marker if close or persistence fails.
+            job.browser_opened = True
+            job.browser_generation = prior_generation
+            return False
+
     def propose(self, job_id: str, *, tenant: str, session: str, proposal: Any) -> dict[str, Any]:
         """Untrusted model proposals cannot commit an order or read secrets."""
         with self.__lock:
@@ -280,6 +325,7 @@ class AliceRunner:
                 query = proposal["query"]
                 if not isinstance(query, str) or not (1 <= len(query) <= 100):
                     raise Denied("invalid search")
+                self._claim_browser(job)
                 result = self.__adapter.search(query, browser_session=job.id)
                 products = result.get("products")
                 if not isinstance(products, list) or len(products) > 10:
@@ -291,6 +337,7 @@ class AliceRunner:
                 sku = proposal["sku"]
                 if not isinstance(sku, str) or sku not in job.found:
                     raise Denied("product not returned by this job's search")
+                self._claim_browser(job)
                 product = self.__adapter.read(sku, browser_session=job.id)
                 if product.get("sku") != sku:
                     raise Denied("merchant product changed")
@@ -332,6 +379,8 @@ class AliceRunner:
                 output = {"stopped": True}
             job.epoch += 1
             self._persist_job(job)
+            if job.state == "stopped":
+                output["browser_cleanup_verified"] = self._cleanup_terminal_browser(job)
             return {"ok": True, "epoch": job.epoch, "status": job.state, **output}
 
     def _validate_quote(self, job: Job, quote: dict[str, Any]) -> None:
@@ -404,6 +453,7 @@ class AliceRunner:
                 self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (checkout_id,))
                 job.state = "unknown"
                 self._persist_job(job)
+                self._cleanup_terminal_browser(job)
                 raise Indeterminate("submission result unknown; do not retry automatically") from exc
             if (response.get("checkout_id") != checkout_id or response.get("amount_minor") != snapshot["amount_minor"]
                     or response.get("currency") != snapshot["currency"]
@@ -412,15 +462,18 @@ class AliceRunner:
                 self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (checkout_id,))
                 job.state = "unknown"
                 self._persist_job(job)
+                self._cleanup_terminal_browser(job)
                 raise Indeterminate("merchant order receipt cannot be verified")
             confirmed = self.__db.execute("UPDATE authorizations SET status='confirmed',order_id=? WHERE checkout_id=? AND status='dispatching'",
                                           (response["order_id"], checkout_id)).rowcount
             if confirmed != 1:
                 job.state = "unknown"
                 self._persist_job(job)
+                self._cleanup_terminal_browser(job)
                 raise Indeterminate("order received but durable authorization changed; reconcile manually")
             job.state = "confirmed"
             self._persist_job(job)
+            self._cleanup_terminal_browser(job)
             return {"status": "confirmed_simulated", "order_id": response["order_id"],
                     "checkout_id": checkout_id, "amount_minor": snapshot["amount_minor"], "currency": snapshot["currency"]}
 
@@ -450,13 +503,18 @@ class AliceRunner:
                 job.commit_expires = 0
                 job.human_handle_digest = ""
                 self._persist_job(job)
-            if hasattr(self.__adapter, "release_session"):
+            if job.browser_opened:
+                if (not hasattr(self.__adapter, "release_session")
+                        or job.browser_generation != getattr(self.__adapter, "generation_id", None)):
+                    raise Denied("previous browser process not fenced; human handoff unavailable")
                 try:
                     self.__adapter.release_session(job.id)
                 except Exception as exc:
-                    # Browser closure has NOT been attested: no human handle,
-                    # no planner writes, and no reissue until retry succeeds.
+                    # Browser closure has NOT been attested: no human
+                    # handle, no planner writes, no reissue until retry.
                     raise Denied("Alice browser session could not be closed") from exc
+                job.browser_opened = False
+                job.browser_generation = ""
             if job.checkout is not None:
                 transitioned = self.__db.execute(
                     "UPDATE authorizations SET status='human_only' "

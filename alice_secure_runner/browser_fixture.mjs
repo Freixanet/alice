@@ -29,9 +29,6 @@ async function getPage(id) {
     const context = await browser.newContext({
       ignoreHTTPSErrors: true, // TEST CERT ONLY. Not a real TLS security claim.
       serviceWorkers: "block",
-      extraHTTPHeaders: {
-        Authorization: `Bearer ${process.env.ALICE_FIXTURE_BROWSER_READ_TOKEN}`,
-      },
     });
     await context.addCookies([
       {
@@ -58,11 +55,20 @@ async function getPage(id) {
         await route.abort("blockedbyclient");
         return;
       }
-      await route.continue();
+      // Attach the fictional READ-ONLY credential only to allowlisted GETs;
+      // never put it in the context's global headers for arbitrary requests.
+      await route.continue({
+        headers: {
+          ...request.headers(),
+          Authorization: `Bearer ${process.env.ALICE_FIXTURE_BROWSER_READ_TOKEN}`,
+        },
+      });
     });
-    if (typeof context.routeWebSocket === "function") {
-      await context.routeWebSocket("**/*", (socket) => socket.close());
+    if (typeof context.routeWebSocket !== "function") {
+      await context.close();
+      throw Error("websocket interception unavailable; refuse browser session");
     }
+    await context.routeWebSocket("**/*", (socket) => socket.close());
     contexts.set(id, { context, page: await context.newPage() });
   }
   return contexts.get(id).page;

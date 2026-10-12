@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import selectors
 import signal
 import subprocess
@@ -38,6 +39,7 @@ class BrowserFixtureReadAdapter(FictionalHTTPSAdapter):
         if chrome_path:
             env["ALICE_TEST_CHROME_PATH"] = chrome_path
         self._lock = threading.RLock()
+        self.generation_id = secrets.token_urlsafe(20)
         self._buffer = bytearray()
         self._next_id = 0
         self._child = subprocess.Popen(
@@ -110,11 +112,10 @@ class BrowserFixtureReadAdapter(FictionalHTTPSAdapter):
         return self._command({"op": "read_product", "session": browser_session, "sku": sku})
 
     def release_session(self, browser_session: str) -> None:
-        try:
-            reply = self._command({"op": "close", "session": browser_session})
-        except Denied:
-            self._force_terminate()
-            raise
+        # An explicit unknown-session error is fail-closed for handoff, but is
+        # not a reason to kill OTHER independent jobs in this Node process.
+        # Transport timeout/desync still force-terminates within _command().
+        reply = self._command({"op": "close", "session": browser_session})
         if reply != {"closed": True, "session": browser_session}:
             self._force_terminate()
             raise Denied("browser close not acknowledged")

@@ -526,6 +526,7 @@ os._exit(68)
         self.assertEqual(self.store.submit_attempts, 0)
 
     def test_browser_close_failure_blocks_human_reissue_until_verified_retry(self):
+        self.adapter.generation_id = "synthetic-owned-browser-generation"
         self.ready()
         with mock.patch.object(self.adapter, "release_session", create=True,
                                side_effect=RuntimeError("synthetic close failure")):
@@ -546,6 +547,67 @@ os._exit(68)
                                                     human_handle=handoff["human_handle"])["payment_claim"],
                          "NOT_VERIFIED")
         self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_prior_browser_generation_cannot_claim_human_handoff_after_restart(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            first_adapter = FictionalHTTPSAdapter(origin=self.shop.url, ca_file=self.cert,
+                                                  merchant_token=self.shop_secret)
+            first_adapter.generation_id = "browser-owner-before-crash"
+            first = AliceRunner(first_adapter, approval_key=self.device_key, ledger_path=ledger)
+            coord = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                planner=FictionalPlanner())
+            coord.step()  # Persist ownership before the browser creates a context.
+            first.close()
+
+            replacement_adapter = FictionalHTTPSAdapter(origin=self.shop.url, ca_file=self.cert,
+                                                        merchant_token=self.shop_secret)
+            replacement_adapter.generation_id = "browser-owner-after-crash"
+            replacement_adapter.release_session = mock.Mock()
+            restarted = AliceRunner(replacement_adapter, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                with self.assertRaisesRegex(Denied, "previous browser process not fenced"):
+                    restarted.human_handoff(coord.job_id, tenant="user-A", session="paired")
+                replacement_adapter.release_session.assert_not_called()
+                observed = restarted.resume_job(coord.job_id, tenant="user-A", session="paired")
+                self.assertEqual(observed["status"], "handoff_pending_close")
+                with self.assertRaises(Denied):
+                    restarted.reissue_human_handle(coord.job_id, tenant="user-A", session="paired")
+                with self.assertRaises(Denied):
+                    restarted.propose(coord.job_id, tenant="user-A", session="paired",
+                                      proposal={"action": "search", "query": "keyboard", "epoch": observed["epoch"]})
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                restarted.close()
+
+    def test_browser_job_downgraded_to_api_adapter_cannot_bypass_owner_fence(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = str(Path(tmp) / "ledger.db")
+            adapter = FictionalHTTPSAdapter(origin=self.shop.url, ca_file=self.cert,
+                                            merchant_token=self.shop_secret)
+            adapter.generation_id = "real-chromium-owned-job"
+            first = AliceRunner(adapter, approval_key=self.device_key, ledger_path=ledger)
+            original = Coordinator(first, tenant="user-A", session="paired", recipient="Fake delivery",
+                                   planner=FictionalPlanner())
+            original.step()
+            first.close()
+
+            # Restart WITHOUT a browser-capable adapter; this must not grant
+            # human authority nor allow an alternate API browsing path.
+            api_only = FictionalHTTPSAdapter(origin=self.shop.url, ca_file=self.cert,
+                                            merchant_token=self.shop_secret)
+            downgraded = AliceRunner(api_only, approval_key=self.device_key, ledger_path=ledger)
+            try:
+                with self.assertRaisesRegex(Denied, "old browser owner not isolated"):
+                    downgraded.propose(original.job_id, tenant="user-A", session="paired",
+                                       proposal={"action": "search", "query": "keyboard", "epoch": 1})
+                with self.assertRaisesRegex(Denied, "previous browser process not fenced"):
+                    downgraded.human_handoff(original.job_id, tenant="user-A", session="paired")
+                with self.assertRaises(Denied):
+                    downgraded.reissue_human_handle(original.job_id, tenant="user-A", session="paired")
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                downgraded.close()
 
     def test_coordinator_resumes_same_partial_job_after_process_restart(self):
         with tempfile.TemporaryDirectory() as tmp:
