@@ -801,7 +801,7 @@ No work here authorizes a real purchase before its release gates pass.
   reported as unverified rather than evidence of completed cleanup.
 - **Account-scoped device lifecycle (fixture only):** optional, explicitly
   configured `/v1/human-enrollment-begin`, `-complete`, and `-revoke` endpoints
-  use the *same* public-only P-256 registry as the checkout verifier. Synthetic
+  use the _same_ public-only P-256 registry as the checkout verifier. Synthetic
   Alice-issued human credentials bind tenant, session, account and installation
   server-side, not from Hermes or HTTP claims. The one-use 180-second
   enrollment challenge validates exact P-256 public-key possession; signed
