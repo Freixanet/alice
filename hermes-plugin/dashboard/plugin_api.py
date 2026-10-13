@@ -2766,14 +2766,11 @@ async def errands_approval(errand_id: str, body: _ErrandApproval) -> JSONRespons
 
     def approve():
         module, root = _errands_module(), _hermes_root()
-        entry = _errand_or_404(errand_id)
-        pending = entry.get("approval") or {}
-        if not pending or (body.request_id and pending.get("request_id") != body.request_id):
-            raise HTTPException(status_code=409, detail="No hay ninguna confirmación pendiente.")
-        gateway = module.Gateway(root, entry.get("profile") or "")
-        if not gateway.approve(pending.get("run_id") or "", body.choice, pending.get("request_id") or ""):
-            raise HTTPException(status_code=409, detail="Hermes ya no esperaba esa confirmación.")
-        entry = module.update(root, errand_id, approval=None, status="working")
+        _errand_or_404(errand_id)
+        entry = module.approve_pending_run_request(root, errand_id,
+                                                   body.choice, body.request_id)
+        if entry is None:
+            raise HTTPException(status_code=409, detail="Esa aprobación está caducada o el recado fue detenido.")
         return module.public(entry)
 
     return JSONResponse({"errand": await asyncio.to_thread(approve)}, headers=_NO_STORE)

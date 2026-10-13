@@ -13,7 +13,9 @@ import os
 import secrets
 import ssl
 import threading
+from contextlib import nullcontext
 from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from .browser_fixture import BrowserFixtureReadAdapter
 from .core import AliceRunner, Denied
@@ -21,6 +23,8 @@ from .fictional_shop import FictionalStore, FixtureHTTPS
 from .h01_host import secret
 from .h02_identity import InvalidCapability, ReplayLedger
 from .h021_crypto import PublicVerifier
+from .device_approval import P256DeviceConsent
+from .device_registry import RevocableP256DeviceConsent
 from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 from .http_service import FixturePrincipal, make_handler
 
@@ -107,15 +111,46 @@ def main():
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.minimum_version = ssl.TLSVersion.TLSv1_2
     tls.load_cert_chain("/run/h01-tls/asr.pem", "/run/h01-tls/asr.key")
-    store = FictionalStore(secret=secrets.token_urlsafe(45))
-    store.commit_delay_seconds = min(max(int(os.environ.get("H01_FAULT_COMMIT_DELAY", "0")), 0), 30)
-    with FixtureHTTPS(store, "/run/h01-tls/asr.pem", "/run/h01-tls/asr.key") as merchant:
+    external_merchant = os.environ.get("H021_EXTERNAL_MERCHANT_FIXTURE_ONLY") == "yes"
+    store = None
+    if external_merchant:
+        merchant_context = nullcontext(None)
+        origin = "https://merchant:8443"
+        merchant_ca = "/run/h01-ca/merchant.pem"
+        effect_token = secret("merchant_effect_token")
+        read_token = secret("merchant_read_token")
+    else:
+        store = FictionalStore(secret=secrets.token_urlsafe(45))
+        store.commit_delay_seconds = min(max(int(os.environ.get("H01_FAULT_COMMIT_DELAY", "0")), 0), 30)
+        merchant_context = FixtureHTTPS(store, "/run/h01-tls/asr.pem", "/run/h01-tls/asr.key")
+        effect_token = store.secret
+        read_token = store.browser_read_secret
+    with merchant_context as merchant:
+        if merchant is not None:
+            origin = merchant.url
+            merchant_ca = "/run/h01-tls/asr.pem"
         adapter = BrowserFixtureReadAdapter(
-            origin=merchant.url, ca_file="/run/h01-tls/asr.pem",
-            merchant_token=store.secret, browser_read_token=store.browser_read_secret,
+            origin=origin, ca_file=merchant_ca,
+            merchant_token=effect_token, browser_read_token=read_token,
             playwright_module="/opt/h01/node_modules/playwright")
-        runner = AliceRunner(adapter, approval_key=bytes.fromhex(secret("device_hmac_hex")),
-                             ledger_path="/var/lib/h01/state.sqlite3")
+        registry = None
+        if os.environ.get("H021_DEVICE_CONSENT_REGISTRY_FIXTURE_ONLY") == "yes":
+            # Alice-administered, pre-enrolled public-only keys on a durable
+            # private volume. Never auto-seed a key on restart: doing so could
+            # silently undo a security revocation.
+            registry_path = Path("/var/lib/h01/device_enrollments.sqlite3")
+            if not registry_path.is_file() or registry_path.is_symlink():
+                raise SystemExit("H021 device registry must be pre-enrolled by trusted Alice")
+            registry = RevocableP256DeviceConsent(registry_path)
+            runner = AliceRunner(adapter, approval_verifier=registry,
+                                 ledger_path="/var/lib/h01/state.sqlite3")
+        elif os.environ.get("H021_DEVICE_CONSENT_P256_FIXTURE_ONLY") == "yes":
+            runner = AliceRunner(adapter,
+                approval_verifier=P256DeviceConsent.load("/run/h021-auth/devices.json"),
+                ledger_path="/var/lib/h01/state.sqlite3")
+        else:
+            runner = AliceRunner(adapter, approval_key=bytes.fromhex(secret("device_hmac_hex")),
+                                 ledger_path="/var/lib/h01/state.sqlite3")
         principals = {}
         for actor in ("a", "b"):
             tenant, session = "fixture-tenant-" + actor, "fixture-session-" + actor
@@ -128,14 +163,36 @@ def main():
         server = LimitedHTTPServer(("0.0.0.0", 8443),
                                    protected_handler(runner, principals, verifier, replay, subject_map))
         server.tls_context = tls
+        janitor_stop = threading.Event()
+
+        def reap_terminal_browsers():
+            # A failed terminal close must not retain a live Chromium context
+            # indefinitely within this executor process. NEVER infer closure
+            # of a prior generation or retry a merchant/payment operation.
+            while not janitor_stop.is_set():
+                try:
+                    runner.reap_terminal_browser_sessions()
+                except Exception:
+                    # Retain durable browser ownership markers on failure.
+                    pass
+                if janitor_stop.wait(10):
+                    return
+
+        janitor = threading.Thread(target=reap_terminal_browsers,
+                                  name="h021-terminal-browser-reaper", daemon=True)
+        janitor.start()
         print("H021 private ASR: independent public-key scope and durable replay", flush=True)
         try:
             server.serve_forever()
         finally:
+            janitor_stop.set()
+            janitor.join(timeout=3)
             server.server_close()
             replay.close()
             runner.close()
             adapter.close()
+            if registry is not None:
+                registry.close()
 
 
 if __name__ == "__main__":

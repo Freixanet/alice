@@ -1,0 +1,18 @@
+FROM python:3.11-slim AS wheel
+WORKDIR /src
+COPY pyproject.toml setup.py ./
+COPY alice_secure_runner ./alice_secure_runner
+RUN python -m pip wheel --no-deps -w /dist .
+
+FROM python:3.11-slim
+COPY --from=wheel /dist /dist
+RUN python -m pip install --no-index --find-links=/dist alice-secure-runner-prototype \
+    && rm -rf /dist \
+    && groupadd -g 12003 alice-merchant \
+    && useradd -u 12003 -g 12003 -s /usr/sbin/nologin alice-merchant \
+    && mkdir -p /var/lib/h021-merchant \
+    && chown 12003:12003 /var/lib/h021-merchant
+USER 12003:12003
+ENV PYTHONDONTWRITEBYTECODE=1 HOME=/tmp
+WORKDIR /tmp
+CMD ["python", "-m", "alice_secure_runner.merchant_host"]

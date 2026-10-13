@@ -8,8 +8,11 @@ from __future__ import annotations
 import socket
 import ssl
 import select
+import errno
+import http.client
 import threading
 import time
+import urllib.request
 from http.server import ThreadingHTTPServer
 
 
@@ -116,6 +119,54 @@ def read_body_with_deadline(handler, size: int, *, seconds: float = 5.0) -> byte
     return bytes(out)
 
 
+def read_https_response_with_deadline(response, limit: int, *, seconds: float = 5.0) -> bytes:
+    """Bound body time between read1 chunks, not just idle socket time.
+
+    urllib's HTTPResponse.read1 reads at most one buffered/socket chunk. In
+    contrast read(limit) can spend unbounded wall time on tiny periodic TLS
+    records. We reset the socket timeout to the REMAINING absolute budget
+    before each read1. In CPython 3.12 a Connection:close response may leave
+    the SSL connection handle closed while the SocketIO body remains readable;
+    in that case the original opener idle timeout also bounds each read, so
+    a single read may overrun the nominal deadline by that idle timeout.
+    Refuse an unsupported transport rather than silently dropping all bounds.
+
+    ``limit`` includes the extra byte used to detect an oversized response.
+    """
+    if type(limit) is not int or not 1 <= limit <= 65536 or seconds <= 0:
+        raise ValueError("invalid bounded HTTPS response")
+    socket_obj = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    if socket_obj is None or not callable(getattr(response, "read1", None)):
+        raise TimeoutError("cannot enforce HTTPS response deadline")
+    deadline = time.monotonic() + seconds
+    chunks = []
+    received = 0
+    while received < limit:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("absolute HTTPS response deadline exceeded")
+        if socket_obj is not None:
+            try:
+                socket_obj.settimeout(min(5.0, remaining))
+            except OSError as error:
+                if error.errno != errno.EBADF:
+                    raise
+                # CPython 3.12 may close HTTPSConnection's socket handle on
+                # HTTP/1.0 Connection:close even while the response's
+                # buffered SocketIO still owns its readable descriptor.
+                # Keep the absolute monotonic budget between read1 chunks;
+                # the original URL opener also applies an idle-read timeout.
+                socket_obj = None
+        fragment = response.read1(min(4096, limit - received))
+        if time.monotonic() > deadline:
+            raise TimeoutError("absolute HTTPS response deadline exceeded")
+        if not fragment:
+            break
+        received += len(fragment)
+        chunks.append(fragment)
+    return b"".join(chunks)
+
+
 class HeaderDeadlineReader:
     """Limit total header/initial request-line wall time, not just idle gaps.
 
@@ -130,6 +181,17 @@ class HeaderDeadlineReader:
 
     def read(self, size=-1):
         return self._source.read(size)
+
+    def read1(self, size=-1):
+        return self._source.read1(size)
+
+    def flush(self):
+        return self._source.flush()
+
+    @property
+    def raw(self):
+        # Keep the HTTPS socket accessible for the subsequent BODY deadline.
+        return self._source.raw
 
     def readline(self, limit=-1):
         if self._until is None:
@@ -156,3 +218,35 @@ class HeaderDeadlineReader:
 
     def close(self):
         self._source.close()
+
+
+class _ResponseWithHeaderDeadline(http.client.HTTPResponse):
+    def begin(self):
+        # urllib's ordinary socket timeout is an IDLE timeout. A hostile HTTPS
+        # peer can otherwise deliver one status/header byte per idle period
+        # forever, before the caller even receives the response object.
+        if self.fp is None:
+            return super().begin()
+        socket_obj = getattr(getattr(self.fp, "raw", None), "_sock", None)
+        if socket_obj is None:
+            raise TimeoutError("cannot enforce HTTPS header deadline")
+        reader = HeaderDeadlineReader(self.fp, socket_obj, seconds=5)
+        self.fp = reader
+        try:
+            return super().begin()
+        finally:
+            reader.headers_complete()
+
+
+class _ConnectionWithHeaderDeadline(http.client.HTTPSConnection):
+    response_class = _ResponseWithHeaderDeadline
+
+
+class HeaderBoundHTTPSHandler(urllib.request.HTTPSHandler):
+    """stdlib pinned-CA HTTPS handler with absolute response-header deadline."""
+
+    def https_open(self, req):
+        # CPython 3.12 removed HTTPSHandler._check_hostname; the pinned
+        # SSLContext already enforces hostname verification on both runtimes.
+        return self.do_open(_ConnectionWithHeaderDeadline, req,
+                            context=self._context)

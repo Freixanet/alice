@@ -10,17 +10,21 @@ services:
     environment:
       H01_SYNTHETIC_ONLY: "yes"
       H021_SYNTHETIC_ONLY: "yes"
-    networks: [asr_backplane]
+      H021_EXTERNAL_MERCHANT_FIXTURE_ONLY: "yes"
+      H021_DEVICE_CONSENT_P256_FIXTURE_ONLY: "yes"
+    networks: [asr_backplane, merchant_private]
     volumes:
       - asr_ledger:/var/lib/h01
       - ${H02_FIXTURE_DIR:?}/asr.pem:/run/h01-tls/asr.pem:ro
       - ${H02_FIXTURE_DIR:?}/asr.key:/run/h01-tls/asr.key:ro
-      - ${H02_FIXTURE_DIR:?}/device_hmac_hex:/run/h01-secrets/device_hmac_hex:ro
       - ${H02_FIXTURE_DIR:?}/backend_coordinator_a:/run/h01-secrets/backend_coordinator_a:ro
       - ${H02_FIXTURE_DIR:?}/backend_coordinator_b:/run/h01-secrets/backend_coordinator_b:ro
       - ${H02_FIXTURE_DIR:?}/backend_human_a:/run/h01-secrets/backend_human_a:ro
       - ${H02_FIXTURE_DIR:?}/backend_human_b:/run/h01-secrets/backend_human_b:ro
       - ${H02_FIXTURE_DIR:?}/public:/run/h021-auth:ro
+      - ${H02_FIXTURE_DIR:?}/merchant.pem:/run/h01-ca/merchant.pem:ro
+      - ${H02_FIXTURE_DIR:?}/merchant_effect_token:/run/h01-secrets/merchant_effect_token:ro
+      - ${H02_FIXTURE_DIR:?}/merchant_read_token:/run/h01-secrets/merchant_read_token:ro
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
     cap_drop: [ALL]
@@ -28,6 +32,29 @@ services:
     pids_limit: 128
     mem_limit: 2g
     cpus: 2
+    init: true
+
+  merchant:
+    build:
+      context: ../..
+      dockerfile: deploy/h021/Dockerfile.merchant
+    image: ${H02_COMPOSE_PROJECT:?}-merchant:fixture
+    environment:
+      H021_SYNTHETIC_ONLY: "yes"
+      H021_MERCHANT_TEST_ONLY: "yes"
+    networks: [merchant_private]
+    volumes:
+      - merchant_ledger:/var/lib/h021-merchant
+      - ${H02_FIXTURE_DIR:?}/merchant.pem:/run/h01-tls/merchant.pem:ro
+      - ${H02_FIXTURE_DIR:?}/merchant.key:/run/h01-tls/merchant.key:ro
+      - ${H02_FIXTURE_DIR:?}/merchant_effect_token:/run/h01-secrets/merchant_effect_token:ro
+      - ${H02_FIXTURE_DIR:?}/merchant_read_token:/run/h01-secrets/merchant_read_token:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 32
+    mem_limit: 128m
     init: true
 
   gateway:
@@ -82,9 +109,12 @@ services:
 volumes:
   asr_ledger:
   gateway_replays:
+  merchant_ledger:
 
 networks:
   public_front:
     internal: false
   asr_backplane:
+    internal: true
+  merchant_private:
     internal: true

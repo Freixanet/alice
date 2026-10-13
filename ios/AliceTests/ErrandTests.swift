@@ -42,6 +42,46 @@ final class ErrandTests: XCTestCase {
         XCTAssertNil(Errand.parse(["title": "sin id"]))
     }
 
+    func testLegacyCheckoutRemainsLegacyWhenNoASRMarkerExists() throws {
+        let original = try XCTUnwrap(Errand.parse(row))
+        XCTAssertTrue(original.usesLegacyCheckout)
+        XCTAssertNil(original.secureRunnerMarker)
+        // Older launch archives had no marker. Decoding them must not fail.
+        let archived = try JSONEncoder().encode(original)
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: archived) as? [String: Any])
+        old.removeValue(forKey: "secureRunnerMarker")
+        let data = try JSONSerialization.data(withJSONObject: old)
+        XCTAssertTrue(try JSONDecoder().decode(Errand.self, from: data).usesLegacyCheckout)
+    }
+
+    func testEvenClaimedASRConfirmedCannotAccessOldHermesCheckout() throws {
+        for value in [Any]([["status": "confirmed", "order_id": "claimed-by-hermes"],
+                            NSNull(), "malformed"]) {
+            var reported = row
+            reported["alice_secure_runner"] = value
+            let errand = try XCTUnwrap(Errand.parse(reported))
+            XCTAssertFalse(errand.usesLegacyCheckout)
+            XCTAssertEqual(errand.secureRunnerMarker, true)
+            XCTAssertFalse(try JSONDecoder().decode(Errand.self,
+                from: JSONEncoder().encode(errand)).usesLegacyCheckout)
+        }
+        var explicit = row
+        explicit["checkout_flow"] = "alice_secure_runner"
+        XCTAssertFalse(try XCTUnwrap(Errand.parse(explicit)).usesLegacyCheckout)
+    }
+
+    @MainActor
+    func testMarkedSecureRunnerIsRejectedBeforeLegacyPaymentOrBiometrics() async throws {
+        var reported = row
+        reported["alice_secure_runner"] = ["state": "confirmed"]
+        let errand = try XCTUnwrap(Errand.parse(reported))
+        let board = ErrandBoard()
+        // No AppStore/transport is attached. Rejection must occur before it
+        // could attempt Face ID or dispatch the legacy Hermes checkout API.
+        await board.decide(errand, allow: true, card: "Visa")
+        XCTAssertNotNil(board.problems[errand.id])
+    }
+
     func testAPaidReceiptAndQuestionsRead() throws {
         var done = row
         done["status"] = "done"

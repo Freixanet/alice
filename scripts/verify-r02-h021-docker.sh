@@ -33,7 +33,7 @@ cleanup() {
   if [ "$EXTERNAL" = yes ] && [ "$status" -eq 0 ]; then return; fi
   if [ "$status" -ne 0 ]; then
     docker compose -f deploy/h021/compose.yaml ps -a >&2 || true
-    docker compose -f deploy/h021/compose.yaml logs --no-color --tail=30 asr gateway >&2 || true
+    docker compose -f deploy/h021/compose.yaml logs --no-color --tail=30 asr gateway merchant >&2 || true
   fi
   docker compose -f deploy/h021/compose.yaml --profile attack down -v --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$H02_FIXTURE_DIR"
@@ -49,21 +49,33 @@ openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
   -keyout "$H02_FIXTURE_DIR/gateway.key" -out "$H02_FIXTURE_DIR/gateway.pem" \
   -subj "/CN=gateway" -addext "subjectAltName=$GATEWAY_SANS" >/dev/null 2>&1
+openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+  -keyout "$H02_FIXTURE_DIR/merchant.key" -out "$H02_FIXTURE_DIR/merchant.pem" \
+  -subj "/CN=merchant" -addext "subjectAltName=DNS:merchant" >/dev/null 2>&1
 mkdir -m 755 "$H02_FIXTURE_DIR/public"
 openssl genpkey -algorithm Ed25519 -out "$H02_FIXTURE_DIR/issuer-private.pem" >/dev/null 2>&1
 openssl pkey -in "$H02_FIXTURE_DIR/issuer-private.pem" -pubout \
   -out "$H02_FIXTURE_DIR/public/issuer.pub.pem" >/dev/null 2>&1
+# A completely separate TEST device P-256 key signs exact fictional consent.
+# Only the public key belongs in the executor; no iOS hardware is claimed.
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 \
+  -out "$H02_FIXTURE_DIR/device-private.pem" >/dev/null 2>&1
+openssl pkey -in "$H02_FIXTURE_DIR/device-private.pem" -pubout \
+  -out "$H02_FIXTURE_DIR/public/device.pub.pem" >/dev/null 2>&1
 python3 - "$H02_FIXTURE_DIR" <<'PY'
 import json,pathlib,secrets,sys
 p=pathlib.Path(sys.argv[1])
-for label in ("backend_coordinator_a","backend_coordinator_b","backend_human_a","backend_human_b"):
+for label in ("backend_coordinator_a","backend_coordinator_b","backend_human_a","backend_human_b",
+              "merchant_effect_token","merchant_read_token"):
     (p/label).write_text(secrets.token_urlsafe(48))
 (p/"device_hmac_hex").write_text(secrets.token_hex(32))
 (p/"subjects.json").write_text(json.dumps({"test-user-a":{"actor":"a","tenant":"fixture-tenant-a","session":"fixture-session-a"}}))
 (p/"public/public.json").write_text(json.dumps({"keys":{"h021-k1":"issuer.pub.pem"}}))
+(p/"public/devices.json").write_text(json.dumps({"devices":[
+    {"tenant":"fixture-tenant-a","session":"fixture-session-a","file":"device.pub.pem"}]}))
 (p/"public/subjects.json").write_text((p/"subjects.json").read_text())
 PY
-chmod 600 "$H02_FIXTURE_DIR/issuer-private.pem"
+chmod 600 "$H02_FIXTURE_DIR/issuer-private.pem" "$H02_FIXTURE_DIR/device-private.pem"
 # Test TLS keys are confined to a 0700 host fixture directory; container
 # processes have distinct nonroot UIDs and need read access to their mounts.
 chmod 644 "$H02_FIXTURE_DIR"/*.key
@@ -71,7 +83,7 @@ chmod 644 "$H02_FIXTURE_DIR/public/"*
 python3 -m unittest discover -s tests -p 'test_h021_*.py' -v
 docker compose -f deploy/h021/compose.yaml config --quiet
 docker compose -f deploy/h021/compose.yaml --profile attack build --pull
-docker compose -f deploy/h021/compose.yaml up -d --no-deps asr gateway
+docker compose -f deploy/h021/compose.yaml up -d --no-deps merchant asr gateway
 if [ "$EXTERNAL" = yes ]; then
   python3 -m scripts.h021_operator --prepare-remote
   cat > "$H02_FIXTURE_DIR/operator-session.env" <<EOF

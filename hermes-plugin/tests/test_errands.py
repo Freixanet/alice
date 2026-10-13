@@ -545,7 +545,7 @@ class AuditFixTests(Base):
         self.assertEqual(errands.shop("https://www.apple.com/es/shop"), "apple.com")
         self.assertEqual(errands.create(self.home, "x", site="apple store españa")["site"], "")
 
-    def test_a_stalled_run_is_stopped_and_retried_once_then_stuck(self):
+    def test_a_stalled_run_is_not_retried_until_remote_stop_is_verified(self):
         clock = {"t": 0.0}
         frozen = {"status": "running", "updated_at": 1.0, "last_event": "tool.completed"}
         gateway = FakeGateway([[frozen], [frozen]])
@@ -558,9 +558,11 @@ class AuditFixTests(Base):
             self.assertEqual(engine.run(), "stuck")
         finally:
             errands.time.time = real_time
-        self.assertEqual(gateway.stopped, ["run_1", "run_2"])
-        self.assertIn("colgado", gateway.started[1][1])
-        self.assertIn("dejó de responder", errands.get(self.home, entry["id"])["reason"])
+        self.assertEqual(gateway.stopped, ["run_1"])
+        self.assertEqual(len(gateway.started), 1)
+        frozen = errands.get(self.home, entry["id"])
+        self.assertTrue(frozen["cutover_stop_pending"])
+        self.assertIn("colgado", frozen["reason"])
 
     def test_the_card_rules_travel_with_the_errand(self):
         original = errands.card_rules
@@ -715,6 +717,7 @@ class CirclingTests(Base):
         self.assertEqual(engine.run(), "stuck")
         self.assertEqual(gateway.stopped, ["run_1"])
         self.assertIn("misma página", errands.get(self.home, entry["id"])["reason"])
+        self.assertTrue(errands.get(self.home, entry["id"])["cutover_stop_pending"])
 
 
 class QuestionVettingTests(Base):

@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import hashlib
 import hmac
+import base64
 import os
 import ssl
 import subprocess
@@ -126,12 +127,14 @@ def verify_signed_fictional_checkout():
     status, challenge = request("/v1/challenge", {"job_id": job}, job=job)
     if status != 200:
         raise AssertionError("signed Alice challenge denied")
-    # The synthetic USER key exists in B trusted operator fixture only;
-    # gateway receives just a signature for this exact checkout challenge.
-    approved_digest = hmac.new(
-        bytes.fromhex((FIX / "device_hmac_hex").read_text().strip()),
-        json.dumps(challenge, sort_keys=True, separators=(",", ":"),
-                   ensure_ascii=False).encode(), hashlib.sha256).hexdigest()
+    # Ephemeral SOFTWARE P-256 signing key stays in B trusted operator fixture;
+    # gateway and ASR have ONLY its public key. This is NOT iOS/biometric proof.
+    challenge_bytes = json.dumps(
+        challenge, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()
+    private_approval = subprocess.run(
+        ["openssl", "dgst", "-sha256", "-sign", str(FIX / "device-private.pem")],
+        input=challenge_bytes, capture_output=True, check=True, timeout=5).stdout
+    approved_digest = base64.urlsafe_b64encode(private_approval).decode().rstrip("=")
     unsigned = {"job_id": job, "signature": "0" * 64}
     if request("/v1/approve", unsigned, job=job)[0] != 403:
         raise AssertionError("forged fictional user consent accepted")
@@ -171,7 +174,7 @@ def main():
         "recipient":"Changed address", "create_request_id":"alice-create-case-0001"})
     if wrong != 403:
         raise AssertionError("create_request_id changed recipient")
-    ip = legacy.verify_policy()
+    ip = legacy.verify_policy(h021_external_merchant=True)
     legacy.verify_sampled_asr_egress()
     assert_live_private_asr(ip)
     proposal_body = {"job_id":job,"proposal":{"action":"search","epoch":0,"query":"keyboard"}}
@@ -220,7 +223,7 @@ def prepare_remote():
     else:
         raise AssertionError("Host B gateway or ASR not ready")
     job = result["job_id"]
-    ip = legacy.verify_policy()
+    ip = legacy.verify_policy(h021_external_merchant=True)
     legacy.verify_sampled_asr_egress()
     assert_live_private_asr(ip)
     proposal = {"job_id": job, "proposal": {

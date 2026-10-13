@@ -1,5 +1,12 @@
 # Alice Secure Runner — R02 runnable security-contract prototype
 
+**New post-H02.1 integrated development ledger:** see
+[`docs/r02-integrated-readiness.md`](../docs/r02-integrated-readiness.md).
+The new synthetic third-process merchant, independent durable receipts,
+read-only unknown reconciliation, exact tax/variant consent and public-only
+P-256 consent verification are covered there. These are **not** real PSP,
+biometric attestation, deployment or two-administrator isolation guarantees.
+
 **Prototype only: optional REAL Chromium fixture, but no isolated cloud host,
 real browser vault, merchant integration or live payment. Never run this as a
 real shopping service.**
@@ -66,6 +73,14 @@ Coordinator (`coordinator.py`) owns the state/observe/replan loop; its E2E
 planner is deterministic. The optional `alice_secure_plan` Hermes tool returns
 proposals, not privileged runner operations. Real model calls are deliberately
 **not** made in tests, and genuine multi-step reliability is **not proven**.
+
+The optional official remote-planner tool now exchanges ONE typed proposal
+with an Alice-owned disposable loopback HTTPS mailbox. Trusted Alice stages
+sanitized observations, validates and executes runner actions, persists
+one-time claims and allows expiry/rotation/revocation of proposal-only bearer
+credentials. See the linked [proposal mailbox contract](../docs/r02-proposal-mailbox.md).
+Neither live Hermes/model pairing nor production hosted identity and secure
+iOS approval are proven. Real purchases remain prohibited.
 
 **Hermes compatibility inspection:** the official plugin LLM API exists in
 the sampled upstream source tags `v2026.5.16`, `v2026.7.1`, `v2026.8.13` and
@@ -168,8 +183,8 @@ plugin with appropriate user consent.
   effect-in-flight fence is implemented. There is still **no real
   browser-session recovery**, no
   encryption-at-rest/key-management strategy, no high-availability coordinator
-  and no independent merchant status reconciliation. Production-grade durable
-  recovery remains a release blocker.
+  and no certified production merchant status reconciliation. Production-grade
+  durable recovery remains a release blocker.
 - No merchant/PSP adapter is certified; only the strictly loopback fictional
   contract can submit. Cloud/browser availability, region, WebAuthn, 3DS,
   Apple Pay and merchant anti-bot/ToS compatibility remain unresolved.

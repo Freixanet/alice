@@ -14,6 +14,7 @@ ACTION_KEYS = {
     "search": frozenset({"action", "query", "epoch"}),
     "read_product": frozenset({"action", "sku", "epoch"}),
     "select_product": frozenset({"action", "sku", "epoch"}),
+    "select_variant": frozenset({"action", "variant", "epoch"}),
     "add_to_cart": frozenset({"action", "quantity", "epoch"}),
     "prepare_checkout": frozenset({"action", "epoch"}),
     "stop": frozenset({"action", "epoch"}),
@@ -25,6 +26,7 @@ SCHEMA = {
         "epoch": {"type": "integer", "minimum": 0},
         "query": {"type": "string", "minLength": 1, "maxLength": 100},
         "sku": {"type": "string"},
+        "variant": {"type": "string"},
         "quantity": {"type": "integer", "minimum": 1, "maximum": 5},
     },
     "required": ["action", "epoch"],
@@ -32,7 +34,7 @@ SCHEMA = {
 }
 INSTRUCTIONS = (
     "Propose exactly ONE Alice runner action using its strict contract: "
-    "search(query), read_product(sku), select_product(sku), "
+    "search(query), read_product(sku), select_product(sku), select_variant(variant), "
     "add_to_cart(quantity), prepare_checkout(), stop(). "
     "Every action MUST have the current integer epoch. Never propose checkout "
     "commit, payment, login, browser, network, script, CDP or credential actions. "
@@ -47,7 +49,8 @@ _PRIVATE = re.compile(
     r"[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b(?:\d[ -]?){13,19}\b)"
 )
 _SUMMARY_FIELDS = frozenset({"epoch", "status", "sku", "name", "description", "products",
-                             "selected", "quantity", "cart_ready", "unit_minor", "currency"})
+                             "selected", "quantity", "cart_ready", "unit_minor", "currency",
+                             "variants", "variant"})
 
 
 class PlannerUnavailable(RuntimeError):
@@ -56,6 +59,69 @@ class PlannerUnavailable(RuntimeError):
 
 class InvalidProposal(ValueError):
     """Rejected untrusted model result or unsafe input."""
+
+
+TOOL_NAME = "alice_secure_plan"
+TOOLSET = "alice_secure_planning"
+TOOL_SCHEMA = {
+    "name": TOOL_NAME,
+    "description": "Suggest one untrusted, non-executing Alice shopping action.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "goal": {"type": "string"},
+            "observations": {"type": "array"},
+            "epoch": {"type": "integer"},
+            "state": {"type": "string", "enum": ["active", "cancelled", "unknown", "stopped"]},
+        },
+        "required": ["goal", "observations", "epoch", "state"],
+        "additionalProperties": False,
+    },
+}
+
+
+def feature_probe(ctx: Any) -> dict[str, Any]:
+    """Local interface probe; never runs a model, contacts Alice or grants authority."""
+    available = callable(getattr(getattr(ctx, "llm", None), "complete_structured", None))
+    return {"contract": "alice-r02-proposal-v1", "structured_planner_available": available,
+            "execution_authority": False, "pairing_verified": False}
+
+
+def plan_tool(ctx: Any, args: Any) -> dict[str, Any]:
+    """Fail closed on terminal/uncertain state; never execute, commit or mint permissions."""
+    if not isinstance(args, dict) or set(args) != {"goal", "observations", "epoch", "state"}:
+        raise InvalidProposal("Unexpected planning request")
+    if args["state"] not in ("active", "cancelled", "unknown", "stopped"):
+        raise InvalidProposal("Unrecognized coordinator state")
+    if args["state"] != "active":
+        return {"status": "blocked", "reason": args["state"], "execution_authority": False}
+    action = propose(ctx, goal=args["goal"], observations=args["observations"],
+                     epoch=args["epoch"])
+    return {"status": "proposed", "proposal": action, "execution_authority": False}
+
+
+def register(ctx: Any) -> dict[str, Any]:
+    """Register through the documented Hermes plugin context contract.
+
+    An actual official plugin loader must call this entrypoint explicitly.
+    This standalone module is not a Hermes installation or pairing workflow.
+    """
+    registration = getattr(ctx, "register_tool", None)
+    if not callable(registration):
+        raise PlannerUnavailable("Official ctx.register_tool unavailable")
+
+    def handler(args, **_):
+        try:
+            return json.dumps(plan_tool(ctx, args), sort_keys=True)
+        except Exception:
+            # Plugin boundaries never leak model/provider failures to Hermes or
+            # turn them into execution authorization.
+            return json.dumps({"status": "denied", "execution_authority": False})
+
+    registration(name=TOOL_NAME, toolset=TOOLSET, schema=TOOL_SCHEMA,
+                 handler=handler, check_fn=lambda *_a, **_kw: True,
+                 description=TOOL_SCHEMA["description"], emoji="🛡️")
+    return feature_probe(ctx)
 
 
 def _redact(value: Any, depth: int = 0) -> Any:
@@ -120,6 +186,10 @@ def propose(ctx: Any, *, goal: str, observations: list[Any], epoch: int) -> dict
         not isinstance(parsed["sku"], str) or not parsed["sku"] or len(parsed["sku"]) > 256
     ):
         raise InvalidProposal("Invalid SKU")
+    if action == "select_variant" and (
+        not isinstance(parsed["variant"], str) or not 1 <= len(parsed["variant"]) <= 48
+    ):
+        raise InvalidProposal("Invalid variant")
     if action == "add_to_cart" and (
         type(parsed["quantity"]) is not int or not 1 <= parsed["quantity"] <= 5
     ):
