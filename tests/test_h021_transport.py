@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import errno
 import socket
 import ssl
 import subprocess
@@ -72,11 +73,20 @@ class H021TransportTests(unittest.TestCase):
         response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=connection)))
         response.read1 = mock.Mock(side_effect=[b"a", b"b", b"c"])
         with mock.patch("alice_secure_runner.h021_transport.time.monotonic",
-                        side_effect=[0.0, 0.2, 0.7, 1.1]):
+                        side_effect=[0.0, 0.2, 0.3, 0.7, 0.8, 1.1]):
             with self.assertRaisesRegex(TimeoutError, "absolute HTTPS response deadline"):
                 read_https_response_with_deadline(response, 10, seconds=1)
         self.assertEqual(response.read1.call_count, 2)
         self.assertEqual(connection.settimeout.call_count, 2)
+
+    def test_usable_buffered_response_survives_closed_connection_handle(self):
+        connection = mock.Mock()
+        connection.settimeout.side_effect = OSError(errno.EBADF, "closed connection")
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=connection)))
+        response.read1 = mock.Mock(side_effect=[b"OK", b""])
+        self.assertEqual(read_https_response_with_deadline(response, 50, seconds=3), b"OK")
+        self.assertEqual(response.read1.call_count, 2)
+        connection.settimeout.assert_called_once()
 
     def test_https_body_deadline_rejects_unobservable_socket(self):
         response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace()),

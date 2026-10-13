@@ -480,8 +480,12 @@ Local outbound HTTPS callers now enforce a monotonic **response-body** time
 budget (3 seconds for the synthetic merchant; 10 seconds for H02 private
 ASR; 5 seconds for the proposal-only plugin) in addition to per-socket idle
 timeouts. The Alice runner and H02 private gateway also bound response-header
-parsing to 5 seconds and refuse unobservable transports. A trickle response
-cannot occupy those reads indefinitely. The standalone Hermes plugin still
+parsing to 5 seconds and refuse unobservable transports. For CPython 3.12
+HTTP/1.0 Connection:close, the SSL handle may close before the buffered body
+is consumed; the body reader then uses its monotonic between-chunk budget
+plus the URL opener's per-read idle timeout. Thus its deadline can overrun by
+one idle timeout, but a one-byte trickle cannot continue indefinitely.
+The standalone Hermes plugin still
 has no independently proven absolute response-header deadline, and no
 production DDoS resistance or comprehensive whole-request budget is claimed.
 
@@ -503,6 +507,16 @@ unrecognised message/SSH effect tools, sandbox-home service restart,
 ancestor symlinks and ambiguous installer swap handling, which are fixed in
 the subsequent local increment. All CI claims for this newer increment
 remain **pending exact-SHA verification** until the checks complete.
+
+The next published `0e25348` SHA exposed a separate Python 3.12 compatibility
+fault in H02.1: for certain HTTP/1.0 responses the SSL socket handle is
+already closed when the readable buffered response body is processed. Calling
+`settimeout` on that closed handle raises `EBADF`. The next incremental fix
+fences that exact error, uses the opener's idle timeout for the remaining
+buffered body, checks the monotonic deadline after each chunk and adds an
+explicit regression test. The response is still size-bounded and no automatic
+checkout reattempt is introduced. **This does not constitute verified green
+CI on `0e25348` or proof of an exact overall HTTP deadline.**
 
 No real account, keychain, Hermes installation, browser profile, service,
 merchant or payment endpoint was accessed in these local hardening tests.

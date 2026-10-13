@@ -8,6 +8,7 @@ from __future__ import annotations
 import socket
 import ssl
 import select
+import errno
 import http.client
 import threading
 import time
@@ -119,13 +120,16 @@ def read_body_with_deadline(handler, size: int, *, seconds: float = 5.0) -> byte
 
 
 def read_https_response_with_deadline(response, limit: int, *, seconds: float = 5.0) -> bytes:
-    """Bound TOTAL HTTPS response-body time, not just idle socket time.
+    """Bound body time between read1 chunks, not just idle socket time.
 
     urllib's HTTPResponse.read1 reads at most one buffered/socket chunk. In
     contrast read(limit) can spend unbounded wall time on tiny periodic TLS
     records. We reset the socket timeout to the REMAINING absolute budget
-    before each read1. Refuse an unsupported response transport rather than
-    silently dropping this guarantee around a privileged capability.
+    before each read1. In CPython 3.12 a Connection:close response may leave
+    the SSL connection handle closed while the SocketIO body remains readable;
+    in that case the original opener idle timeout also bounds each read, so
+    a single read may overrun the nominal deadline by that idle timeout.
+    Refuse an unsupported transport rather than silently dropping all bounds.
 
     ``limit`` includes the extra byte used to detect an oversized response.
     """
@@ -141,8 +145,21 @@ def read_https_response_with_deadline(response, limit: int, *, seconds: float = 
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise TimeoutError("absolute HTTPS response deadline exceeded")
-        socket_obj.settimeout(min(5.0, remaining))
+        if socket_obj is not None:
+            try:
+                socket_obj.settimeout(min(5.0, remaining))
+            except OSError as error:
+                if error.errno != errno.EBADF:
+                    raise
+                # CPython 3.12 may close HTTPSConnection's socket handle on
+                # HTTP/1.0 Connection:close even while the response's
+                # buffered SocketIO still owns its readable descriptor.
+                # Keep the absolute monotonic budget between read1 chunks;
+                # the original URL opener also applies an idle-read timeout.
+                socket_obj = None
         fragment = response.read1(min(4096, limit - received))
+        if time.monotonic() > deadline:
+            raise TimeoutError("absolute HTTPS response deadline exceeded")
         if not fragment:
             break
         received += len(fragment)

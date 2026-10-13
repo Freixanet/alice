@@ -65,6 +65,15 @@ class OfflineInstallTests(unittest.TestCase):
             "esac\n",
             executable=True,
         )
+        self._put(
+            self.bin / "python3",
+            "#!/bin/sh\n"
+            "case \"$1:$2\" in\n"
+            "  *getpwuid*) printf '%s\\n' \"$ALICE_FAKE_CANONICAL_HOME\"; exit 0;;\n"
+            "esac\n"
+            "exec \"$ALICE_FAKE_PYTHON\" \"$@\"\n",
+            executable=True,
+        )
         interpreter = self.home / "hermes-agent/venv/bin/python"
         self._put(
             interpreter,
@@ -104,6 +113,7 @@ class OfflineInstallTests(unittest.TestCase):
             "HERMES_HOME": str(self.home),
             "ALICE_FAKE_TRACE": str(self.trace),
             "ALICE_FAKE_PYTHON": sys.executable,
+            "ALICE_FAKE_CANONICAL_HOME": str(self.home.parent),
             "PYTHONPATH": os.pathsep.join(filter(None, (
                 site.getusersitepackages(), os.environ.get("PYTHONPATH", "")))),
             "PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
@@ -199,6 +209,17 @@ class OfflineInstallTests(unittest.TestCase):
         self._put(fake_python,
                   (self.home / "hermes-agent/venv/bin/python").read_text(), executable=True)
         result = self._run(HERMES_HOME=alternate)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("services NOT restarted", result.stdout)
+        self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
+
+    def test_spoofed_home_cannot_authorize_restart_of_global_gui_service(self):
+        spoofed_user = self.root / "spoofed-user"
+        alternate = spoofed_user / ".hermes"
+        alternate.mkdir(parents=True)
+        self._put(alternate / "hermes-agent/venv/bin/python",
+                  (self.home / "hermes-agent/venv/bin/python").read_text(), executable=True)
+        result = self._run(HOME=spoofed_user, HERMES_HOME=alternate)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("services NOT restarted", result.stdout)
         self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))

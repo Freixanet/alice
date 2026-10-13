@@ -29,7 +29,10 @@ lock_dir=$plugins_dir/.alice-install.lock
 # by HERMES_HOME. Never restart them when installing to a throwaway or another
 # user's Hermes home. File-only installation remains supported in that case.
 restart_services=0
-if [[ ${hermes_home:A} == ${HOME:A}/.hermes ]]; then
+# $HOME is caller-controlled; use the OS account record, not that variable,
+# before touching fixed launchctl labels belonging to the logged-in user.
+canonical_home=$(python3 -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')
+if [[ ${hermes_home:A} == ${canonical_home:A}/.hermes ]]; then
   restart_services=1
 fi
 
