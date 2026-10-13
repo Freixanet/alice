@@ -264,6 +264,56 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertNotIn("human_handle", observed)
         self.assertNotIn(handoff["human_handle"], str(observed))
 
+    def test_human_status_is_read_only_and_principal_scoped(self):
+        start = self.request("/v1/jobs", {"recipient": "Fake shipping"})
+        identity = {"job_id": start["job_id"]}
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/human-status", identity)
+        self.assertEqual(error.exception.code, 401)  # coordinator cannot impersonate human
+        for token in (self.other_human_token, self.other_session_human_token,
+                      "the-Hermes-agent-has-no-capability"):
+            with self.subTest(token=token[:4]), self.assertRaises(urllib.error.HTTPError) as error:
+                self.request("/v1/human-status", identity, token=token)
+            self.assertIn(error.exception.code, (401, 403))
+        pending = self.request("/v1/human-status", identity, token=self.human_token)
+        self.assertEqual(pending["status"], "researching")
+        self.assertEqual(pending["payment_environment"], "fictional_only")
+        self.assertFalse(pending["can_submit_payment"])
+        self.assertNotIn("fictional_receipt", pending)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_human_status_only_confirms_matching_durable_fictional_receipt(self):
+        start = self.request("/v1/jobs", {"recipient": "Fake shipping"})
+        jid = start["job_id"]
+        last = start
+        for action in ({"action": "search", "query": "keyboard"},
+                       {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                       {"action": "add_to_cart", "quantity": 1},
+                       {"action": "prepare_checkout"}):
+            last = self.request("/v1/propose", {"job_id": jid,
+                "proposal": {**action, "epoch": last["epoch"]}})
+        challenge = self.request("/v1/challenge", {"job_id": jid})
+        before = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(before["status"], "awaiting_approval")
+        self.assertEqual(before["checkout"], last["checkout"])
+        self.assertNotIn("fictional_receipt", before)
+        signature = hmac.new(self.device_key, json.dumps(challenge, sort_keys=True,
+            separators=(",", ":")).encode(), hashlib.sha256).hexdigest()
+        self.request("/v1/approve", {"job_id": jid, "signature": signature})
+        self.request("/v1/commit", {"job_id": jid})
+        confirmed = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(confirmed["status"], "confirmed")
+        self.assertEqual(confirmed["fictional_receipt"]["amount_minor"], 2499)
+        self.assertEqual(self.store.submit_attempts, 1)
+        # Simulate a mismatched/corrupted authorization ledger; never infer
+        # confirmation from cached UI or a runner status flag alone.
+        self.runner._AliceRunner__db.execute("UPDATE authorizations SET digest='invalid' WHERE checkout_id=?",
+             (last["checkout"]["checkout_id"],))
+        conflicting = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(conflicting["status"], "unknown")
+        self.assertNotIn("fictional_receipt", conflicting)
+        self.assertEqual(self.store.submit_attempts, 1)
+
 
 if __name__ == "__main__":
     unittest.main()

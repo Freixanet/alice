@@ -629,6 +629,50 @@ per-tenant OS/browser fencing, PSP certification and production operations.
 
 ## Link to the larger plan
 
+### Post-31ed2b9 local hardening and synthetic read-only iOS status
+
+- **Verified baseline:** PR #81 Draft, base PR #80, local and remote HEAD
+  `31ed2b9401ec2f6312a5f9f94487da87c24aa368`. Its five exact-SHA GitHub
+  workflows (Quality, Synthetic Runner, H01, H02 and H02.1) succeeded. This
+  does not constitute a two-host proof or a payment-capable release.
+- **Legacy Hermes stop:** a surviving stalled/circling run cannot start a
+  replacement, even when a queued resume message exists. Reconciliation
+  checks a fresh pending entry under the same admission lock as run dispatch,
+  approvals and STOP. Ordinary manual stops now have a separate retry-only
+  reaper; no new `/v1/runs`, checkout approval or merchant effect is issued.
+  An unknown newer run stays pending when an older known run finishes.
+- **Hermes installer failure:** rollback first copies live config to a
+  persistent recovery directory and reports that path, including concurrent
+  edits, rather than silently discarding them. This is a recovery aid, not a
+  transactional merge with arbitrary unrelated editors. Concurrent writes
+  remain an operational limitation until an official Hermes compare-and-swap
+  configuration API or externally coordinated update exists.
+- **Fixture Alice-owned status:** human-only `/v1/human-status` requires a
+  different test-issued scoped bearer from the coordinator. It returns only
+  synthetic state and exact checkout/receipt fields from the ASR-owned durable
+  ledger, never user-secret handles. A mismatched receipt ledger cannot render
+  confirmed. The new Swift HTTPS-only, redirect-denying read client validates
+  the exact tenant, session, job and fictional receipt; it is intentionally
+  **not wired to Hermes UI, a real Alice IdP or payments**. Hardware-backed
+  account enrollment and an authenticated deployed feed are still missing.
+- **Local test evidence:** Python repository suite 149 PASS, 9 SKIPPED;
+  11/11 HTTPS fixture tests; 25/25 manual stop/cutover tests; 22/22 offline
+  installer tests; Swift new source iPhoneOS typecheck PASS and macOS
+  executable protocol smoke PASS. A separate broad plugin test run had 105
+  PASS with one local `websockets` import error in system Python: this is
+  an environment limitation, not a proven code regression. New XCTest files
+  parse, but actual XCTest, real iOS Secure Enclave and real Hermes/LLM pairing
+  are **NOT tested** in this increment. The published new SHA and its CI
+  are pending at the time of this local note.
+- **Costs:** the local full Python suite took about 34 seconds and the offline
+  installer suite about 33 seconds on the available Mac; cloud spend, hosted
+  per-job cost, real-browser memory and live merchant costs are unmeasured.
+  No external infrastructure, production keys, real purchases or deployment
+  were used for this increment.
+
+**R02 remains P0 / NO-GO.** These checks are functional local progress and
+must not be counted as a completed account-to-device-to-merchant trust chain.
+
 The integrated branch advances plan A (security/architecture), B
 (identity contracts), C (official Hermes compatibility), D (shopping and
 recovery/R03), and E (distribution/iOS). The next **large mission** after

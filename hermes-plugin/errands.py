@@ -1569,13 +1569,19 @@ class Engine:
             status = str(state.get("status") or "")
             page = circling(self._entry())
             if page and status == "running":
-                self.gateway.stop(run_id)
+                try:
+                    self.gateway.stop(run_id)
+                except Exception:
+                    pass  # Remote stop is unverified; no implicit new run.
                 return {"status": "circling", "page": page}
             mark = (state.get("updated_at"), state.get("last_event"), status)
             if mark != seen:
                 seen, since = mark, time.time()
             elif status == "running" and time.time() - since > STALL_SECONDS:
-                self.gateway.stop(run_id)
+                try:
+                    self.gateway.stop(run_id)
+                except Exception:
+                    pass  # Keep the uncertain remote stop persistent.
                 return {"status": "stalled"}
             if status == "waiting_for_approval" and isinstance(state.get("approval"), dict):
                 self._answer_approval(run_id, state["approval"])
@@ -1633,6 +1639,12 @@ class Engine:
                            run_status_uncertain=True,
                            reason="Se perdió la verificación del run anterior; "
                                   "inspecciona manualmente cualquier efecto.")
+                    return "stuck"
+                if prior.get("status") in ("circling", "stalled"):
+                    update(self.home, self.errand_id, status="stuck",
+                           cutover_stop_pending=True, cutover_stop_attempt_at=time.time(),
+                           reason="Run anterior detenido sin confirmación de Hermes. "
+                                  "No se puede reanudar ni lanzar otro hasta verificar su parada.")
                     return "stuck"
                 # Preserve unused instructions across recovery, but never replay an approval
                 # already accepted by the surviving run.
@@ -1734,6 +1746,18 @@ class Engine:
                        reason="No se puede verificar la finalización sin efectos del run; "
                               "comprueba el pedido antes de continuar.")
                 return "stuck"
+            if state.get("status") in ("circling", "stalled"):
+                # Resume messages, approval recovery and the ordinary judge
+                # must NEVER dispatch a second run after unverified stop.
+                update(self.home, self.errand_id, status="stuck",
+                       cutover_stop_pending=True, cutover_stop_attempt_at=time.time(),
+                       reason=(("Lleva varios minutos en la misma página (" +
+                                str(state.get("page"))[:80] + "). ")
+                               if state.get("status") == "circling" else
+                               "El run de Hermes se quedó colgado. ") +
+                              "Su parada sigue sin verificarse; inspecciona "
+                              "los posibles efectos antes de cualquier reintento.")
+                return "stuck"
             if self._cutover_fence(run_id=run_id):
                 return "stuck"
             reply = _clean(state.get("output") or "", 2000)
@@ -1760,19 +1784,21 @@ class Engine:
             except Exception:
                 pass  # Unreadable DOM is handled by the ordinary recovery/judge path.
             if state.get("status") == "circling":
-                update(self.home, self.errand_id, status="stuck", reason=(
+                update(self.home, self.errand_id, status="stuck",
+                       cutover_stop_pending=True, cutover_stop_attempt_at=time.time(), reason=(
                     "Lleva varios minutos en la misma página sin poder avanzar (" + str(state.get("page"))[:80]
-                    + "). Ábrela en el navegador para ver qué pide la tienda."))
+                    + "). Hermes recibió una solicitud de parada sin confirmar. "
+                      "Comprueba el estado y no reintentes la operación."))
                 return "stuck"
             if state.get("status") == "stalled":
-                stalls += 1
-                if stalls >= 2:
-                    update(self.home, self.errand_id, status="stuck",
-                           reason="El modelo dejó de responder dos veces seguidas.")
-                    return "stuck"
-                text = (CONTINUATION + " El paso anterior se quedó colgado: mira en qué punto está la "
-                        "página y sigue desde ahí.")
-                continue
+                # The remote run may still be operating a merchant browser.
+                # A stop request without confirmed terminal state does NOT
+                # entitle us to create another native-tool run in that session.
+                update(self.home, self.errand_id, status="stuck",
+                       cutover_stop_pending=True, cutover_stop_attempt_at=time.time(),
+                       reason="El run Hermes se quedó colgado; su parada aún no está "
+                              "confirmada. Inspecciona cualquier efecto antes de continuar.")
+                return "stuck"
             if state.get("status") == "failed":
                 update(self.home, self.errand_id, status="stuck",
                        reason=_clean(state.get("error") or "El agente falló.", 200))
@@ -1851,6 +1877,8 @@ _threads: Dict[str, threading.Thread] = {}
 _threads_lock = threading.Lock()
 _cutover_reapers: Dict[str, Tuple[threading.Thread, threading.Event]] = {}
 _cutover_reapers_lock = threading.Lock()
+_pending_stop_reapers: Dict[str, Tuple[threading.Thread, threading.Event]] = {}
+_pending_stop_reapers_lock = threading.Lock()
 
 
 def arm_cutover_reaper(home: Path, *, interval: float = 30.0) -> bool:
@@ -1897,6 +1925,95 @@ def stop_cutover_reaper(home: Path) -> None:
         registered = _cutover_reapers.pop(str(Path(home).resolve()), None)
     if registered is not None:
         worker, stopping = registered
+        stopping.set()
+        if worker is not threading.current_thread():
+            worker.join(timeout=3)
+
+
+def _reconcile_pending_stops(home: Path) -> bool:
+    """Retry ONLY remote stop/status; never restart a Hermes run or a payment.
+
+    Unknown run identity stays pending even if an older known run is terminal.
+    Returns whether any verification is still pending for later reaping.
+    """
+    now = time.time()
+    for prior_entry in listing(home):
+        if not prior_entry.get("cutover_stop_pending"):
+            continue
+        # Re-read under the SAME local admission lock as STOP, approval and
+        # /v1/runs creation. Otherwise a late remote status for an old run
+        # could clear a freshly set uncertain-new-run or cutover fence.
+        with _cutover_admission_lock(home):
+            entry = get(home, prior_entry["id"])
+            if entry is None or not entry.get("cutover_stop_pending"):
+                continue
+            prior = entry.get("cutover_stop_attempt_at")
+            if prior is not None:
+                try:
+                    if now - float(prior) < 30:
+                        continue
+                except (TypeError, ValueError):
+                    pass
+            run_id = entry.get("run_id")
+            unidentified_run = bool(entry.get("run_start_uncertain")
+                                    or entry.get("run_status_uncertain"))
+            terminal = False
+            if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
+                try:
+                    gateway = Gateway(home, entry.get("profile") or "")
+                    gateway.stop(run_id)
+                    terminal = (str(gateway.status(run_id).get("status") or "") in FINISHED
+                                and not unidentified_run)
+                except Exception:
+                    terminal = False
+            update(home, entry["id"], status="stopped" if terminal else "stuck",
+                   cutover_stop_pending=not terminal,
+                   cutover_stop_attempt_at=now,
+                   reason=("Hermes confirma que el run terminó; revisa cualquier efecto anterior."
+                           if terminal else "Parada remota no verificable; no se retomará automáticamente."))
+    return any(entry.get("cutover_stop_pending") for entry in listing(home))
+
+
+def arm_pending_stop_reaper(home: Path, *, interval: float = 30.0) -> bool:
+    """Best-effort liveness for MANUAL stops when ASR cutover is not enabled.
+
+    This is a separate thread from the ASR-only cutover reaper, because the
+    ordinary ensure_running() function may launch *other* working errands.
+    A stop reaper must never do that. Durability is the pending ledger marker.
+    """
+    home = Path(home).resolve()
+    if legacy_payment_blocked(home) or not 0 < interval <= 60:
+        return False
+    if not any(entry.get("cutover_stop_pending") for entry in listing(home)):
+        return False
+    with _pending_stop_reapers_lock:
+        key = str(home)
+        prior = _pending_stop_reapers.get(key)
+        if prior and prior[0].is_alive():
+            return False
+        stopping = threading.Event()
+
+        def reaper():
+            while not stopping.wait(interval):
+                try:
+                    if not _reconcile_pending_stops(home):
+                        return
+                except Exception:
+                    # Ledger remains pending for restart or the next tick.
+                    pass
+
+        worker = threading.Thread(target=reaper, name="alice-r02-pending-stop-reaper", daemon=True)
+        _pending_stop_reapers[key] = (worker, stopping)
+        worker.start()
+        return True
+
+
+def stop_pending_stop_reaper(home: Path) -> None:
+    """Test/shutdown hook; does not re-enable stopped runs."""
+    with _pending_stop_reapers_lock:
+        pair = _pending_stop_reapers.pop(str(Path(home).resolve()), None)
+    if pair is not None:
+        worker, stopping = pair
         stopping.set()
         if worker is not threading.current_thread():
             worker.join(timeout=3)
@@ -1991,14 +2108,17 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
             run_id = entry.get("run_id")
             # Missing run_id is NOT evidence no run exists after a lost POST
             # response; this needs a trusted Hermes run-list/recovery API.
-            stopped = not run_id and not entry.get("run_start_uncertain")
+            unidentified_run = bool(entry.get("run_start_uncertain")
+                                    or entry.get("run_status_uncertain"))
+            stopped = not run_id and not unidentified_run
             if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
                 try:
                     gateway = Gateway(home, entry.get("profile") or "")
                     gateway.stop(run_id)
                     # A stop request is NOT a proof of cessation. Only a
                     # terminal state confirmed by Hermes removes retry flag.
-                    stopped = str(gateway.status(run_id).get("status") or "") in FINISHED
+                    stopped = (str(gateway.status(run_id).get("status") or "") in FINISHED
+                               and not unidentified_run)
                 except Exception:
                     stopped = False
             update(home, entry["id"], status="stuck",
@@ -2010,32 +2130,9 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
         return []
     # Manual stop requests also need reconciliation after a restart when ASR
     # cutover was not enabled. Never relaunch an errand carrying this marker.
-    now = time.time()
-    for entry in listing(home):
-        if not entry.get("cutover_stop_pending"):
-            continue
-        prior = entry.get("cutover_stop_attempt_at")
-        if prior is not None:
-            try:
-                if now - float(prior) < 30:
-                    continue
-            except (TypeError, ValueError):
-                pass
-        run_id = entry.get("run_id")
-        terminal = False
-        if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
-            try:
-                gateway = Gateway(home, entry.get("profile") or "")
-                gateway.stop(run_id)
-                terminal = str(gateway.status(run_id).get("status") or "") in FINISHED
-            except Exception:
-                terminal = False
-        update(home, entry["id"],
-               status="stopped" if terminal else "stuck",
-               cutover_stop_pending=not terminal,
-               cutover_stop_attempt_at=now,
-               reason=("Hermes confirma que el run terminó; revisa cualquier efecto anterior."
-                       if terminal else "Parada remota no verificable; no se retomará automáticamente."))
+    _reconcile_pending_stops(home)
+    if arm_reaper:
+        arm_pending_stop_reaper(home)
     for entry in listing(home):
         if entry.get("status") == "working" and launch(
                 home, entry["id"], "[Continuing toward your standing goal] Se reinició el servicio: "
@@ -2183,6 +2280,7 @@ def approve_pending_run_request(home: Path, errand_id: str, choice: str,
 
 
 def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
+    unresolved = None
     with _cutover_admission_lock(home):
         entry = get(home, errand_id)
         if entry is None:
@@ -2191,25 +2289,31 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
             return entry
         if entry.get("run_start_uncertain") or entry.get("run_status_uncertain"):
             # No known run_id to cancel. Never falsely acknowledge remote stop.
-            return update(home, errand_id, status="stuck", cutover_stop_pending=True,
+            unresolved = update(home, errand_id, status="stuck", cutover_stop_pending=True,
                           reason="Inicio Hermes incierto; puede quedar una ejecución remota activa. "
                                  "Necesita inspección y parada manual; no se ha confirmado cancelación.")
-        run_id = entry.get("run_id")
-        # Persist an unverified stop BEFORE invoking the remote stop command.
-        # This is serialized against already-approved model approvals.
-        entry = update(home, errand_id,
-                       status="stuck" if run_id else "stopped",
-                       cutover_stop_pending=bool(run_id),
-                       reason=("Parada solicitada a Hermes; estado remoto sin verificar."
-                               if run_id else "El recado no tiene una ejecución remota activa."),
-                       secure_request=None, resume_message=None)
+        else:
+            run_id = entry.get("run_id")
+            # Persist an unverified stop BEFORE invoking the remote stop command.
+            # This is serialized against already-approved model approvals.
+            entry = update(home, errand_id,
+                           status="stuck" if run_id else "stopped",
+                           cutover_stop_pending=bool(run_id),
+                           reason=("Parada solicitada a Hermes; estado remoto sin verificar."
+                                   if run_id else "El recado no tiene una ejecución remota activa."),
+                           secure_request=None, resume_message=None)
+    if unresolved is not None:
+        # Must occur AFTER releasing admission lock: an ASR cutover also
+        # obtains that lock while inspecting persistent activation markers.
+        arm_pending_stop_reaper(home)
+        return unresolved
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:
         pass
     if run_id:
-        gateway = Gateway(home, entry.get("profile") or "")
         try:
+            gateway = Gateway(home, entry.get("profile") or "")
             gateway.stop(run_id)
             terminal = str(gateway.status(run_id).get("status") or "") in FINISHED
         except Exception:
@@ -2219,6 +2323,8 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
                            reason="Hermes confirma ejecución terminada; "
                                   "esto no garantiza que no existan efectos anteriores.")
     release_context(errand_id)
+    if run_id and not terminal:
+        arm_pending_stop_reaper(home)
     return entry
 
 

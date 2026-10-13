@@ -78,7 +78,8 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
             for token, candidate in principals.items():
                 if hmac.compare_digest(bearer, "Bearer " + token):
                     principal = candidate
-            role = ("human" if self.path in ("/v1/human-finish", "/v1/human-reissue")
+            role = ("human" if self.path in ("/v1/human-finish", "/v1/human-reissue",
+                                             "/v1/human-status")
                     else "coordinator")
             if principal is None or principal.role != role:
                 self._write(401, {"error": "unauthorized"})
@@ -112,6 +113,8 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     out = runner.reconcile_unknown(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-handoff":
                     out = runner.human_handoff(obj["job_id"], tenant=tenant, session=session)
+                elif self.path == "/v1/human-status":
+                    out = runner.human_status(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-reissue":
                     out = runner.reissue_human_handle(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-finish":

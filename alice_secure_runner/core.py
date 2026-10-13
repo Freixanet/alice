@@ -373,6 +373,42 @@ class AliceRunner:
                 result["approval_challenge"] = self._challenge(job)
             return result
 
+    def human_status(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Human-only, read-only fictional status from the durable ASR ledger.
+
+        No LLM/Hermes-supplied status, secret, handoff token, approval signature,
+        or automatic reconciliation is exposed. A recorded confirmation must
+        agree with the durable authorization ledger before it is displayed.
+        This is a fixture contract, NOT an authenticated production IdP.
+        """
+        with self.__lock:
+            job = self._job(job_id, tenant, session)
+            out: dict[str, Any] = {
+                "job_id": job.id, "tenant": tenant, "session": session,
+                "status": job.state,
+                "payment_environment": "fictional_only",
+                "can_submit_payment": False,
+            }
+            if job.checkout is not None:
+                snapshot = job.checkout
+                out["checkout"] = snapshot.copy()
+                if job.state == "confirmed":
+                    row = self.__db.execute(
+                        "SELECT digest,status,order_id FROM authorizations WHERE checkout_id=?",
+                        (snapshot["checkout_id"],)).fetchone()
+                    if (row is None or row[0] != _digest(snapshot)
+                            or row[1] != "confirmed" or not row[2]):
+                        # Disagreement between two trusted stores must not
+                        # become a false confirmation in an iPhone UI.
+                        out["status"] = "unknown"
+                    else:
+                        out["fictional_receipt"] = {
+                            "order_id": row[2], "checkout_id": snapshot["checkout_id"],
+                            "amount_minor": snapshot["amount_minor"],
+                            "currency": snapshot["currency"],
+                        }
+            return out
+
     def _pending(self, job: Job) -> dict[str, Any]:
         if job.checkout is None:
             raise Denied("checkout has not been prepared")

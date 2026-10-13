@@ -124,18 +124,38 @@ cleanup() {
       }
     fi
     if (( config_started )); then
-      if (( had_config )); then
-        local config_restore=$hermes_home/.alice-config-restore.$$
-        if ! cp -p -- "$transaction/config.before" "$config_restore" || ! mv -f -- "$config_restore" "$config"; then
+      # Hermes' CLI (and an unrelated user/editor) can write config without
+      # taking our installer lock. Never silently discard any later edits:
+      # preserve the exact live file in a persistent recovery directory BEFORE
+      # restoring the original. If preservation or validation fails, leave
+      # the live config untouched and require operator reconciliation.
+      local config_recovery=''
+      if [[ -L $config || ( -e $config && ! -f $config ) ]]; then
+        restore_failed=1
+        print -u2 "RESTORE REQUIRED: Hermes config became an unsafe path: $config"
+      elif [[ -f $config ]]; then
+        config_recovery=$(mktemp -d "$hermes_home/backups/alice-config-recovery.XXXXXX")
+        if ! cp -p -- "$config" "$config_recovery/live-after-failure.yaml"; then
           restore_failed=1
-          print -u2 "RESTORE REQUIRED: Hermes config could not be restored: $config"
+          print -u2 "RESTORE REQUIRED: could not preserve concurrent Hermes config: $config"
+        else
+          print -u2 "CONFIG RECOVERY: saved live config at $config_recovery/live-after-failure.yaml; reconcile any concurrent edits."
         fi
-        rm -f -- "$config_restore"
-      else
-        rm -f -- "$config" || {
-          restore_failed=1
-          print -u2 "RESTORE REQUIRED: remove $config created by the failed install"
-        }
+      fi
+      if (( ! restore_failed )); then
+        if (( had_config )); then
+          local config_restore=$hermes_home/.alice-config-restore.$$
+          if ! cp -p -- "$transaction/config.before" "$config_restore" || ! mv -f -- "$config_restore" "$config"; then
+            restore_failed=1
+            print -u2 "RESTORE REQUIRED: Hermes config could not be restored: $config"
+          fi
+          rm -f -- "$config_restore"
+        else
+          rm -f -- "$config" || {
+            restore_failed=1
+            print -u2 "RESTORE REQUIRED: remove $config created by the failed install"
+          }
+        fi
       fi
     fi
     # A restarted gateway must reload the restored plugin before the dashboard.

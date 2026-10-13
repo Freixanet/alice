@@ -8,6 +8,8 @@ import site
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 
 
@@ -52,6 +54,7 @@ class OfflineInstallTests(unittest.TestCase):
             self.bin / "hermes",
             "#!/bin/sh\n"
             "printf 'hermes %s\\n' \"$*\" >> \"$ALICE_FAKE_TRACE\"\n"
+            "if [ \"$1\" = plugins ] && [ \"${FAKE_ENABLE_DELAY:-0}\" = 1 ]; then sleep 0.2; fi\n"
             "if [ \"$1\" = plugins ] && [ \"${FAKE_FAIL_ENABLE:-0}\" = 1 ]; then exit 4; fi\n"
             "printf 'fake_config_change: true\\n' >> \"$HERMES_HOME/config.yaml\"\n"
             "if [ \"$1\" = config ] && [ \"${FAKE_FAIL_CONFIG_SET:-0}\" = 1 ]; then exit 7; fi\n",
@@ -190,6 +193,36 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(self._backup_plugins(), [])
         self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
         self._assert_no_staging()
+
+    def test_failed_enable_preserves_concurrent_config_edit_for_recovery(self):
+        self._old_plugin()
+        config = self.home / "config.yaml"
+        original = "skills: {external_dirs: []}\n"
+        self._put(config, original)
+        changed = threading.Event()
+
+        def independent_editor():
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if any(row.startswith("hermes plugins enable") for row in self._trace()):
+                    with config.open("a", encoding="utf-8") as stream:
+                        stream.write("independent_setting: CHANGED_BY_OTHER_WRITER\n")
+                    changed.set()
+                    return
+                time.sleep(0.01)
+
+        editor = threading.Thread(target=independent_editor, daemon=True)
+        editor.start()
+        result = self._run(FAKE_ENABLE_DELAY=1, FAKE_FAIL_ENABLE=1)
+        editor.join(timeout=1)
+        self.assertTrue(changed.is_set(), result.stderr)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(config.read_text(), original)
+        copies = list((self.home / "backups").glob(
+            "alice-config-recovery.*/live-after-failure.yaml"))
+        self.assertEqual(len(copies), 1, result.stderr)
+        self.assertIn("CHANGED_BY_OTHER_WRITER", copies[0].read_text())
+        self.assertIn("CONFIG RECOVERY:", result.stderr)
 
     def test_failed_atomic_exchange_keeps_original_before_activation(self):
         old = self._old_plugin()

@@ -22,6 +22,102 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_surviving_stalled_run_never_starts_a_replacement(self):
+        errands = load("r02_stalled_survivor", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-surviving-run-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="working", run_id="unverified-prior", runs=1)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "running"}
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    sleep=lambda _: None)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}):
+                self.assertEqual(engine.run(), "stuck")
+            gateway.start.assert_not_called()
+            saved = errands.get(home, entry["id"])
+            self.assertTrue(saved["cutover_stop_pending"])
+            self.assertEqual(saved["status"], "stuck")
+
+    def test_stalled_run_with_queued_resume_does_not_override_stop(self):
+        errands = load("r02_stall_queued_resume", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-stalled-message-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="working", resume_message="queued user message")
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.durable_run_idempotency.return_value = False
+            gateway.start.return_value = "run-first"
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    sleep=lambda _: None)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "prepare_browser", return_value=True), \
+                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}):
+                self.assertEqual(engine.run("start"), "stuck")
+            gateway.start.assert_called_once()
+            self.assertTrue(errands.get(home, entry["id"])["cutover_stop_pending"])
+
+    def test_live_manual_stop_reaper_never_launches_a_new_run(self):
+        errands = load("r02_manual_stop_reaper", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-manual-stop-reaper-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="stuck", run_id="run-original",
+                         cutover_stop_pending=True, cutover_stop_attempt_at=1.0)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "cancelled"}
+            try:
+                with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                        patch.object(errands, "Gateway", return_value=gateway):
+                    self.assertTrue(errands.arm_pending_stop_reaper(home, interval=0.02))
+                    self.assertFalse(errands.arm_pending_stop_reaper(home, interval=0.02))
+                    deadline = time.monotonic() + 2
+                    while (errands.get(home, entry["id"])["cutover_stop_pending"]
+                           and time.monotonic() < deadline):
+                        time.sleep(0.01)
+                saved = errands.get(home, entry["id"])
+                self.assertEqual(saved["status"], "stopped")
+                self.assertFalse(saved["cutover_stop_pending"])
+                gateway.start.assert_not_called()
+                gateway.stop.assert_called_once_with("run-original")
+            finally:
+                errands.stop_pending_stop_reaper(home)
+
+    def test_manual_reaper_never_trusts_terminal_old_id_for_unknown_new_run(self):
+        errands = load("r02_manual_reaper_unknown_new", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-manual-stop-uncertain-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="stuck", run_id="old-known-run", run_start_uncertain=True,
+                         cutover_stop_pending=True, cutover_stop_attempt_at=1.0)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "cancelled"}
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "Gateway", return_value=gateway):
+                self.assertTrue(errands._reconcile_pending_stops(home))
+            saved = errands.get(home, entry["id"])
+            self.assertEqual(saved["status"], "stuck")
+            self.assertTrue(saved["cutover_stop_pending"])
+            self.assertTrue(saved["run_start_uncertain"])
+            gateway.start.assert_not_called()
+
     def test_dashboard_approval_refuses_stale_or_pending_stop(self):
         errands = load("r02_dashboard_stop_gate", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-dashboard-approval-") as temporary:
