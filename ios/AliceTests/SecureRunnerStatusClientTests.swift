@@ -3,6 +3,52 @@ import Foundation
 import XCTest
 @testable import Alice
 
+private final class FictionalRequestCapture: @unchecked Sendable {
+    static let shared = FictionalRequestCapture()
+    private let lock = NSLock()
+    private var latest: URLRequest?
+
+    func record(_ request: URLRequest) {
+        lock.lock()
+        defer { lock.unlock() }
+        latest = request
+    }
+
+    func take() -> URLRequest? {
+        lock.lock()
+        defer { lock.unlock() }
+        let request = latest
+        latest = nil
+        return request
+    }
+}
+
+/// Pure in-process URLProtocol fixture: never resolves DNS or submits payment.
+private final class FictionalURLProtocol: URLProtocol, @unchecked Sendable {
+    override class func canInit(with request: URLRequest) -> Bool {
+        request.url?.host == "alice-fixture.invalid"
+    }
+
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        FictionalRequestCapture.shared.record(request)
+        guard let url = request.url,
+              let response = HTTPURLResponse(url: url, statusCode: 200,
+                                             httpVersion: "HTTP/1.1",
+                                             headerFields: ["Content-Type": "application/json"])
+        else { client?.urlProtocol(self, didFailWithError:
+            URLError(.badServerResponse)); return }
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("{\"status\":\"approved\"}".utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
 final class SecureRunnerStatusClientTests: XCTestCase {
     private func status(
         _ state: String, receipt: [String: Any]? = nil,
@@ -140,5 +186,59 @@ final class SecureRunnerStatusClientTests: XCTestCase {
         payload["checkout"] = checkout
         payload["status"] = "approved"
         XCTAssertThrowsError(try read(encoded()))
+    }
+
+    func testHumanSignatureTransportIsScopedAndNeverPostsPayment() async throws {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FictionalURLProtocol.self]
+        let client = SecureRunnerStatusClient(session: URLSession(configuration: configuration))
+        let endpoint = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let humanBearer = String(repeating: "t", count: 48)
+        let signature = String(repeating: "a", count: 88)
+        _ = FictionalRequestCapture.shared.take()
+
+        try await client.submitFictionalHumanSignature(
+            baseURL: endpoint, humanBearer: humanBearer,
+            jobID: "fictional-job-01", signature: signature)
+        let request = try XCTUnwrap(FictionalRequestCapture.shared.take())
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.url?.absoluteString,
+                       "https://alice-fixture.invalid/v1/human-approve")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"),
+                       "Bearer " + humanBearer)
+        let raw: Data
+        if let direct = request.httpBody {
+            raw = direct
+        } else if let stream = request.httpBodyStream {
+            // URLSession transforms HTTPBody into a stream when invoking an
+            // in-process URLProtocol; this is not another network request.
+            stream.open()
+            defer { stream.close() }
+            var received = Data()
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&chunk, maxLength: chunk.count)
+                guard count > 0 else { break }
+                received.append(contentsOf: chunk[..<count])
+            }
+            raw = received
+        } else {
+            XCTFail("Fixture request had no HTTP body or body stream")
+            return
+        }
+        let body = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: String])
+        XCTAssertEqual(body, ["job_id": "fictional-job-01", "signature": signature])
+        XCTAssertNil(raw.range(of: Data("checkout".utf8)))
+        XCTAssertNil(raw.range(of: Data("payment".utf8)))
+
+        let insecure = try XCTUnwrap(URL(string: "http://alice-fixture.invalid"))
+        do {
+            try await client.submitFictionalHumanSignature(
+                baseURL: insecure, humanBearer: humanBearer,
+                jobID: "fictional-job-01", signature: signature)
+            XCTFail("Insecure origin was accepted")
+        } catch SecureRunnerStatusClient.Failure.invalidEndpoint {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
     }
 }

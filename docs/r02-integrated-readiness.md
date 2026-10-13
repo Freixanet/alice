@@ -698,6 +698,14 @@ must not be counted as a completed account-to-device-to-merchant trust chain.
   No Secure Enclave, Face ID, real human presence, external Hermes credentials,
   OS sandbox or independent host is involved. The new HTTPS fixture test
   module passed **14/14**, with the existing registry module **14/14**.
+- The Swift-only status/consent transport was checked with strict Swift 6
+  concurrency and warnings-as-errors. Its **5 XCTest fixtures passed** in
+  an isolated macOS SwiftPM package, including exact challenge binding,
+  rejecting forged receipts, tenant/session mismatch and an in-process
+  `URLProtocol` inspection of the human signature POST. The fixture host is
+  `.invalid` and intercepted without DNS or a real network. These tests do
+  **not** exercise an installed iOS app, actual Secure Enclave key, biometric
+  prompt or account authentication; native iOS CI remains separately required.
 - CI for exact published SHA `e3be24b0e94713baa363659e0bee2401d07141aa`
   showed all four R02 workflows successful; Quality `verify` and `browser`
   were successful while the iOS job was still in progress at the last check.
