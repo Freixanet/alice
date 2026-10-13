@@ -784,10 +784,13 @@ No work here authorizes a real purchase before its release gates pass.
 ### Subsequent R02 integration: explicit human cancellation and device enrollment transport
 
 - **Exact baseline** `679a9e5997dca15f3b0060ac833bfc3199fe08bc`
-  is the ancestor of the next integration. Its four R02 checks succeeded;
-  Quality `verify` and `browser` succeeded, while the macOS/Xcode `ios`
-  result must be recorded only after that same run completes. A successful
-  macOS SwiftPM fixture does **not** count as a successful iOS build.
+  is the ancestor of the next integration. Its four R02 checks and all three
+  jobs of [Quality run 38341278079](https://github.com/Freixanet/alice/actions/runs/38341278079)
+  (`verify`, `browser`, **native macOS/Xcode `ios`**) completed successfully;
+  iOS finished 2026-10-13T03:52:07Z. This validates the redundant
+  `@unchecked Sendable` correction for that exact published SHA. New iOS
+  integration still requires CI on its own exact pushed SHA; macOS SwiftPM
+  XCTest cannot substitute for that build.
 - **Explicit human cancellation (fictional only):** the independent human
   HTTPS credential can call `/v1/human-cancel`. Under the runner lock and one
   SQLite transaction, active planning and signed-but-not-dispatched approvals
@@ -827,9 +830,15 @@ No work here authorizes a real purchase before its release gates pass.
   status from a timeout or start a new legacy job.
 
 **Evidence and limits:** focused Hermes legacy-cutover suite **33/33 PASS**;
-Python HTTPS/runner/device/merchant selected suite **75/75 PASS**, with separate
+full human HTTPS suite **21/21 PASS**; earlier Python
+HTTPS/runner/device/merchant selected suite **97/97 PASS**, with separate
 human-cancel, restart, P-256 enrollment/replay/rotation/revocation, and
-independent-receipt regression cases. iOS native and UI integration are subject
+independent-receipt regression cases. The broad high-load local Python run
+had 149 passed, nine optional Chromium skipped and one isolated SQLite process
+recovery child timeout at eight seconds; the exact failed test was rerun alone
+and passed in 6.58 seconds. This is a **load-sensitive inconclusive full run**,
+not an all-green claim; native GitHub CI remains the independent gate.
+iOS native and UI integration are subject
 to the Xcode CI outcome of the exact final pushed SHA. No real Hermes model,
 Apple Secure Enclave device, actual Alice IdP, external tenant host or PSP was
 used. **R02 remains P0 / NO-GO.**

@@ -215,10 +215,9 @@ struct ErrandStack: View {
         if errand.usesLegacyCheckout {
             legacyBody
         } else {
-            // Hermes payloads are untrusted, even when they claim "confirmed".
-            // The future authenticated ASR feed can use the other read-only
-            // status presentations; legacy checkout actions stay unavailable.
-            SecureRunnerStatusCard(status: .unverified, language: errand.language)
+            // The sole R02 status/consent route needs an independent Alice
+            // account context. Hermes cannot provide identity or approvals.
+            SecureRunnerConnectedPanel(errand: errand)
         }
     }
 

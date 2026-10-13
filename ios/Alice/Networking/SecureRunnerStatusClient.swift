@@ -267,6 +267,103 @@ struct SecureRunnerStatusClient {
               object["session"] as? String == ownerSession
         else { throw Failure.invalidResponse }
     }
+
+    /// The fixture backend authenticates this human Bearer independently of
+    /// Hermes. No iOS caller may derive it from an errand, QR or merchant link.
+    /// Key generation and user review happen separately before this transport.
+    func beginFictionalDeviceEnrollment(
+        baseURL: URL, humanBearer: String, publicPEM: String,
+        keyExpiresAt: Int
+    ) async throws -> Data {
+        try checkEnrollmentTransport(baseURL: baseURL, humanBearer: humanBearer)
+        guard publicPEM.utf8.count >= 140, publicPEM.utf8.count <= 2_048,
+              publicPEM.hasPrefix("-----BEGIN PUBLIC KEY-----\n"),
+              publicPEM.hasSuffix("-----END PUBLIC KEY-----\n"),
+              keyExpiresAt > Int(Date().timeIntervalSince1970),
+              keyExpiresAt <= Int(Date().timeIntervalSince1970) + 31_536_000 else {
+            throw Failure.invalidResponse
+        }
+        var request = URLRequest(url: trustedAliceOrigin.appendingPathComponent("v1/human-enrollment-begin"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer " + humanBearer, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "public_pem": publicPEM, "key_expires_at": keyExpiresAt,
+            "operation": "enroll", "expected_version": 0
+        ])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.invalidResponse }
+        if http.statusCode == 401 || http.statusCode == 403 { throw Failure.notAuthorized }
+        guard http.statusCode == 200, data.count <= 8_192,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == [
+                "purpose", "tenant", "session", "account", "installation",
+                "public_key_sha256", "operation", "expected_version",
+                "key_expires_at", "nonce", "expires_at"
+              ] else { throw Failure.invalidResponse }
+        // The channel checks the challenge's exact key and account binding
+        // BEFORE asking Secure Enclave to sign.
+        return data
+    }
+
+    /// A successful fixture ACK is the sole basis for displaying an enrolled
+    /// fixture key. It does not prove a real IdP, device attestation, or PSP.
+    func completeFictionalDeviceEnrollment(
+        baseURL: URL, humanBearer: String,
+        challengeData: Data, signature: String,
+        tenant: String, ownerSession: String,
+        account: String, installation: String,
+        expectedVersion: Int
+    ) async throws {
+        try checkEnrollmentTransport(baseURL: baseURL, humanBearer: humanBearer)
+        guard (64...192).contains(signature.utf8.count),
+              signature.utf8.allSatisfy({
+                  (48...57).contains($0) || (65...90).contains($0)
+                      || (97...122).contains($0) || $0 == 45 || $0 == 95
+              }),
+              challengeData.count <= 8_192,
+              let challenge = try? JSONSerialization.jsonObject(with: challengeData)
+                  as? [String: Any] else { throw Failure.invalidResponse }
+        var request = URLRequest(url: trustedAliceOrigin.appendingPathComponent("v1/human-enrollment-complete"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer " + humanBearer, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "challenge": challenge, "signature": signature
+        ])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.invalidResponse }
+        if http.statusCode == 401 || http.statusCode == 403 { throw Failure.notAuthorized }
+        guard http.statusCode == 200, data.count <= 2_048,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == [
+                "tenant", "session", "account", "installation", "version", "status"
+              ],
+              object["status"] as? String == "enrolled_fixture_only",
+              object["tenant"] as? String == tenant,
+              object["session"] as? String == ownerSession,
+              object["account"] as? String == account,
+              object["installation"] as? String == installation,
+              object["version"] as? Int == expectedVersion else {
+            throw Failure.invalidResponse
+        }
+    }
+
+    private func checkEnrollmentTransport(baseURL: URL, humanBearer: String) throws {
+        guard baseURL == trustedAliceOrigin,
+              baseURL.scheme?.lowercased() == "https",
+              baseURL.host != nil, baseURL.user == nil,
+              baseURL.password == nil, baseURL.query == nil,
+              baseURL.fragment == nil,
+              baseURL.path.isEmpty || baseURL.path == "/" else {
+            throw Failure.invalidEndpoint
+        }
+        guard humanBearer.utf8.count >= 32, humanBearer.utf8.count <= 4_096,
+              humanBearer.utf8.allSatisfy({ (33...126).contains($0) }),
+              !humanBearer.contains(":") else { throw Failure.invalidCredential }
+    }
 }
 
 private final class SecureRunnerNoRedirects: NSObject, URLSessionTaskDelegate {

@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import SwiftUI
 import XCTest
 @testable import Alice
 
@@ -42,7 +43,18 @@ private final class FictionalURLProtocol: URLProtocol {
         else { client?.urlProtocol(self, didFailWithError:
             URLError(.badServerResponse)); return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{\"status\":\"approved\",\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"checkout_id\":\"fixture-checkout\"}".utf8))
+        let body: String
+        if url.path == "/v1/human-status" {
+            body = "{\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"status\":\"unknown\",\"payment_environment\":\"fictional_only\",\"can_submit_payment\":false}"
+        } else if url.path == "/v1/human-enrollment-begin" {
+            let expiry = Int(Date().timeIntervalSince1970) + 120
+            body = "{\"purpose\":\"alice-r02-device-enroll-v1\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"account\":\"fixture-account\",\"installation\":\"fixture-installation\",\"public_key_sha256\":\"\(String(repeating: "a", count: 64))\",\"operation\":\"enroll\",\"expected_version\":0,\"key_expires_at\":\(expiry + 86_400),\"nonce\":\"fixture-nonce\",\"expires_at\":\(expiry)}"
+        } else if url.path == "/v1/human-enrollment-complete" {
+            body = "{\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"account\":\"fixture-account\",\"installation\":\"fixture-installation\",\"version\":1,\"status\":\"enrolled_fixture_only\"}"
+        } else {
+            body = "{\"status\":\"approved\",\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"checkout_id\":\"fixture-checkout\"}"
+        }
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 
@@ -50,6 +62,125 @@ private final class FictionalURLProtocol: URLProtocol {
 }
 
 final class SecureRunnerStatusClientTests: XCTestCase {
+    @MainActor
+    func testR02UIHasNoAuthenticatedAccountSessionByDefault() {
+        XCTAssertNil(EnvironmentValues().secureRunnerAuthenticatedChannel)
+    }
+
+    @MainActor
+    func testInAppStatusRequiresExactAuthenticatedScopeBeforeNetwork() async throws {
+        let origin = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let channel = try SecureRunnerAuthenticatedChannel(
+            trustedAliceOrigin: origin, humanBearer: String(repeating: "t", count: 48),
+            jobID: "fictional-job-01", tenant: "fixture-t", ownerSession: "fixture-s",
+            account: "alice-fixture", installation: "install-fixture",
+            enrolledKeyVersion: nil, testProtocolClasses: [FictionalURLProtocol.self])
+        _ = FictionalRequestCapture.shared.take()
+
+        do {
+            _ = try await channel.status(
+                errandID: "attacker-job", markedR02: true, hermesOriginSession: "fixture-s")
+            XCTFail("A different Hermes job was allowed to fetch authenticated status")
+        } catch SecureRunnerStatusClient.Failure.identityMismatch {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        do {
+            _ = try await channel.status(
+                errandID: "fictional-job-01", markedR02: false, hermesOriginSession: "fixture-s")
+            XCTFail("Legacy checkout was allowed to fetch an R02 status")
+        } catch SecureRunnerStatusClient.Failure.identityMismatch {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        do {
+            _ = try await channel.status(
+                errandID: "fictional-job-01", markedR02: true, hermesOriginSession: "other-session")
+            XCTFail("A different Hermes session was allowed to reuse account context")
+        } catch SecureRunnerStatusClient.Failure.identityMismatch {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        do {
+            _ = try await channel.status(
+                errandID: "fictional-job-01", markedR02: true, hermesOriginSession: "")
+            XCTFail("A missing Hermes session was treated as authenticated scope")
+        } catch SecureRunnerStatusClient.Failure.identityMismatch {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        let result = try await channel.status(
+            errandID: "fictional-job-01", markedR02: true, hermesOriginSession: "fixture-s")
+        XCTAssertEqual(result.status, .unknown)
+        XCTAssertTrue(result.isFictionalOnly)
+        XCTAssertFalse(result.status.allowsCheckout)
+        let request = try XCTUnwrap(FictionalRequestCapture.shared.take())
+        XCTAssertEqual(request.url?.absoluteString, "https://alice-fixture.invalid/v1/human-status")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"),
+                       "Bearer " + String(repeating: "t", count: 48))
+        XCTAssertEqual(request.httpMethod, "POST")
+    }
+
+    @MainActor
+    func testR02ConsentCannotSignWithoutVerifiedEnrollmentAndChallenge() async throws {
+        let origin = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let channel = try SecureRunnerAuthenticatedChannel(
+            trustedAliceOrigin: origin, humanBearer: String(repeating: "t", count: 48),
+            jobID: "fictional-job-01", tenant: "fixture-t", ownerSession: "fixture-s",
+            account: "alice-fixture", installation: "install-fixture",
+            enrolledKeyVersion: nil, testProtocolClasses: [FictionalURLProtocol.self])
+        let unverified = try SecureRunnerStatusClient.interpret(
+            Data("{\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"status\":\"awaiting_approval\",\"payment_environment\":\"fictional_only\",\"can_submit_payment\":false}".utf8),
+            jobID: "fictional-job-01", tenant: "fixture-t", session: "fixture-s")
+        _ = FictionalRequestCapture.shared.take()
+        do {
+            try await channel.approveReviewedFictionalCheckout(unverified)
+            XCTFail("Consent proceeded without verified enrollment and reviewed challenge")
+        } catch SecureRunnerStatusClient.Failure.notAuthorized {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+    }
+
+    func testFictionalEnrollmentTransportRejectsUntrustedOriginAndWrongAck() async throws {
+        let origin = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let other = try XCTUnwrap(URL(string: "https://attacker-fixture.invalid"))
+        let client = try SecureRunnerStatusClient(
+            trustedAliceOrigin: origin, testProtocolClasses: [FictionalURLProtocol.self])
+        let bearer = String(repeating: "t", count: 48)
+        let syntheticPEM = "-----BEGIN PUBLIC KEY-----\n"
+            + String(repeating: "A", count: 160) + "\n-----END PUBLIC KEY-----\n"
+        _ = FictionalRequestCapture.shared.take()
+        do {
+            _ = try await client.beginFictionalDeviceEnrollment(
+                baseURL: other, humanBearer: bearer, publicPEM: syntheticPEM,
+                keyExpiresAt: Int(Date().timeIntervalSince1970) + 86_400)
+            XCTFail("Enrollment sent an Alice credential to an untrusted HTTPS origin")
+        } catch SecureRunnerStatusClient.Failure.invalidEndpoint {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        let challenge = try await client.beginFictionalDeviceEnrollment(
+            baseURL: origin, humanBearer: bearer, publicPEM: syntheticPEM,
+            keyExpiresAt: Int(Date().timeIntervalSince1970) + 86_400)
+        XCTAssertNotNil(FictionalRequestCapture.shared.take())
+        XCTAssertNotNil(try JSONSerialization.jsonObject(with: challenge) as? [String: Any])
+        do {
+            try await client.completeFictionalDeviceEnrollment(
+                baseURL: origin, humanBearer: bearer, challengeData: challenge,
+                signature: String(repeating: "A", count: 88),
+                tenant: "fixture-t", ownerSession: "fixture-s",
+                account: "fixture-account", installation: "fixture-installation",
+                expectedVersion: 2)
+            XCTFail("Wrong version in fake enrollment acknowledgement was accepted")
+        } catch SecureRunnerStatusClient.Failure.invalidResponse {
+            XCTAssertNotNil(FictionalRequestCapture.shared.take())
+        }
+        try await client.completeFictionalDeviceEnrollment(
+            baseURL: origin, humanBearer: bearer, challengeData: challenge,
+            signature: String(repeating: "A", count: 88),
+            tenant: "fixture-t", ownerSession: "fixture-s",
+            account: "fixture-account", installation: "fixture-installation",
+            expectedVersion: 1)
+        XCTAssertNotNil(FictionalRequestCapture.shared.take())
+        // This tests only fixture transport matching, never possession proof
+        // or enrollment by a genuine independent Alice identity provider.
+    }
+
     private func status(
         _ state: String, receipt: [String: Any]? = nil,
         tenant: String = "tenant-fixture", session: String = "session-fixture"

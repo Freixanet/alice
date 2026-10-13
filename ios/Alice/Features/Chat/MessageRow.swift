@@ -1218,6 +1218,10 @@ struct PaymentApprovalCard: View {
         VStack(alignment: .leading, spacing: 10) {
             Label(language.pick("Confirm the payment", "Confirmar el pago"), systemImage: "creditcard")
                 .font(.subheadline.weight(.semibold))
+            Text(language.pick("Legacy Hermes payment approval · not Alice Secure Runner",
+                               "Aprobación de pago anterior de Hermes · no es Alice Secure Runner"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Text(language.pick("Alice will pay on \(payment.site) with your \(payment.card).",
                                "Alice pagará en \(payment.site) con tu \(payment.card)."))
                 .font(.subheadline)
