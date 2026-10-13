@@ -31,8 +31,11 @@ lock_dir=$plugins_dir/.alice-install.lock
 restart_services=0
 # $HOME is caller-controlled; use the OS account record, not that variable,
 # before touching fixed launchctl labels belonging to the logged-in user.
-canonical_home=$(python3 -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)')
-if [[ ${hermes_home:A} == ${canonical_home:A}/.hermes ]]; then
+canonical_home=''
+if [[ -x /usr/bin/python3 ]]; then
+  canonical_home=$(/usr/bin/python3 -I -c 'import os, pwd; print(pwd.getpwuid(os.getuid()).pw_dir)' 2>/dev/null) || canonical_home=''
+fi
+if [[ -n $canonical_home && ${hermes_home:A} == ${canonical_home:A}/.hermes ]]; then
   restart_services=1
 fi
 
@@ -40,6 +43,22 @@ if ! command -v hermes >/dev/null; then
   print -u2 'The hermes command was not found. Install Hermes first.'
   exit 1
 fi
+if [[ ! -x /usr/bin/python3 ]]; then
+  print -u2 'Refusing to install without trusted system Python for path validation.'
+  exit 1
+fi
+# Inspect the un-resolved lexical path: realpath() alone would hide symlink
+# ancestors and allow a forged sandbox to point into an unrelated directory.
+/usr/bin/python3 -I - "$hermes_home" "$plugins_dir" "$hermes_home/backups" <<'PY'
+import os
+from pathlib import Path
+import sys
+for item in sys.argv[1:]:
+    leaf = Path(os.path.abspath(item))
+    for parent in (*reversed(leaf.parents), leaf):
+        if parent.is_symlink():
+            raise SystemExit("Refusing a symlink ancestor: " + str(parent))
+PY
 if [[ -L $hermes_home || -L $plugins_dir || -L $hermes_home/backups ]]; then
   print -u2 'Refusing a symlink in Hermes home, plugins or backup directory.'
   exit 1

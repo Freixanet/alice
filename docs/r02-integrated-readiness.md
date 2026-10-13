@@ -518,6 +518,55 @@ explicit regression test. The response is still size-bounded and no automatic
 checkout reattempt is introduced. **This does not constitute verified green
 CI on `0e25348` or proof of an exact overall HTTP deadline.**
 
+On `637ee48`, the H02.1 GitHub run confirmed the corresponding issue in the
+**standalone Hermes plugin**: its `r02_remote._read_bounded_response()`
+also attempted `settimeout` on a closed `HTTP/1.0` SSL connection handle
+while the response still had a readable buffer. The next local fix applies
+the same errno-specific bounded-buffer fallback to that proposal-only
+client, with a dedicated negative regression test. The proposed network
+request stays HTTPS-only, no redirect and no privileged executor capability.
+The subsequent SHA must pass the official CI before any green claim.
+
+### Further locally verified safety corrections (not yet released)
+
+Independent reviewers identified a cross-restart verifier downgrade: a
+previously registry-authorized checkout could be reopened with the same runner
+SQLite ledger but only a synthetic HMAC/static verifier, bypassing the
+registry's subsequent revocation. On restoration and before every commit,
+the runner now examines **persisted approval provenance** (key version and
+signed challenge grant). An approved, device-bound checkout with no authentic
+registry/effect guard transitions durably to `UNKNOWN` and never falls back
+to HMAC checkout dispatch. The regression restores a signed, revoked P-256
+fixture job with an intentionally misconfigured HMAC verifier and verifies
+**zero new merchant submissions**. `UNKNOWN` remains read-only reconcilable;
+its presence is not proof that an order was submitted.
+
+The older Hermes errand engine also cannot interpret a `404`, unknown or
+unreachable **existing** run ID as permission to launch another native-tool
+run. This uncertainty now survives service recovery, including a resumed
+errand without a fresh user message. A stop request stays visibly pending
+until Hermes reports a terminal run status; it does **not** claim that prior
+side effects were undone. The errand archive that records `run_start_uncertain`
+now fsyncs its temporary file and parent directory across atomic replacement
+_before_ issuing any remote `/v1/runs` request; injected write failures do
+not allow a run to start. Hard power-loss guarantees remain dependent on the
+filesystem and host implementation.
+
+The installer resolves the current account home through trusted system Python
+(`-I`, absolute path), checks every lexical parent directory for symlinks,
+and refuses GUI service restarts when installing into an alternate Hermes
+home. All installer tests use a disposable fake Hermes and must never touch
+the owner's profile. Concurrent edits to Hermes `config.yaml` during a failed
+installation remain a potential conflict requiring recovery inspection;
+no universal atomic rollback or authenticated service health is claimed.
+
+Targeted local validations after these edits include **61 Python
+registry/runner/planner tests PASS**, **45 legacy engine/registry tests PASS**,
+and **20 isolated installer tests PASS**. An earlier wider candidate suite
+passed **175 tests, with 9 optional Chromium skips** before the latest
+legacy and provenance changes. Exact-SHA official CI and available Swift/iOS
+checks must still be verified for the next published commit.
+
 No real account, keychain, Hermes installation, browser profile, service,
 merchant or payment endpoint was accessed in these local hardening tests.
 The combined local Python/egress/installer suite for `6ae172b` reported

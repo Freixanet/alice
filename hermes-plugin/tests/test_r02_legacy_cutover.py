@@ -6,9 +6,10 @@ import os
 import tempfile
 import threading
 import unittest
+import urllib.error
 from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 def load(name: str, filename: str):
@@ -20,6 +21,108 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_missing_known_run_id_is_not_permission_to_restart_native_tools(self):
+        errands = load("r02_404_run_status", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-lost-status-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional task", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="working", run_id="accepted-original-run", runs=1)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.side_effect = urllib.error.HTTPError(
+                "https://localhost/v1/runs/accepted-original-run", 404, "missing", {}, None)
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    judge=lambda *_: self.fail("unknown must not be judged"),
+                                    sleep=lambda _: None)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}):
+                self.assertEqual(engine.run("please continue"), "stuck")
+                self.assertEqual(engine.run(), "stuck")
+            gateway.start.assert_not_called()
+            saved = errands.get(home, entry["id"])
+            self.assertTrue(saved["run_status_uncertain"])
+            self.assertEqual(saved["status"], "stuck")
+
+    def test_new_run_accepted_then_404_never_triggers_a_second_run(self):
+        errands = load("r02_accepted_then_lost_run", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-after-accepted-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional only", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.durable_run_idempotency.return_value = False
+            gateway.start.return_value = "accepted-fictional-run"
+            gateway.status.side_effect = urllib.error.HTTPError(
+                "https://localhost/v1/runs/accepted-fictional-run", 404, "missing", {}, None)
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    judge=lambda *_: {"should_continue": True},
+                                    sleep=lambda _: None)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                 patch.object(errands, "prepare_browser", return_value=True):
+                self.assertEqual(engine.run("start"), "stuck")
+            gateway.start.assert_called_once()
+            self.assertTrue(errands.get(home, entry["id"])["run_status_uncertain"])
+
+    def test_failed_fsync_prevents_any_remote_start(self):
+        errands = load("r02_fsync_blocks_dispatch", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-crash-before-run-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional only", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.durable_run_idempotency.return_value = True
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    judge=lambda *_: {"status": "done"}, sleep=lambda _: None)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                 patch.object(errands, "prepare_browser", return_value=True), \
+                 patch.object(errands.os, "fsync", side_effect=OSError("fictional durability fault")):
+                with self.assertRaises(OSError):
+                    engine.run("start")
+            gateway.start.assert_not_called()
+
+    def test_stop_is_not_confirmed_when_hermes_still_reports_running(self):
+        errands = load("r02_stop_verification", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-stop-verify-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional task", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="working", run_id="active-fictional-run")
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "running"}
+            with patch.object(errands, "Gateway", return_value=gateway), \
+                    patch.object(errands, "release_context"), \
+                    patch.object(errands, "_goal_manager"):
+                pending = errands.stop(home, entry["id"])
+                self.assertEqual(pending["status"], "stuck")
+                self.assertTrue(pending["cutover_stop_pending"])
+                gateway.status.return_value = {"status": "cancelled"}
+                verified = errands.stop(home, entry["id"])
+                self.assertEqual(verified["status"], "stopped")
+                self.assertFalse(verified["cutover_stop_pending"])
+
+    def test_write_failure_before_rename_preserves_existing_fence(self):
+        errands = load("r02_fsync_barrier", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-durable-fence-") as temporary:
+            path = Path(temporary) / "errands.json"
+            errands._write(path, [{"id": "before", "run_start_uncertain": True}])
+            with patch.object(errands.os, "fsync", side_effect=OSError("synthetic durable write failure")):
+                with self.assertRaises(OSError):
+                    errands._write(path, [{"id": "after", "run_start_uncertain": False}])
+            self.assertEqual(errands._read(path, strict=True),
+                             [{"id": "before", "run_start_uncertain": True}])
+            self.assertFalse(list(path.parent.glob(".errands.*")))
+
     def test_pinned_hermes_gateway_durable_idempotency_feature_gate(self):
         errands = load("r02_pinned_run_idempotency", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-idempotency-") as directory:

@@ -328,6 +328,43 @@ class DeviceRegistryCheckoutContractTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.fixture.tearDownClass()
 
+    def test_device_approved_job_cannot_downgrade_to_hmac_after_revocation_and_restart(self):
+        with tempfile.TemporaryDirectory(prefix="alice-device-no-crypto-downgrade-") as tmp:
+            folder = Path(tmp)
+            private, public = _keypair(folder, "device")
+            registry = RevocableP256DeviceConsent(folder / "devices.sqlite3")
+            self.addCleanup(registry.close)
+            version = registry.enroll(tenant="tenant-v", session="session-v",
+                                      account="owner-v", installation="device-v",
+                                      public_pem=public, expires_at=int(time.time()) + 3600)
+            db = folder / "runner.sqlite3"
+            def adapter():
+                return FictionalHTTPSAdapter(origin=self.fixture.shop.url,
+                                            ca_file=self.fixture.cert,
+                                            merchant_token=self.fixture.shop_secret)
+            runner = AliceRunner(adapter(), approval_verifier=registry, ledger_path=db)
+            flow = Coordinator(runner, tenant="tenant-v", session="session-v",
+                               recipient="Fictional delivery", planner=FictionalPlanner())
+            prepared = flow.run_to_approval()
+            runner.approve(flow.job_id, tenant="tenant-v", session="session-v",
+                           signature=_sign(private, _canonical(prepared["approval_challenge"]), folder))
+            with self.fixture.store._lock:
+                attempts_before = self.fixture.store.submit_attempts
+            runner.close()
+            registry.revoke(tenant="tenant-v", session="session-v",
+                            account="owner-v", expected_version=version)
+            # An incorrectly configured restart must not turn a revocable
+            # approval into a non-revocable HMAC or static-verifier payment.
+            downgraded = AliceRunner(adapter(), approval_key=b"synthetic-hmac-only-key-32-bytes!!",
+                                     ledger_path=db)
+            self.addCleanup(downgraded.close)
+            self.assertEqual(downgraded.resume_job(
+                flow.job_id, tenant="tenant-v", session="session-v")["status"], "unknown")
+            with self.assertRaises(Denied):
+                downgraded.commit(flow.job_id, tenant="tenant-v", session="session-v")
+            with self.fixture.store._lock:
+                self.assertEqual(self.fixture.store.submit_attempts, attempts_before)
+
     def test_revoke_prevents_approval_of_exact_prepared_checkout(self):
         with tempfile.TemporaryDirectory(prefix="alice-device-checkout-") as tmp:
             folder = Path(tmp)

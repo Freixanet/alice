@@ -262,10 +262,21 @@ def _read(path: Path, *, strict: bool = False) -> List[Dict[str, Any]]:
 
 def _write(path: Path, entries: List[Dict[str, Any]]) -> None:
     fd, tmp = tempfile.mkstemp(dir=str(Path(path).parent), prefix=".errands.")
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(entries, handle, ensure_ascii=False)
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(entries, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+        directory = os.open(str(Path(path).parent), os.O_RDONLY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
 
 
 def shop(value: str) -> str:
@@ -1537,7 +1548,9 @@ class Engine:
                 state = self.gateway.status(run_id)
             except urllib.error.HTTPError as exc:
                 if exc.code == 404:
-                    return {"status": "interrupted"}
+                    # Lost gateway metadata cannot certify that a native-tool
+                    # run has stopped or did not complete external effects.
+                    return {"status": "run_identity_unknown"}
                 raise
             status = str(state.get("status") or "")
             page = circling(self._entry())
@@ -1565,7 +1578,7 @@ class Engine:
             return "missing"
         if self._cutover_fence(run_id=entry.get("run_id")):
             return "stuck"
-        if entry.get("run_start_uncertain"):
+        if entry.get("run_start_uncertain") or entry.get("run_status_uncertain"):
             # POST /v1/runs may have been accepted even if its response was
             # lost. Without an idempotent official API or a known run_id, a
             # restarted engine must NOT create a second native-tool run.
@@ -1580,13 +1593,29 @@ class Engine:
         stalls = 0
         # Restarted while its last run still goes on in the gateway: that run finishes first,
         # never a second one beside it in the same session.
-        if entry.get("run_id") and message:
+        if entry.get("run_id"):
             try:
                 still = str(self.gateway.status(entry["run_id"]).get("status") or "")
-            except Exception:  # noqa: BLE001 — gone or unreachable: nothing to wait for
-                still = ""
+            except Exception:
+                update(self.home, self.errand_id, status="stuck",
+                       run_status_uncertain=True,
+                       reason="El estado del run anterior no se puede verificar; "
+                              "revisa sus efectos antes de cualquier nueva ejecución.")
+                return "stuck"
+            if not still or still == "interrupted":
+                update(self.home, self.errand_id, status="stuck",
+                       run_status_uncertain=True,
+                       reason="El run anterior tiene un estado incierto; "
+                              "no se iniciará otra ejecución automática.")
+                return "stuck"
             if still in ("running", "waiting_for_approval", "queued"):
-                self._wait_run(entry["run_id"])
+                prior = self._wait_run(entry["run_id"])
+                if prior.get("status") in ("run_identity_unknown", "interrupted", "cancelled"):
+                    update(self.home, self.errand_id, status="stuck",
+                           run_status_uncertain=True,
+                           reason="Se perdió la verificación del run anterior; "
+                                  "inspecciona manualmente cualquier efecto.")
+                    return "stuck"
                 # Preserve unused instructions across recovery, but never replay an approval
                 # already accepted by the surviving run.
                 if (not text.startswith(APPROVED_PREFIX)
@@ -1670,6 +1699,17 @@ class Engine:
                 self._cutover_fence(run_id=entry.get("run_id"))
                 return "stuck"
             state = self._wait_run(run_id)
+            # A trusted caller may have changed the job while the poll was
+            # waiting. Never overwrite its durable terminal/stopping state.
+            latest = self._entry()
+            if latest.get("status") != "working":
+                return latest.get("status", "missing")
+            if state.get("status") in ("run_identity_unknown", "interrupted", "cancelled"):
+                update(self.home, self.errand_id, status="stuck",
+                       run_status_uncertain=True,
+                       reason="No se puede verificar la finalización sin efectos del run; "
+                              "comprueba el pedido antes de continuar.")
+                return "stuck"
             if self._cutover_fence(run_id=run_id):
                 return "stuck"
             reply = _clean(state.get("output") or "", 2000)
@@ -2050,18 +2090,35 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         return None
     if entry.get("status") not in ACTIVE + ("stuck",):
         return entry
-    if entry.get("run_start_uncertain"):
+    if entry.get("run_start_uncertain") or entry.get("run_status_uncertain"):
         # No known run_id to cancel. Never falsely acknowledge remote stop.
         return update(home, errand_id, status="stuck", cutover_stop_pending=True,
                       reason="Inicio Hermes incierto; puede quedar una ejecución remota activa. "
                              "Necesita inspección y parada manual; no se ha confirmado cancelación.")
-    entry = update(home, errand_id, status="stopped", reason="El recado se ha detenido.", secure_request=None, resume_message=None)
+    run_id = entry.get("run_id")
+    # Persist an unverified stop before asking Hermes to terminate a native
+    # tool run. An HTTP acknowledgement alone cannot cancel past effects.
+    entry = update(home, errand_id,
+                   status="stuck" if run_id else "stopped",
+                   cutover_stop_pending=bool(run_id),
+                   reason=("Parada solicitada a Hermes; estado remoto sin verificar."
+                           if run_id else "El recado no tiene una ejecución remota activa."),
+                   secure_request=None, resume_message=None)
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:
         pass
-    if entry.get("run_id"):
-        Gateway(home, entry.get("profile") or "").stop(entry["run_id"])
+    if run_id:
+        gateway = Gateway(home, entry.get("profile") or "")
+        try:
+            gateway.stop(run_id)
+            terminal = str(gateway.status(run_id).get("status") or "") in FINISHED
+        except Exception:
+            terminal = False
+        if terminal:
+            entry = update(home, errand_id, status="stopped", cutover_stop_pending=False,
+                           reason="Hermes confirma ejecución terminada; "
+                                  "esto no garantiza que no existan efectos anteriores.")
     release_context(errand_id)
     return entry
 

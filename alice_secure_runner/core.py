@@ -267,12 +267,23 @@ class AliceRunner:
         if job.state != "approved":
             return False
         checker = getattr(self.__approval_verifier, "effect_admission_state", None)
-        if not callable(checker):
-            return False
-        digest = job.approval_challenge_digest
-        if (not digest or checker(tenant=job.tenant, session=job.owner_session,
-                                 challenge_digest=digest) != "effect_admitted"):
-            return False
+        effect_guard = getattr(self.__approval_verifier, "guard_effect", None)
+        device_bound = bool(job.approval_device_version or job.approval_challenge_digest)
+        if not callable(checker) or not callable(effect_guard):
+            if not device_bound:
+                return False
+            # Security provenance survives a process restart. Never downgrade
+            # an approval signed by a revocable device to a static/HMAC
+            # verifier simply because the registry was not configured.
+            state = "verifier_unavailable"
+        else:
+            digest = job.approval_challenge_digest
+            state = (checker(tenant=job.tenant, session=job.owner_session,
+                             challenge_digest=digest) if digest else None)
+            if state == "granted":
+                return False
+            if not device_bound and state != "effect_admitted":
+                return False
         cid = self._pending(job)["checkout_id"]
         changed = self.__db.execute(
             "UPDATE authorizations SET status='unknown' "

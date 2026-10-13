@@ -19,7 +19,9 @@ class OfflineInstallTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="alice-install-offline-")
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        # macOS /var is itself an OS symlink to /private/var. Work from the
+        # canonical temporary root so the ancestor-symlink guard can be tested.
+        self.root = Path(os.path.realpath(self.temp.name))
         self.source = self.root / "source"
         self.home = self.root / "fictional-user" / ".hermes"
         self.bin = self.root / "fake-bin"
@@ -27,7 +29,13 @@ class OfflineInstallTests(unittest.TestCase):
         self.source.mkdir()
         self.home.mkdir(parents=True)
         self.bin.mkdir()
-        shutil.copy2(SCRIPT, self.source / "install.sh")
+        # Replace only the privileged passwd LOOKUP in the throwaway COPY of
+        # the installer. Production uses /usr/bin/python3, never fake PATH.
+        script = SCRIPT.read_text(encoding="utf-8")
+        self.assertIn("canonical_home=$(/usr/bin/python3 -I -c", script)
+        script = script.replace("canonical_home=$(/usr/bin/python3 -I -c",
+                                'canonical_home=$("$ALICE_FAKE_SYSTEM_PYTHON" -c')
+        self._put(self.source / "install.sh", script, executable=True)
         self._put(self.source / "plugin.yaml", "name: alice\nversion: 1.0.0\nkind: standalone\nprovides_tools: [example_tool]\nprovides_hooks: [pre_tool_call]\n")
         self._put(self.source / "__init__.py", "# fictional plugin\n")
         self._put(self.source / "dashboard/dist/index.js", "// fictional dashboard\n")
@@ -113,6 +121,7 @@ class OfflineInstallTests(unittest.TestCase):
             "HERMES_HOME": str(self.home),
             "ALICE_FAKE_TRACE": str(self.trace),
             "ALICE_FAKE_PYTHON": sys.executable,
+            "ALICE_FAKE_SYSTEM_PYTHON": str(self.bin / "python3"),
             "ALICE_FAKE_CANONICAL_HOME": str(self.home.parent),
             "PYTHONPATH": os.pathsep.join(filter(None, (
                 site.getusersitepackages(), os.environ.get("PYTHONPATH", "")))),
@@ -223,6 +232,32 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("services NOT restarted", result.stdout)
         self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
+
+    def test_production_passwd_lookup_cannot_be_overridden_by_path(self):
+        # Only the OS-owned absolute interpreter can approve real GUI
+        # restarts, regardless of a malicious `python3` placed on PATH.
+        self._put(self.source / "install.sh", SCRIPT.read_text(), executable=True)
+        spoofed_user = self.root / "spoofed-passwd-user"
+        alternate = spoofed_user / ".hermes"
+        alternate.mkdir(parents=True)
+        self._put(alternate / "hermes-agent/venv/bin/python",
+                  (self.home / "hermes-agent/venv/bin/python").read_text(), executable=True)
+        result = self._run(HOME=spoofed_user, HERMES_HOME=alternate,
+                           ALICE_FAKE_CANONICAL_HOME=spoofed_user)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("services NOT restarted", result.stdout)
+        self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
+
+    def test_ancestor_alias_cannot_redirect_install_to_another_directory(self):
+        outside = self.root / "external-home"
+        outside.mkdir()
+        self._put(outside / "preserve.txt", "must remain unchanged\n")
+        (self.root / "shortcut").symlink_to(outside, target_is_directory=True)
+        result = self._run(HERMES_HOME=self.root / "shortcut" / ".hermes")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("symlink ancestor", result.stderr)
+        self.assertEqual((outside / "preserve.txt").read_text(), "must remain unchanged\n")
+        self.assertFalse((outside / ".hermes").exists())
 
     def test_symlinked_plugin_or_backup_parent_is_refused_before_mutation(self):
         for part in ("plugins", "backups"):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import errno
 import os
 import secrets
 import tempfile
@@ -42,11 +43,19 @@ class RemoteHTTPSDeadlineContractTests(unittest.TestCase):
         response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=socket)),
                                    read1=mock.Mock(side_effect=[b"a", b"b", b"c"]))
         with mock.patch.object(remote.time, "monotonic",
-                               side_effect=[0.0, 0.2, 0.7, 1.1]):
+                               side_effect=[0.0, 0.2, 0.3, 0.7, 0.8, 1.1]):
             with self.assertRaisesRegex(remote.RemotePlanningDenied, "absolute proposal HTTPS deadline"):
                 remote._read_bounded_response(response, max_bytes=10, seconds=1)
         self.assertEqual(response.read1.call_count, 2)
         self.assertEqual(socket.settimeout.call_count, 2)
+
+    def test_remote_plugin_reads_buffer_after_python312_connection_closes(self):
+        connection = mock.Mock()
+        connection.settimeout.side_effect = OSError(errno.EBADF, "closed")
+        response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace(_sock=connection)),
+                                   read1=mock.Mock(side_effect=[b"OK", b""]))
+        self.assertEqual(remote._read_bounded_response(response), b"OK")
+        connection.settimeout.assert_called_once()
 
     def test_remote_plugin_fails_closed_without_observable_socket(self):
         response = SimpleNamespace(fp=SimpleNamespace(raw=SimpleNamespace()),

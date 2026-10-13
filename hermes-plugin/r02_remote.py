@@ -9,6 +9,7 @@ Hermes configuration is touched by this module.
 from __future__ import annotations
 
 import json
+import errno
 import os
 import re
 import ssl
@@ -44,7 +45,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _read_bounded_response(response, *, max_bytes: int = 8193, seconds: float = 5.0) -> bytes:
-    """Enforce a monotonic TOTAL response deadline against slow drip peers.
+    """Enforce monotonic between-chunk and idle deadlines against drip peers.
 
     Keep the Hermes plugin independent of the Alice runner package. The
     stdlib HTTPSResponse socket and read1 are required here; absent either,
@@ -60,8 +61,20 @@ def _read_bounded_response(response, *, max_bytes: int = 8193, seconds: float = 
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             raise RemotePlanningDenied("absolute proposal HTTPS deadline")
-        sock.settimeout(min(5.0, remaining))
+        if sock is not None:
+            try:
+                sock.settimeout(min(5.0, remaining))
+            except OSError as error:
+                if error.errno != errno.EBADF:
+                    raise
+                # Python 3.12 closes the HTTPSConnection socket handle for
+                # HTTP/1.0 Connection:close before the buffered response has
+                # been fully consumed. urllib's idle timeout still applies
+                # to each read1 on the independently buffered response.
+                sock = None
         fragment = response.read1(min(4096, max_bytes - received))
+        if time.monotonic() > deadline:
+            raise RemotePlanningDenied("absolute proposal HTTPS deadline")
         if not fragment:
             break
         received += len(fragment)
