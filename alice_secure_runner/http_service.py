@@ -79,7 +79,7 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                 if hmac.compare_digest(bearer, "Bearer " + token):
                     principal = candidate
             role = ("human" if self.path in ("/v1/human-finish", "/v1/human-reissue",
-                                             "/v1/human-status")
+                                             "/v1/human-status", "/v1/human-approve")
                     else "coordinator")
             if principal is None or principal.role != role:
                 self._write(401, {"error": "unauthorized"})
@@ -98,7 +98,12 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     raise Denied("client identity cannot override bearer principal")
                 tenant, session = principal.tenant, principal.session
                 if self.path == "/v1/jobs":
-                    out = runner.new_job(tenant, session, obj["recipient"])
+                    # One caller-generated request identity survives a lost
+                    # HTTP reply without minting a second shopping job. The
+                    # runner commits this binding with its job in one SQLite
+                    # transaction and scopes it to authenticated principal.
+                    out = runner.new_job(tenant, session, obj["recipient"],
+                                         create_request_id=obj.get("create_request_id"))
                 elif self.path == "/v1/resume":
                     out = runner.resume_job(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/propose":
@@ -115,6 +120,12 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     out = runner.human_handoff(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-status":
                     out = runner.human_status(obj["job_id"], tenant=tenant, session=session)
+                elif self.path == "/v1/human-approve":
+                    # The human role supplies a detached exact-checkout
+                    # signature only; no checkout dispatch capability is
+                    # granted to this HTTPS route. ASR verifies the signature.
+                    out = runner.approve(obj["job_id"], tenant=tenant,
+                                         session=session, signature=obj["signature"])
                 elif self.path == "/v1/human-reissue":
                     out = runner.reissue_human_handle(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-finish":

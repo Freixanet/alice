@@ -392,6 +392,10 @@ class AliceRunner:
             if job.checkout is not None:
                 snapshot = job.checkout
                 out["checkout"] = snapshot.copy()
+                if job.state == "awaiting_approval":
+                    # Human sees the exact same P-256 challenge as the trusted
+                    # coordinator, never a Hermes/LLM-provided replacement.
+                    out["approval_challenge"] = self._challenge(job)
                 if job.state == "confirmed":
                     row = self.__db.execute(
                         "SELECT digest,status,order_id FROM authorizations WHERE checkout_id=?",

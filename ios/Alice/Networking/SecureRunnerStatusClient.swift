@@ -1,9 +1,10 @@
 import Foundation
 
-/// Alice-owned read-only HTTPS contract, independent of Hermes pairing and
+/// Alice-owned fictional HTTPS contract, independent of Hermes pairing and
 /// Hermes gateway credentials. The caller MUST obtain a separately authenticated
 /// Alice-human credential. No account provider or live endpoint is provisioned.
-/// This fixture protocol can report fictional receipts only, never real payments.
+/// It reads synthetic receipts and can forward a separate validated human
+/// signature, but cannot commit or initiate payment. Never a real PSP client.
 struct SecureRunnerStatusClient {
     enum Failure: Error, Equatable {
         case invalidEndpoint
@@ -16,6 +17,10 @@ struct SecureRunnerStatusClient {
     struct Observation: Sendable {
         let status: SecureRunnerDisplayStatus
         let checkout: SecureRunnerApprovalContract.Checkout?
+        /// Only a validated, exact fictional challenge may be forwarded to
+        /// SecureRunnerDeviceSigner after separate explicit user review.
+        let checkoutData: Data?
+        let approvalChallengeData: Data?
         /// A separate fictional merchant ledger matched the durable ASR entry.
         /// Never present this as evidence of a real PSP payment.
         let fictionalOrderID: String?
@@ -30,6 +35,7 @@ struct SecureRunnerStatusClient {
         let paymentEnvironment: String
         let canSubmitPayment: Bool
         let checkout: SecureRunnerApprovalContract.Checkout?
+        let approvalChallenge: SecureRunnerApprovalContract.Challenge?
         let fictionalReceipt: FictionalReceipt?
 
         enum CodingKeys: String, CodingKey {
@@ -37,6 +43,7 @@ struct SecureRunnerStatusClient {
             case paymentEnvironment = "payment_environment"
             case canSubmitPayment = "can_submit_payment"
             case checkout
+            case approvalChallenge = "approval_challenge"
             case fictionalReceipt = "fictional_receipt"
         }
     }
@@ -65,7 +72,8 @@ struct SecureRunnerStatusClient {
                   as? [String: Any],
               Set(root.keys).isSubset(of: [
                   "job_id", "tenant", "session", "status", "payment_environment",
-                  "can_submit_payment", "checkout", "fictional_receipt"
+                  "can_submit_payment", "checkout", "approval_challenge",
+                  "fictional_receipt"
               ]),
               let response = try? JSONDecoder().decode(Response.self, from: data),
               response.paymentEnvironment == "fictional_only",
@@ -89,6 +97,7 @@ struct SecureRunnerStatusClient {
             throw Failure.invalidResponse
         }
 
+        var originalCheckout: Data?
         if let checkout = response.checkout {
             // Validate the ORIGINAL nested object, not a re-encoded subset:
             // JSONDecoder otherwise silently drops attacker-supplied fields.
@@ -98,6 +107,21 @@ struct SecureRunnerStatusClient {
                   verified == checkout else {
                 throw Failure.invalidResponse
             }
+            originalCheckout = encoded
+        }
+        var originalChallenge: Data?
+        if response.approvalChallenge != nil {
+            guard response.status == "awaiting_approval",
+                  let checkoutData = originalCheckout,
+                  let raw = root["approval_challenge"] as? [String: Any],
+                  let challengeData = try? JSONSerialization.data(withJSONObject: raw),
+                  let checked = try? SecureRunnerApprovalContract.checkedChallengeBytes(
+                      checkoutData: checkoutData, challengeData: challengeData,
+                      expectedJobID: jobID, expectedTenant: tenant,
+                      expectedSession: session,
+                      now: Int(Date().timeIntervalSince1970)),
+                  !checked.isEmpty else { throw Failure.invalidResponse }
+            originalChallenge = challengeData
         }
         if let raw = root["fictional_receipt"] {
             guard let receipt = raw as? [String: Any],
@@ -107,7 +131,8 @@ struct SecureRunnerStatusClient {
         if status == .confirmed {
             guard let receipt = response.fictionalReceipt,
                   let checkout = response.checkout,
-                  !receipt.orderID.isEmpty, receipt.orderID.utf8.count <= 120,
+                  !receipt.orderID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  receipt.orderID.utf8.count <= 120,
                   receipt.checkoutID == checkout.checkoutID,
                   receipt.amountMinor == checkout.amountMinor,
                   receipt.currency == checkout.currency else {
@@ -119,6 +144,7 @@ struct SecureRunnerStatusClient {
         }
         return Observation(
             status: status, checkout: response.checkout,
+            checkoutData: originalCheckout, approvalChallengeData: originalChallenge,
             fictionalOrderID: response.fictionalReceipt?.orderID,
             isFictionalOnly: true
         )
@@ -173,6 +199,52 @@ struct SecureRunnerStatusClient {
         }
         guard http.statusCode == 200 else { throw Failure.invalidResponse }
         return try Self.interpret(data, jobID: jobID, tenant: tenant, session: ownerSession)
+    }
+
+    /// Human-authenticated transport of ALREADY validated signature bytes.
+    /// It does NOT generate a signature, prompt Face ID or submit a purchase.
+    /// The caller must display the exact checkout and receive an explicit
+    /// human action before invoking the separately protected device signer.
+    func submitFictionalHumanSignature(
+        baseURL: URL, humanBearer: String, jobID: String, signature: String
+    ) async throws {
+        guard baseURL.scheme?.lowercased() == "https",
+              baseURL.host != nil, baseURL.user == nil,
+              baseURL.password == nil, baseURL.query == nil,
+              baseURL.fragment == nil,
+              baseURL.path.isEmpty || baseURL.path == "/" else {
+            throw Failure.invalidEndpoint
+        }
+        guard humanBearer.utf8.count >= 32, humanBearer.utf8.count <= 4096,
+              humanBearer.utf8.allSatisfy({ (33...126).contains($0) }),
+              !humanBearer.contains(":") else { throw Failure.invalidCredential }
+        guard !jobID.isEmpty, jobID.utf8.count <= 160,
+              jobID.utf8.allSatisfy({
+                  (48...57).contains($0) || (65...90).contains($0)
+                      || (97...122).contains($0) || $0 == 45 || $0 == 95
+              }),
+              (64...192).contains(signature.utf8.count),
+              signature.utf8.allSatisfy({
+                  (48...57).contains($0) || (65...90).contains($0)
+                      || (97...122).contains($0) || $0 == 45 || $0 == 95
+              }) else { throw Failure.invalidResponse }
+        var request = URLRequest(url: baseURL.appendingPathComponent("v1/human-approve"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer " + humanBearer, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "job_id": jobID, "signature": signature
+        ])
+        let (body, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.invalidResponse }
+        if http.statusCode == 401 || http.statusCode == 403 {
+            throw Failure.notAuthorized
+        }
+        guard http.statusCode == 200, body.count <= 2048,
+              let object = try? JSONSerialization.jsonObject(with: body)
+                  as? [String: Any], object["status"] as? String == "approved"
+        else { throw Failure.invalidResponse }
     }
 }
 

@@ -15,14 +15,19 @@ import ssl
 import os
 import subprocess
 import sys
+import tempfile
+import time
 import unittest
 import urllib.error
 import urllib.request
+from pathlib import Path
 
-from alice_secure_runner.core import AliceRunner, FictionalHTTPSAdapter
+from alice_secure_runner.core import AliceRunner, FictionalHTTPSAdapter, _canonical
+from alice_secure_runner.device_registry import RevocableP256DeviceConsent
 from alice_secure_runner.http_service import FixturePrincipal, RunnerHTTPS
 
 import test_alice_secure_runner as shop_tests
+from test_h021_device_registry import _keypair, _sign
 
 
 class RunnerHTTPSBoundaryTests(unittest.TestCase):
@@ -77,6 +82,25 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         )
         with urllib.request.urlopen(req, context=self.ctx, timeout=3) as response:
             return json.loads(response.read())
+
+    def test_https_lost_create_response_is_idempotent_and_principal_scoped(self):
+        request_id = secrets.token_urlsafe(24)
+        original = {"recipient": "Fictional delivery", "create_request_id": request_id}
+        first = self.request("/v1/jobs", original)
+        # A lost response sends the SAME request, never a new job/effect.
+        self.assertEqual(self.request("/v1/jobs", original), first)
+        self.assertEqual(self.request("/v1/resume", {"job_id": first["job_id"]})["status"],
+                         "researching")
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/jobs", {**original, "recipient": "Changed destination"})
+        self.assertEqual(error.exception.code, 403)
+        second_tenant = self.request("/v1/jobs", original, token=self.other_tenant_token)
+        self.assertNotEqual(first["job_id"], second_tenant["job_id"])
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/jobs", {"recipient": "Fictional delivery",
+                                       "create_request_id": "short"})
+        self.assertEqual(error.exception.code, 403)
+        self.assertEqual(self.store.submit_attempts, 0)
 
     def test_https_real_coordinator_to_runner_full_fake_purchase(self):
         start = self.request("/v1/jobs", {"tenant": "user-A", "session": "paired", "recipient": "Fake shipping"})
@@ -313,6 +337,89 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertEqual(conflicting["status"], "unknown")
         self.assertNotIn("fictional_receipt", conflicting)
         self.assertEqual(self.store.submit_attempts, 1)
+
+    def test_separate_human_credential_approves_exact_fictional_checkout_without_dispatch(self):
+        created = self.request("/v1/jobs", {"recipient": "Fictional recipient"})
+        jid = created["job_id"]
+        last = created
+        for action in ({"action": "search", "query": "keyboard"},
+                       {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                       {"action": "add_to_cart", "quantity": 1},
+                       {"action": "prepare_checkout"}):
+            last = self.request("/v1/propose", {"job_id": jid,
+                "proposal": {**action, "epoch": last["epoch"]}})
+        human = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(human["checkout"], last["checkout"])
+        self.assertEqual(human["approval_challenge"], last["approval_challenge"])
+        signature = hmac.new(self.device_key, json.dumps(human["approval_challenge"],
+            sort_keys=True, separators=(",", ":")).encode(), hashlib.sha256).hexdigest()
+        for token in (self.runner_token, self.other_human_token):
+            with self.subTest(token=token[:4]), self.assertRaises(urllib.error.HTTPError) as error:
+                self.request("/v1/human-approve", {"job_id": jid, "signature": signature}, token=token)
+            self.assertIn(error.exception.code, (401, 403))
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/human-approve", {"job_id": jid, "signature": "wrong"}, token=self.human_token)
+        self.assertEqual(error.exception.code, 403)
+        self.assertEqual(self.request("/v1/human-approve", {"job_id": jid,
+            "signature": signature}, token=self.human_token)["status"], "approved")
+        self.assertEqual(self.store.submit_attempts, 0)
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/human-approve", {"job_id": jid,
+                "signature": signature}, token=self.human_token)
+        self.assertEqual(error.exception.code, 403)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_human_https_p256_enrolled_key_revocation_blocks_effect(self):
+        """Fixture human bearer + enrolled P-256, not a real iOS IdP or biometric."""
+        with tempfile.TemporaryDirectory(prefix="alice-human-p256-http-") as folder:
+            base = Path(folder)
+            private, pem = _keypair(base, "software-only-device")
+            registry = RevocableP256DeviceConsent(base / "registry.sqlite3")
+            self.addCleanup(registry.close)
+            registry.enroll(tenant="user-A", session="paired", account="alice-fixture",
+                            installation="software-fixture", public_pem=pem,
+                            expires_at=int(time.time()) + 3600)
+            runner = AliceRunner(FictionalHTTPSAdapter(
+                origin=self.shared.shop.url, ca_file=self.shared.cert,
+                merchant_token=self.shared.shop_secret), approval_verifier=registry)
+            self.addCleanup(runner.close)
+            with RunnerHTTPS(runner, principals={
+                self.runner_token: FixturePrincipal("coordinator", "user-A", "paired"),
+                self.human_token: FixturePrincipal("human", "user-A", "paired")},
+                cert_file=self.shared.cert, key_file=self.shared.key) as host:
+                def post(route, body, token):
+                    request = urllib.request.Request(host.url + route,
+                        data=json.dumps(body).encode(), method="POST",
+                        headers={"Authorization": "Bearer " + token,
+                                 "Content-Type": "application/json"})
+                    with urllib.request.urlopen(request, context=self.ctx, timeout=3) as response:
+                        return json.load(response)
+
+                created = post("/v1/jobs", {"recipient": "fictional recipient"}, self.runner_token)
+                jid, last = created["job_id"], created
+                for action in ({"action": "search", "query": "keyboard"},
+                               {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                               {"action": "add_to_cart", "quantity": 1},
+                               {"action": "prepare_checkout"}):
+                    last = post("/v1/propose", {"job_id": jid,
+                        "proposal": {**action, "epoch": last["epoch"]}}, self.runner_token)
+                status = post("/v1/human-status", {"job_id": jid}, self.human_token)
+                self.assertEqual(status["approval_challenge"], last["approval_challenge"])
+                signature = _sign(private, _canonical(status["approval_challenge"]), base)
+                with self.assertRaises(urllib.error.HTTPError) as wrong:
+                    post("/v1/human-approve", {"job_id": jid, "signature": signature},
+                         self.runner_token)
+                self.assertEqual(wrong.exception.code, 401)
+                approved = post("/v1/human-approve", {"job_id": jid,
+                    "signature": signature}, self.human_token)
+                self.assertEqual(approved["status"], "approved")
+                self.assertEqual(self.store.submit_attempts, 0)
+                registry.revoke(tenant="user-A", session="paired", account="alice-fixture",
+                                expected_version=1)
+                with self.assertRaises(urllib.error.HTTPError) as denied:
+                    post("/v1/commit", {"job_id": jid}, self.runner_token)
+                self.assertEqual(denied.exception.code, 403)
+                self.assertEqual(self.store.submit_attempts, 0)
 
 
 if __name__ == "__main__":

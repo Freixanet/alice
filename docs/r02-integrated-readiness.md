@@ -673,6 +673,39 @@ per-tenant OS/browser fencing, PSP certification and production operations.
 **R02 remains P0 / NO-GO.** These checks are functional local progress and
 must not be counted as a completed account-to-device-to-merchant trust chain.
 
+### Separate human-signature fixture and loss-resistant HTTPS job creation
+
+- The fictional Alice `RunnerHTTPS` now exposes `/v1/human-approve` only to a
+  **separate human-role bearer**. It accepts the detached signature of the
+  same ASR-generated exact checkout challenge returned by
+  `/v1/human-status`, and never dispatches a merchant payment. A coordinator
+  bearer and cross-tenant human bearer cannot use the route; replay fails.
+  The route is a **synthetic contract**, NOT an Alice identity provider.
+- The Swift iOS `SecureRunnerStatusClient` validates the exact fixture
+  checkout digest, nonce lifetime, tenant, job and session before exposing
+  data to the existing private-key signer; an additional method transfers
+  ONLY an already signed detached challenge over non-redirecting HTTPS.
+  No production account login, trusted URL provisioning, actual user-review
+  screen or iOS hardware-signing network flow is wired or claimed.
+- HTTPS `/v1/jobs` forwards the optional caller-generated `create_request_id`
+  to the existing durable, principal-scoped SQLite admission transaction.
+  Duplicate responses map to one job, while altered recipients and invalid
+  request IDs fail closed. This protects synthetic job creation from a lost
+  HTTP response but **does not** make payment retries safe.
+- A synthetic P-256 HTTPS test enrolls a disposable software device key,
+  proves a human bearer can approve the exact challenge, and verifies
+  revocation blocks coordinator commit with **zero merchant submissions**.
+  No Secure Enclave, Face ID, real human presence, external Hermes credentials,
+  OS sandbox or independent host is involved. The new HTTPS fixture test
+  module passed **14/14**, with the existing registry module **14/14**.
+- CI for exact published SHA `e3be24b0e94713baa363659e0bee2401d07141aa`
+  showed all four R02 workflows successful; Quality `verify` and `browser`
+  were successful while the iOS job was still in progress at the last check.
+  The second increment still requires a published SHA and exact CI.
+
+**Release unchanged: R02 P0 / NO-GO** until the external identity, iOS
+consent/UI, independent-host, production isolation and PSP requirements pass.
+
 The integrated branch advances plan A (security/architecture), B
 (identity contracts), C (official Hermes compatibility), D (shopping and
 recovery/R03), and E (distribution/iOS). The next **large mission** after

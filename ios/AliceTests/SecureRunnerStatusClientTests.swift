@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import XCTest
 @testable import Alice
@@ -84,6 +85,60 @@ final class SecureRunnerStatusClientTests: XCTestCase {
         ]
         XCTAssertThrowsError(try read(encoded()))
         object["checkout"] = checkout.merging(["irrelevant": "injection"]) { _, new in new }
+        XCTAssertThrowsError(try read(encoded()))
+    }
+
+    func testHumanChallengeIsBoundToExactFictionalCheckoutAndSession() throws {
+        let checkout: [String: Any] = [
+            "merchant": "Alice Fictional HTTPS Merchant", "sku": "FAKE-ALICE-1",
+            "variant": "standard", "quantity": 1, "recipient": "Fictional recipient",
+            "merchant_id": "alice-fictional-merchant-v1", "subtotal_minor": 2000,
+            "tax_minor": 499, "shipping_minor": 0, "discount_minor": 0,
+            "amount_minor": 2499, "currency": "EUR", "checkout_id": "test-id-001"
+        ]
+        let checkoutData = try JSONSerialization.data(withJSONObject: checkout)
+        let typed = try SecureRunnerApprovalContract.parseCheckout(checkoutData)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        let exactDigest = SHA256.hash(data: try encoder.encode(typed))
+            .map { String(format: "%02x", $0) }.joined()
+        let now = Int(Date().timeIntervalSince1970)
+        let challenge: [String: Any] = [
+            "job_id": "fake-job", "tenant": "tenant-fixture", "session": "session-fixture",
+            "snapshot_digest": exactDigest, "nonce": "fixture-nonce",
+            "expires_at": now + 180
+        ]
+        var payload = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            status("awaiting_approval")) as? [String: Any])
+        payload["checkout"] = checkout
+        payload["approval_challenge"] = challenge
+        func encoded() throws -> Data {
+            try JSONSerialization.data(withJSONObject: payload)
+        }
+        let accepted = try read(encoded())
+        XCTAssertEqual(accepted.status, .pending)
+        XCTAssertEqual(accepted.checkout, typed)
+        XCTAssertNotNil(accepted.checkoutData)
+        XCTAssertNotNil(accepted.approvalChallengeData)
+        XCTAssertFalse(accepted.status.allowsCheckout)
+
+        payload["approval_challenge"] = challenge.merging([
+            "session": "other-session"
+        ]) { _, replacement in replacement }
+        XCTAssertThrowsError(try read(encoded()))
+        payload["approval_challenge"] = challenge.merging([
+            "snapshot_digest": String(repeating: "0", count: 64)
+        ]) { _, replacement in replacement }
+        XCTAssertThrowsError(try read(encoded()))
+        payload["approval_challenge"] = challenge.merging([
+            "expires_at": now - 1
+        ]) { _, replacement in replacement }
+        XCTAssertThrowsError(try read(encoded()))
+        payload["approval_challenge"] = challenge
+        payload["checkout"] = checkout.merging(["amount_minor": 4999]) { _, new in new }
+        XCTAssertThrowsError(try read(encoded()))
+        payload["checkout"] = checkout
+        payload["status"] = "approved"
         XCTAssertThrowsError(try read(encoded()))
     }
 }
