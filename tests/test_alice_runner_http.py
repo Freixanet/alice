@@ -13,9 +13,11 @@ import json
 import secrets
 import ssl
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 import urllib.error
@@ -306,6 +308,139 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertNotIn("fictional_receipt", pending)
         self.assertEqual(self.store.submit_attempts, 0)
 
+    def test_idle_tls_peer_cannot_block_authenticated_requests(self):
+        """Slow handshake stays in bounded worker, never the accept loop."""
+        idle = socket.create_connection(("127.0.0.1", self.host.server.server_port), timeout=2)
+        completed = threading.Event()
+        errors: list[Exception] = []
+        def normal_request():
+            try:
+                response = self.request("/v1/jobs", {"recipient": "Fictional recipient"})
+                assert response["status"] == "researching"
+                completed.set()
+            except Exception as exc:
+                errors.append(exc)
+        requester = threading.Thread(target=normal_request, daemon=True)
+        try:
+            requester.start()
+            self.assertTrue(completed.wait(timeout=3),
+                            "idle TLS handshake blocked unrelated valid request")
+        finally:
+            idle.close()
+            requester.join(timeout=5)
+        self.assertFalse(requester.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_human_cancel_is_scoped_durable_and_blocks_legacy_proposals(self):
+        created = self.request("/v1/jobs", {"recipient": "Fictional delivery"})
+        jid = created["job_id"]
+        identity = {"job_id": jid}
+        for token in (self.runner_token, self.other_human_token, self.other_session_human_token):
+            with self.subTest(token=token[:5]), self.assertRaises(urllib.error.HTTPError) as error:
+                self.request("/v1/human-cancel", identity, token=token)
+            self.assertIn(error.exception.code, (401, 403))
+        cancelled = self.request("/v1/human-cancel", identity, token=self.human_token)
+        self.assertEqual(cancelled["status"], "stopped")
+        self.assertTrue(cancelled["browser_cleanup_verified"])
+        self.assertEqual(self.request("/v1/human-cancel", identity,
+                                      token=self.human_token)["status"], "stopped")
+        self.assertEqual(self.request("/v1/human-status", identity,
+                                      token=self.human_token)["status"], "stopped")
+        for path, body in (("/v1/propose", {"proposal": {"action": "search", "query": "keyboard", "epoch": 0}}),
+                           ("/v1/human-handoff", {}),
+                           ("/v1/commit", {})):
+            with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as error:
+                self.request(path, {**identity, **body})
+            self.assertEqual(error.exception.code, 403)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_cancel_approved_exact_checkout_invalidates_signature_without_dispatch(self):
+        start = self.request("/v1/jobs", {"recipient": "Fictional delivery"})
+        jid, last = start["job_id"], start
+        for action in ({"action": "search", "query": "keyboard"},
+                       {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                       {"action": "add_to_cart", "quantity": 1},
+                       {"action": "prepare_checkout"}):
+            last = self.request("/v1/propose", {"job_id": jid,
+                "proposal": {**action, "epoch": last["epoch"]}})
+        signed = hmac.new(self.device_key, _canonical(last["approval_challenge"]),
+                          hashlib.sha256).hexdigest()
+        self.assertEqual(self.request("/v1/human-approve", {"job_id": jid,
+            "signature": signed}, token=self.human_token)["status"], "approved")
+        self.assertEqual(self.request("/v1/human-cancel", {"job_id": jid},
+            token=self.human_token)["status"], "stopped")
+        row = self.runner._AliceRunner__db.execute(
+            "SELECT status FROM authorizations WHERE checkout_id=?",
+            (last["checkout"]["checkout_id"],)).fetchone()
+        self.assertEqual(row, ("stopped",))
+        for path, token, body in (("/v1/commit", self.runner_token, {}),
+                                  ("/v1/human-approve", self.human_token, {"signature": signed}),
+                                  ("/v1/human-handoff", self.runner_token, {})):
+            with self.subTest(path=path), self.assertRaises(urllib.error.HTTPError) as error:
+                self.request(path, {"job_id": jid, **body}, token=token)
+            self.assertEqual(error.exception.code, 403)
+        self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_human_cancel_does_not_erase_unknown_checkout_effect(self):
+        start = self.request("/v1/jobs", {"recipient": "Fictional delivery"})
+        jid, last = start["job_id"], start
+        for action in ({"action": "search", "query": "keyboard"},
+                       {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                       {"action": "add_to_cart", "quantity": 1},
+                       {"action": "prepare_checkout"}):
+            last = self.request("/v1/propose", {"job_id": jid,
+                "proposal": {**action, "epoch": last["epoch"]}})
+        signed = hmac.new(self.device_key, _canonical(last["approval_challenge"]),
+                          hashlib.sha256).hexdigest()
+        self.request("/v1/human-approve", {"job_id": jid,
+            "signature": signed}, token=self.human_token)
+        self.store.fail_next_submit = True
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/commit", {"job_id": jid})
+        self.assertEqual(error.exception.code, 409)
+        attempts = self.store.submit_attempts
+        with self.assertRaises(urllib.error.HTTPError) as error:
+            self.request("/v1/human-cancel", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(error.exception.code, 409)
+        self.assertEqual(self.request("/v1/human-status", {"job_id": jid},
+                                      token=self.human_token)["status"], "unknown")
+        self.assertEqual(self.store.submit_attempts, attempts)
+
+    def test_cancelled_exact_checkout_survives_sqlite_restart(self):
+        with tempfile.TemporaryDirectory(prefix="alice-cancel-restart-") as folder:
+            path = Path(folder) / "runner.sqlite3"
+            def construct():
+                return AliceRunner(FictionalHTTPSAdapter(
+                    origin=self.shared.shop.url, ca_file=self.shared.cert,
+                    merchant_token=self.shared.shop_secret), approval_key=self.device_key,
+                    ledger_path=path)
+            runner = construct()
+            created = runner.new_job("user-A", "paired", "Fictional delivery")
+            jid = created["job_id"]
+            last = created
+            for action in ({"action": "search", "query": "keyboard"},
+                           {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                           {"action": "add_to_cart", "quantity": 1},
+                           {"action": "prepare_checkout"}):
+                last = runner.propose(jid, tenant="user-A", session="paired",
+                    proposal={**action, "epoch": last["epoch"]})
+            self.assertEqual(runner.human_cancel(jid, tenant="user-A",
+                session="paired")["status"], "stopped")
+            runner.close()
+            reopened = construct()
+            try:
+                self.assertEqual(reopened.human_status(jid, tenant="user-A",
+                    session="paired")["status"], "stopped")
+                self.assertEqual(reopened.human_cancel(jid, tenant="user-A",
+                    session="paired")["status"], "stopped")
+                self.assertEqual(reopened._AliceRunner__db.execute(
+                    "SELECT status FROM authorizations WHERE checkout_id=?",
+                    (last["checkout"]["checkout_id"],)).fetchone(), ("stopped",))
+                self.assertEqual(self.store.submit_attempts, 0)
+            finally:
+                reopened.close()
+
     def test_human_status_only_confirms_matching_durable_fictional_receipt(self):
         start = self.request("/v1/jobs", {"recipient": "Fake shipping"})
         jid = start["job_id"]
@@ -329,6 +464,19 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         self.assertEqual(confirmed["status"], "confirmed")
         self.assertEqual(confirmed["fictional_receipt"]["amount_minor"], 2499)
         self.assertEqual(self.store.submit_attempts, 1)
+        # The client must not display a confirmed merchant receipt merely
+        # because ASR's own ledger says 'confirmed'. Independent receipt loss
+        # or conflict fails closed, with no automatic second POST attempt.
+        with self.store._lock:
+            original = self.store.orders.pop(last["checkout"]["checkout_id"])
+        missing = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(missing["status"], "unknown")
+        self.assertNotIn("fictional_receipt", missing)
+        self.assertEqual(self.store.submit_attempts, 1)
+        with self.store._lock:
+            self.store.orders[last["checkout"]["checkout_id"]] = original
+        restored = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
+        self.assertEqual(restored["status"], "confirmed")
         # Simulate a mismatched/corrupted authorization ledger; never infer
         # confirmation from cached UI or a runner status flag alone.
         self.runner._AliceRunner__db.execute("UPDATE authorizations SET digest='invalid' WHERE checkout_id=?",
@@ -336,6 +484,76 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         conflicting = self.request("/v1/human-status", {"job_id": jid}, token=self.human_token)
         self.assertEqual(conflicting["status"], "unknown")
         self.assertNotIn("fictional_receipt", conflicting)
+        self.assertEqual(self.store.submit_attempts, 1)
+
+    def test_slow_receipt_get_cannot_block_other_tenant_or_confirm_changed_ledger(self):
+        created = self.request("/v1/jobs", {"recipient": "Fictional delivery"})
+        jid, last = created["job_id"], created
+        for action in ({"action": "search", "query": "keyboard"},
+                       {"action": "select_product", "sku": "FAKE-ALICE-1"},
+                       {"action": "add_to_cart", "quantity": 1},
+                       {"action": "prepare_checkout"}):
+            last = self.request("/v1/propose", {"job_id": jid,
+                "proposal": {**action, "epoch": last["epoch"]}})
+        signature = hmac.new(self.device_key, _canonical(last["approval_challenge"]),
+                             hashlib.sha256).hexdigest()
+        self.request("/v1/human-approve", {"job_id": jid,
+            "signature": signature}, token=self.human_token)
+        self.request("/v1/commit", {"job_id": jid})
+        adapter = self.runner._AliceRunner__adapter
+        real_lookup = adapter.lookup_order
+        lookup_started, release_lookup, created_other = (
+            threading.Event(), threading.Event(), threading.Event())
+        result: list[dict] = []
+        errors: list[Exception] = []
+
+        def blocked_lookup(checkout_id):
+            lookup_started.set()
+            if not release_lookup.wait(timeout=5):
+                raise TimeoutError("synthetic slow merchant")
+            return real_lookup(checkout_id)
+
+        def slow_status():
+            try:
+                result.append(self.request("/v1/human-status", {"job_id": jid},
+                                           token=self.human_token))
+            except Exception as exc:
+                errors.append(exc)
+
+        def unrelated_job():
+            try:
+                self.request("/v1/jobs", {"recipient": "Unrelated fictional delivery"},
+                             token=self.other_tenant_token)
+                created_other.set()
+            except Exception as exc:
+                errors.append(exc)
+
+        adapter.lookup_order = blocked_lookup
+        first = threading.Thread(target=slow_status, daemon=True)
+        second = threading.Thread(target=unrelated_job, daemon=True)
+        try:
+            first.start()
+            self.assertTrue(lookup_started.wait(timeout=3), "merchant GET did not start")
+            second.start()
+            self.assertTrue(created_other.wait(timeout=3),
+                            "a slow merchant GET blocked a different tenant")
+            # Simulate another trusted ledger writer during outbound GET. The
+            # old response must not attest to the now-conflicting record.
+            with self.runner._AliceRunner__lock:
+                self.runner._AliceRunner__db.execute(
+                    "UPDATE authorizations SET order_id='changed-after-read' WHERE checkout_id=?",
+                    (last["checkout"]["checkout_id"],))
+        finally:
+            release_lookup.set()
+            first.join(timeout=5)
+            second.join(timeout=5)
+            adapter.lookup_order = real_lookup
+        self.assertFalse(first.is_alive())
+        self.assertFalse(second.is_alive())
+        self.assertEqual(errors, [])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["status"], "unknown")
+        self.assertNotIn("fictional_receipt", result[0])
         self.assertEqual(self.store.submit_attempts, 1)
 
     def test_separate_human_credential_approves_exact_fictional_checkout_without_dispatch(self):
@@ -419,6 +637,86 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
                 with self.assertRaises(urllib.error.HTTPError) as denied:
                     post("/v1/commit", {"job_id": jid}, self.runner_token)
                 self.assertEqual(denied.exception.code, 403)
+                self.assertEqual(self.store.submit_attempts, 0)
+
+    def test_https_device_enrollment_is_exact_account_bound_and_one_use(self):
+        """Synthetic Alice-account fixture only; NOT real iOS attestation/IdP."""
+        with tempfile.TemporaryDirectory(prefix="alice-https-device-proof-") as folder:
+            base = Path(folder)
+            first, public = _keypair(base, "first")
+            attacker, _ = _keypair(base, "attacker")
+            second, next_public = _keypair(base, "second")
+            registry = RevocableP256DeviceConsent(base / "devices.sqlite3")
+            self.addCleanup(registry.close)
+            runner = AliceRunner(FictionalHTTPSAdapter(
+                origin=self.shared.shop.url, ca_file=self.shared.cert,
+                merchant_token=self.shared.shop_secret), approval_verifier=registry)
+            self.addCleanup(runner.close)
+            coordinator = self.runner_token
+            human = self.human_token
+            others = self.other_human_token
+            with self.assertRaises(ValueError):
+                RunnerHTTPS(self.runner, principals={
+                    coordinator: FixturePrincipal("coordinator", "user-A", "paired"),
+                    human: FixturePrincipal("human", "user-A", "paired", "alice-account", "phone-A"),
+                }, cert_file=self.shared.cert, key_file=self.shared.key,
+                    device_registry=registry)  # different runner verifier
+            with RunnerHTTPS(runner, principals={
+                coordinator: FixturePrincipal("coordinator", "user-A", "paired"),
+                human: FixturePrincipal("human", "user-A", "paired", "alice-account", "phone-A"),
+                self.other_tenant_token: FixturePrincipal("coordinator", "user-B", "paired"),
+                others: FixturePrincipal("human", "user-B", "paired", "other-account", "phone-B"),
+            }, cert_file=self.shared.cert, key_file=self.shared.key,
+                device_registry=registry) as host:
+                def post(route, body, token=human):
+                    request = urllib.request.Request(host.url + route,
+                        data=json.dumps(body).encode(), method="POST",
+                        headers={"Authorization": "Bearer " + token,
+                                 "Content-Type": "application/json"})
+                    with urllib.request.urlopen(request, context=self.ctx, timeout=3) as response:
+                        return json.load(response)
+                begin = "/v1/human-enrollment-begin"
+                complete = "/v1/human-enrollment-complete"
+                expires_at = int(time.time()) + 3600
+                enrollment = {"public_pem": public, "key_expires_at": expires_at}
+                for token, body in ((coordinator, enrollment),
+                                    (others, {**enrollment, "tenant": "user-A"})):
+                    with self.subTest(token=token[:5]), self.assertRaises(urllib.error.HTTPError) as error:
+                        post(begin, body, token)
+                    self.assertIn(error.exception.code, (401, 403))
+                challenge = post(begin, enrollment)
+                self.assertEqual(challenge["account"], "alice-account")
+                self.assertEqual(challenge["installation"], "phone-A")
+                proof = _sign(first, _canonical(challenge), base)
+                wrong_proof = _sign(attacker, _canonical(challenge), base)
+                for body, token in (({"challenge": challenge, "signature": wrong_proof}, human),
+                                    ({"challenge": challenge, "signature": proof}, others),
+                                    ({"challenge": {**challenge, "installation": "phone-B"},
+                                      "signature": proof}, human)):
+                    with self.assertRaises(urllib.error.HTTPError) as error:
+                        post(complete, body, token)
+                    self.assertEqual(error.exception.code, 403)
+                self.assertEqual(post(complete, {"challenge": challenge,
+                    "signature": proof})["version"], 1)
+                with self.assertRaises(urllib.error.HTTPError) as replay:
+                    post(complete, {"challenge": challenge, "signature": proof})
+                self.assertEqual(replay.exception.code, 403)
+                self.assertTrue(registry.verify(tenant="user-A", session="paired",
+                    challenge=b"exact-test", signature=_sign(first, b"exact-test", base)))
+                next_challenge = post(begin, {"public_pem": next_public,
+                    "key_expires_at": expires_at, "operation": "rotate", "expected_version": 1})
+                next_signature = _sign(second, _canonical(next_challenge), base)
+                self.assertEqual(post(complete, {"challenge": next_challenge,
+                    "signature": next_signature})["version"], 2)
+                self.assertFalse(registry.verify(tenant="user-A", session="paired",
+                    challenge=b"exact-test", signature=_sign(first, b"exact-test", base)))
+                self.assertEqual(post("/v1/human-enrollment-revoke",
+                    {"expected_version": 2})["status"], "revoked_fixture_only")
+                self.assertFalse(registry.verify(tenant="user-A", session="paired",
+                    challenge=b"exact-test", signature=_sign(second, b"exact-test", base)))
+                with self.assertRaises(urllib.error.HTTPError) as stale:
+                    post("/v1/human-enrollment-revoke", {"expected_version": 2})
+                self.assertEqual(stale.exception.code, 403)
                 self.assertEqual(self.store.submit_attempts, 0)
 
 

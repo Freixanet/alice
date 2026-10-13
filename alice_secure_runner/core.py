@@ -239,7 +239,7 @@ class AliceRunner:
                 if authorization_state == "dispatching":
                     self.__db.execute("UPDATE authorizations SET status='unknown' WHERE checkout_id=? AND status='dispatching'", (cid,))
                     job.state = "unknown"
-                elif authorization_state in ("approved", "unknown", "confirmed", "human_only",
+                elif authorization_state in ("approved", "unknown", "confirmed", "stopped", "human_only",
                                              "handoff_pending_close"):
                     job.state = authorization_state
                 elif authorization_state == "human_simulated":
@@ -381,6 +381,7 @@ class AliceRunner:
         agree with the durable authorization ledger before it is displayed.
         This is a fixture contract, NOT an authenticated production IdP.
         """
+        receipt_check: tuple[dict[str, Any], tuple] | None = None
         with self.__lock:
             job = self._job(job_id, tenant, session)
             out: dict[str, Any] = {
@@ -406,12 +407,82 @@ class AliceRunner:
                         # become a false confirmation in an iPhone UI.
                         out["status"] = "unknown"
                     else:
-                        out["fictional_receipt"] = {
-                            "order_id": row[2], "checkout_id": snapshot["checkout_id"],
-                            "amount_minor": snapshot["amount_minor"],
-                            "currency": snapshot["currency"],
-                        }
+                        # Snapshot the exact local evidence, then release the
+                        # global job lock before *any* merchant network I/O.
+                        # One delayed merchant GET must never block unrelated
+                        # tenants' jobs or checkout admission.
+                        receipt_check = (snapshot.copy(), row)
+        if receipt_check is None:
             return out
+        snapshot, old_row = receipt_check
+        # GET-only external evidence: no payment dispatch, resubmission or
+        # state rewrite. Unavailable/conflicting merchant records fail closed.
+        try:
+            independent = self.__adapter.lookup_order(snapshot["checkout_id"])
+        except Exception:
+            independent = None
+        with self.__lock:
+            current = self._job(job_id, tenant, session)
+            row = self.__db.execute(
+                "SELECT digest,status,order_id FROM authorizations WHERE checkout_id=?",
+                (snapshot["checkout_id"],)).fetchone()
+            if (current.state != "confirmed" or current.checkout != snapshot
+                    or row != old_row or not self._receipt_matches(snapshot, independent)
+                    or independent["order_id"] != row[2]):
+                out["status"] = "unknown"
+            else:
+                out["fictional_receipt"] = {
+                    "order_id": row[2], "checkout_id": snapshot["checkout_id"],
+                    "amount_minor": snapshot["amount_minor"],
+                    "currency": snapshot["currency"],
+                }
+        return out
+
+    def human_cancel(self, job_id: str, *, tenant: str, session: str) -> dict[str, Any]:
+        """Human-authenticated cancellation; never pretends an in-flight effect stopped.
+
+        The job and its exact checkout authorization are stopped atomically.
+        An UNKNOWN or dispatching checkout is never reset to an unattempted
+        state, even when a human asks to cancel after losing connectivity.
+        Browser close is a separate best-effort acknowledgment, not payment
+        cancellation or evidence of a merchant-side reversal.
+        """
+        with self.__lock:
+            job = self._job(job_id, tenant, session)
+            if job.state == "stopped":
+                return {"status": "stopped", "job_id": job.id,
+                        "browser_cleanup_verified": self._cleanup_terminal_browser(job)}
+            if job.state in ("unknown", "dispatching"):
+                raise Indeterminate("checkout may already have been submitted; inspect receipt")
+            if job.state not in ("researching", "selecting", "cart_ready",
+                                 "awaiting_approval", "approved"):
+                raise Denied("checkout can no longer be cancelled")
+            previous = (job.state, job.epoch, job.challenge_nonce,
+                        job.challenge_expires, job.commit_expires)
+            self.__db.execute("BEGIN IMMEDIATE")
+            try:
+                if job.checkout is not None:
+                    snapshot = job.checkout
+                    changed = self.__db.execute(
+                        "UPDATE authorizations SET status='stopped' "
+                        "WHERE checkout_id=? AND digest=? AND status IN ('pending','approved')",
+                        (snapshot["checkout_id"], _digest(snapshot))).rowcount
+                    if changed != 1:
+                        raise Denied("checkout may already have been submitted")
+                job.state = "stopped"
+                job.epoch += 1
+                job.challenge_nonce = ""
+                job.challenge_expires = 0
+                job.commit_expires = 0
+                self._persist_job(job)
+                self.__db.execute("COMMIT")
+            except BaseException:
+                self.__db.execute("ROLLBACK")
+                (job.state, job.epoch, job.challenge_nonce,
+                 job.challenge_expires, job.commit_expires) = previous
+                raise
+            return {"status": "stopped", "job_id": job.id,
+                    "browser_cleanup_verified": self._cleanup_terminal_browser(job)}
 
     def _pending(self, job: Job) -> dict[str, Any]:
         if job.checkout is None:

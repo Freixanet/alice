@@ -1488,22 +1488,37 @@ class Engine:
         """
         if not legacy_payment_blocked(self.home):
             return False
+        # Commit the cutover fence before any remote STOP request or reaper
+        # observation. A run with lost identity remains unverified even when
+        # its last known run_id is empty (or refers to an older run).
+        stop_id = run_id
+        with _cutover_admission_lock(self.home):
+            entry = self._entry()
+            must_fence = bool(entry.get("status") in ACTIVE
+                              or entry.get("cutover_stop_pending")
+                              or entry.get("run_start_uncertain")
+                              or entry.get("run_status_uncertain"))
+            if must_fence:
+                # A caller can have omitted run_id even though the archive
+                # knows it. Issue a direct STOP for that id instead of
+                # starting a 30-second retry cooldown without any attempt.
+                stop_id = stop_id or entry.get("run_id")
+                stop_pending = bool(stop_id or entry.get("cutover_stop_pending")
+                                    or entry.get("run_start_uncertain")
+                                    or entry.get("run_status_uncertain"))
+                update(self.home, self.errand_id, status="stuck",
+                       cutover_stop_pending=stop_pending,
+                       cutover_stop_attempt_at=time.time(),
+                       reason=("Alice Secure Runner desactivó el recado anterior de Hermes. "
+                               "Si ya se intentó un pago, el resultado es desconocido: "
+                               "comprueba el pedido en la tienda, sin reintentar. "
+                               "La cancelación remota todavía no está verificada."))
         arm_cutover_reaper(self.home)
-        if run_id:
+        if stop_id:
             try:
-                self.gateway.stop(run_id)
+                self.gateway.stop(stop_id)
             except Exception:
                 pass  # Keep checkout uncertain; no retry/restart is permitted.
-        entry = self._entry()
-        if (entry.get("status") in ACTIVE or entry.get("cutover_stop_pending")
-                or entry.get("run_start_uncertain")):
-            update(self.home, self.errand_id, status="stuck",
-                   cutover_stop_pending=bool(run_id or entry.get("run_start_uncertain")),
-                   cutover_stop_attempt_at=time.time(),
-                   reason=("Alice Secure Runner desactivó el recado anterior de Hermes. "
-                           "Si ya se intentó un pago, el resultado es desconocido: "
-                           "comprueba el pedido en la tienda, sin reintentar. "
-                           "La cancelación remota todavía no está verificada."))
         return True
 
     @staticmethod
@@ -2137,7 +2152,12 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
                                      and not entry.get("run_status_uncertain")):
                     continue
                 prior = entry.get("cutover_stop_attempt_at")
-                if prior is not None:
+                # Throttle ONLY errands already durably quarantined. An ACTIVE
+                # or newly uncertain job must be fenced immediately on ASR
+                # cutover even if it has a recent older stop-attempt timestamp.
+                already_fenced = (entry.get("status") not in ACTIVE
+                                  and bool(entry.get("cutover_stop_pending")))
+                if already_fenced and prior is not None:
                     try:
                         if now - float(prior) < 30:
                             continue
@@ -2146,7 +2166,8 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
                 # A missing run_id after lost POST is NOT proof of no run.
                 uncertain = bool(entry.get("run_start_uncertain")
                                  or entry.get("run_status_uncertain"))
-                stop_pending = bool(entry.get("run_id") or uncertain)
+                stop_pending = bool(entry.get("run_id") or uncertain
+                                    or entry.get("cutover_stop_pending"))
                 update(home, entry["id"], status="stuck",
                        cutover_stop_pending=stop_pending,
                        cutover_stop_attempt_at=now,

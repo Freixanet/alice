@@ -780,3 +780,56 @@ Pairing**: independently operated infrastructure, authenticated official
 Hermes pairing, iOS verified consent and status transport, real isolation
 proof, deploy/rollback/observability and sandboxed browser effect service.
 No work here authorizes a real purchase before its release gates pass.
+
+### Subsequent R02 integration: explicit human cancellation and device enrollment transport
+
+- **Exact baseline** `679a9e5997dca15f3b0060ac833bfc3199fe08bc`
+  is the ancestor of the next integration. Its four R02 checks succeeded;
+  Quality `verify` and `browser` succeeded, while the macOS/Xcode `ios`
+  result must be recorded only after that same run completes. A successful
+  macOS SwiftPM fixture does **not** count as a successful iOS build.
+- **Explicit human cancellation (fictional only):** the independent human
+  HTTPS credential can call `/v1/human-cancel`. Under the runner lock and one
+  SQLite transaction, active planning and signed-but-not-dispatched approvals
+  become `stopped`; the exact checkout authorization, challenge and remaining
+  dispatch window are invalidated. Repeated cancellation is idempotent; a
+  concurrently dispatching or `UNKNOWN` checkout is **not** silently cancelled
+  and must be reconciled without resubmission. Failed browser closure is
+  reported as unverified rather than evidence of completed cleanup.
+- **Account-scoped device lifecycle (fixture only):** optional, explicitly
+  configured `/v1/human-enrollment-begin`, `-complete`, and `-revoke` endpoints
+  use the *same* public-only P-256 registry as the checkout verifier. Synthetic
+  Alice-issued human credentials bind tenant, session, account and installation
+  server-side, not from Hermes or HTTP claims. The one-use 180-second
+  enrollment challenge validates exact P-256 public-key possession; signed
+  rotation invalidates the old device key and versioned revocation denies
+  further consent. Missing independent identity or registry fails closed;
+  nothing here authenticates a genuine Alice account, verifies iOS key origin,
+  provisions production credentials or claims an actual biometric prompt.
+- **Independent merchant receipt consistency on human status:** even an ASR
+  `confirmed` ledger entry is shown as `confirmed` only if an independent
+  GET-only receipt agrees exactly with checkout itemization and persisted
+  order ID. Missing, conflicting or unavailable merchant evidence renders a
+  read-only, unverified `unknown` observation without changing the durable
+  recorded authorization or issuing another POST/checkout attempt. The
+  merchant GET executes **outside the global runner lock**; after it finishes,
+  ASR atomically compares the original authorization/checkout again before
+  exposing the receipt, preventing stale results and cross-tenant blocking.
+- **Bounded fixture HTTPS concurrency:** Alice's loopback listener now reuses
+  the independent H02.1 limited server: maximum eight admitted connections,
+  TLS handshakes moved from the accept loop to worker threads with absolute
+  deadlines, and total request-header/body deadlines. This is not a substitute
+  for a production reverse proxy, quotas or authenticated Alice identity.
+- **Additional independent STOP/cutover race tests:** unknown Hermes run IDs
+  retain their durable `cutover_stop_pending` marker; an already-active legacy
+  run is immediately quarantined regardless of a recent stop-attempt cooldown.
+  The reaper may retry read-only status or STOP; it must never infer terminal
+  status from a timeout or start a new legacy job.
+
+**Evidence and limits:** focused Hermes legacy-cutover suite **33/33 PASS**;
+Python HTTPS/runner/device/merchant selected suite **75/75 PASS**, with separate
+human-cancel, restart, P-256 enrollment/replay/rotation/revocation, and
+independent-receipt regression cases. iOS native and UI integration are subject
+to the Xcode CI outcome of the exact final pushed SHA. No real Hermes model,
+Apple Secure Enclave device, actual Alice IdP, external tenant host or PSP was
+used. **R02 remains P0 / NO-GO.**

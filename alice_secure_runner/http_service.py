@@ -15,10 +15,12 @@ import os
 import ssl
 import threading
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from typing import Mapping
 
 from .core import AliceRunner, Denied, Indeterminate
+from .device_registry import RevocableP256DeviceConsent, EnrollmentDenied
+from .h021_transport import HeaderDeadlineReader, LimitedHTTPServer, read_body_with_deadline
 
 
 @dataclass(frozen=True)
@@ -32,6 +34,10 @@ class FixturePrincipal:
     role: str
     tenant: str
     session: str
+    # Optional trusted Alice fixture identity for synthetic device enrollment.
+    # Never derive these values from Hermes or from an HTTP request body.
+    account: str = ""
+    installation: str = ""
 
 
 def _validate_principals(principals: Mapping[str, FixturePrincipal]) -> dict[str, FixturePrincipal]:
@@ -42,7 +48,10 @@ def _validate_principals(principals: Mapping[str, FixturePrincipal]) -> dict[str
         if (not isinstance(token, str) or len(token) < 32
                 or not isinstance(principal, FixturePrincipal) or principal.role not in ("coordinator", "human")
                 or not all(isinstance(x, str) and 0 < len(x) <= 120
-                           for x in (principal.tenant, principal.session))):
+                           for x in (principal.tenant, principal.session))
+                or not all(isinstance(x, str) and len(x) <= 120
+                           for x in (principal.account, principal.installation))
+                or bool(principal.account) != bool(principal.installation)):
             raise ValueError("invalid fixture principal")
         validated[token] = principal
     actors: dict[tuple[str, str], set[str]] = {}
@@ -53,10 +62,20 @@ def _validate_principals(principals: Mapping[str, FixturePrincipal]) -> dict[str
     return validated
 
 
-def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]):
+def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal], *,
+                 device_registry: RevocableP256DeviceConsent | None = None):
     principals = _validate_principals(principals)
 
     class Handler(BaseHTTPRequestHandler):
+        def setup(self):
+            super().setup()
+            self.rfile = HeaderDeadlineReader(self.rfile, self.connection)
+
+        def parse_request(self):
+            valid = super().parse_request()
+            self.rfile.headers_complete()
+            return valid
+
         def log_message(self, *_):
             return
 
@@ -79,6 +98,10 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                 if hmac.compare_digest(bearer, "Bearer " + token):
                     principal = candidate
             role = ("human" if self.path in ("/v1/human-finish", "/v1/human-reissue",
+                                             "/v1/human-cancel",
+                                             "/v1/human-enrollment-begin",
+                                             "/v1/human-enrollment-complete",
+                                             "/v1/human-enrollment-revoke",
                                              "/v1/human-status", "/v1/human-approve")
                     else "coordinator")
             if principal is None or principal.role != role:
@@ -88,7 +111,10 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                 size = int(self.headers.get("Content-Length", "-1"))
                 if not 2 <= size <= 16384:
                     raise Denied("invalid request")
-                obj = json.loads(self.rfile.read(size))
+                # An idle socket timeout alone permits indefinitely trickled
+                # bytes. Bound the total body wall-clock time before parsing
+                # any command or touching a durable checkout.
+                obj = json.loads(read_body_with_deadline(self, size))
                 if not isinstance(obj, dict):
                     raise Denied("invalid request")
                 # Refuse mismatched client claims instead of silently accepting
@@ -120,6 +146,48 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     out = runner.human_handoff(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-status":
                     out = runner.human_status(obj["job_id"], tenant=tenant, session=session)
+                elif self.path == "/v1/human-cancel":
+                    out = runner.human_cancel(obj["job_id"], tenant=tenant, session=session)
+                elif self.path.startswith("/v1/human-enrollment-"):
+                    # Enrollment is only possible with an explicitly configured
+                    # trusted, account-bound Alice fixture principal and the
+                    # same public-key registry the runner uses for approvals.
+                    # This is NOT a real Alice login, IdP, attestation or
+                    # entitlement to any production merchant/payment account.
+                    if (device_registry is None or not principal.account
+                            or not principal.installation):
+                        raise Denied("trusted Alice device identity unavailable")
+                    scope = {"tenant": tenant, "session": session,
+                             "account": principal.account,
+                             "installation": principal.installation}
+                    if self.path == "/v1/human-enrollment-begin":
+                        if set(obj) - {"tenant", "session", "public_pem", "key_expires_at",
+                                        "operation", "expected_version"}:
+                            raise Denied("unexpected enrollment data")
+                        out = device_registry.begin_proven_enrollment(
+                            **scope, public_pem=obj["public_pem"],
+                            key_expires_at=obj["key_expires_at"],
+                            operation=obj.get("operation", "enroll"),
+                            expected_version=obj.get("expected_version", 0))
+                    elif self.path == "/v1/human-enrollment-complete":
+                        if set(obj) - {"tenant", "session", "challenge", "signature"}:
+                            raise Denied("unexpected enrollment data")
+                        challenge = obj["challenge"]
+                        if (not isinstance(challenge, dict)
+                                or any(challenge.get(k) != v for k, v in scope.items())):
+                            raise Denied("enrollment principal mismatch")
+                        version = device_registry.complete_proven_enrollment(
+                            challenge, obj["signature"])
+                        out = {**scope, "version": version, "status": "enrolled_fixture_only"}
+                    elif self.path == "/v1/human-enrollment-revoke":
+                        if set(obj) - {"tenant", "session", "expected_version"}:
+                            raise Denied("unexpected enrollment data")
+                        device_registry.revoke(tenant=tenant, session=session,
+                                               account=principal.account,
+                                               expected_version=obj["expected_version"])
+                        out = {**scope, "status": "revoked_fixture_only"}
+                    else:
+                        raise Denied("unknown enrollment operation")
                 elif self.path == "/v1/human-approve":
                     # The human role supplies a detached exact-checkout
                     # signature only; no checkout dispatch capability is
@@ -137,7 +205,7 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     self._write(404, {"error": "unknown endpoint"})
                     return
                 self._write(200, out)
-            except (Denied, KeyError, TypeError, ValueError):
+            except (Denied, EnrollmentDenied, KeyError, TypeError, ValueError):
                 self._write(403, {"error": "denied"})
             except Indeterminate:
                 self._write(409, {"error": "unknown_outcome_do_not_retry"})
@@ -156,11 +224,21 @@ class RunnerHTTPS:
     """One ephemeral HTTPS server. Do not expose to the public internet."""
 
     def __init__(self, runner: AliceRunner, *, principals: Mapping[str, FixturePrincipal], cert_file: str,
-                 key_file: str):
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner, principals))
+                 key_file: str, device_registry: RevocableP256DeviceConsent | None = None):
+        if (device_registry is not None and
+                device_registry is not getattr(runner, "_AliceRunner__approval_verifier", None)):
+            raise ValueError("enrollment registry must be the runner's public-key verifier")
+        self.server = LimitedHTTPServer(("127.0.0.1", 0),
+                                        make_handler(runner, principals,
+                                                     device_registry=device_registry),
+                                        max_connections=8)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.load_cert_chain(cert_file, key_file)
-        self.server.socket = ctx.wrap_socket(self.server.socket, server_side=True)
+        # TLS handshake happens in one of eight bounded worker threads with
+        # an absolute deadline, never on the sole accept loop. This is still
+        # only a loopback fixture, not a production-facing reverse proxy.
+        self.server.tls_context = ctx
         self.url = f"https://localhost:{self.server.server_port}"
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 

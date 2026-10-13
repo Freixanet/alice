@@ -22,6 +22,74 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_cutover_fence_preserves_pending_stop_without_known_run_id(self):
+        errands = load("r02_cutover_missing_run_identity", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-cutover-unknown-run-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="stuck", run_id="", run_status_uncertain=True,
+                         cutover_stop_pending=True)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            engine = errands.Engine(home, entry["id"], gateway=gateway)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "arm_cutover_reaper") as reaper:
+                self.assertTrue(engine._cutover_fence())
+                reaper.assert_called_once_with(home)
+            saved = errands.get(home, entry["id"])
+            self.assertEqual(saved["status"], "stuck")
+            self.assertTrue(saved["run_status_uncertain"])
+            self.assertTrue(saved["cutover_stop_pending"])
+            gateway.stop.assert_not_called()
+            gateway.start.assert_not_called()
+
+    def test_cutover_without_argument_stops_archived_active_run_not_completed_one(self):
+        errands = load("r02_cutover_archived_run_identity", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-cutover-known-run-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="working", run_id="known-legacy-run")
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            engine = errands.Engine(home, entry["id"], gateway=gateway)
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "arm_cutover_reaper"):
+                self.assertTrue(engine._cutover_fence())
+                gateway.stop.assert_called_once_with("known-legacy-run")
+                self.assertTrue(errands.get(home, entry["id"])["cutover_stop_pending"])
+                errands.update(home, entry["id"], status="done", cutover_stop_pending=False)
+                self.assertTrue(engine._cutover_fence())
+            self.assertEqual(errands.get(home, entry["id"])["status"], "done")
+            gateway.stop.assert_called_once()
+
+    def test_cutover_fences_active_run_despite_recent_stop_attempt(self):
+        errands = load("r02_recent_stop_cannot_delay_cutover", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-active-recent-stop-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="working", run_id="still-running-legacy",
+                         cutover_stop_pending=False, cutover_stop_attempt_at=time.time())
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "running"}
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "Gateway", return_value=gateway):
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+            saved = errands.get(home, entry["id"])
+            self.assertEqual(saved["status"], "stuck")
+            self.assertTrue(saved["cutover_stop_pending"])
+            gateway.stop.assert_called_once_with("still-running-legacy")
+            gateway.start.assert_not_called()
+
     def test_pending_stop_reaper_cannot_exit_between_final_check_and_new_arm(self):
         errands = load("r02_stop_reaper_exit_race", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-reaper-exit-race-") as temporary:
