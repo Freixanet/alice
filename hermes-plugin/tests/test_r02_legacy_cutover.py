@@ -5,6 +5,7 @@ import importlib.util
 import os
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 from contextlib import contextmanager
@@ -21,6 +22,34 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_dashboard_approval_refuses_stale_or_pending_stop(self):
+        errands = load("r02_dashboard_stop_gate", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-dashboard-approval-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="needs_approval", run_id="original-run",
+                         approval={"run_id": "original-run", "request_id": "req-1",
+                                   "command": "Login to fictional store"})
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.approve.return_value = True
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                    patch.object(errands, "Gateway", return_value=gateway):
+                self.assertIsNone(errands.approve_pending_run_request(home, entry["id"], "once", "wrong"))
+                self.assertIsNone(errands.approve_pending_run_request(home, entry["id"], "once", ""))
+                gateway.approve.assert_not_called()
+                approved = errands.approve_pending_run_request(home, entry["id"], "once", "req-1")
+                self.assertEqual(approved["status"], "working")
+                gateway.approve.assert_called_once_with("original-run", "once", "req-1")
+                self.assertIsNone(errands.approve_pending_run_request(home, entry["id"], "once", "req-1"))
+                errands.update(home, entry["id"], status="stuck", cutover_stop_pending=True,
+                               approval={"run_id": "original-run", "request_id": "req-2"})
+                self.assertIsNone(errands.approve_pending_run_request(home, entry["id"], "once", "req-2"))
+                gateway.approve.assert_called_once()
+
     def test_missing_known_run_id_is_not_permission_to_restart_native_tools(self):
         errands = load("r02_404_run_status", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-lost-status-") as temporary:
@@ -110,6 +139,87 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                 verified = errands.stop(home, entry["id"])
                 self.assertEqual(verified["status"], "stopped")
                 self.assertFalse(verified["cutover_stop_pending"])
+
+    def test_stop_pending_prevents_delayed_reply_and_payment_approval(self):
+        errands = load("r02_pending_stop_approval", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-stop-before-approval-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional only", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="stuck", cutover_stop_pending=True,
+                         run_id="previous-fictional-run", run_status_uncertain=False,
+                         checkout={"id": "old", "status": "approved",
+                                   "decided_at": time.time()})
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    judge=lambda *_: self.fail("stop pending"),
+                                    sleep=lambda _: None)
+            engine._answer_approval("previous-fictional-run", {
+                "request_id": "approved-before-stop",
+                "command": "Fill payment card on https://fixture.invalid"})
+            gateway.approve.assert_not_called()
+            self.assertEqual(engine._wait_run("previous-fictional-run")["status"], "cancelled")
+            gateway.status.assert_not_called()
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                 patch.object(errands, "launch") as launch:
+                self.assertFalse(errands.resume(home, entry["id"], "late address answer"))
+                launch.assert_not_called()
+            self.assertTrue(errands.get(home, entry["id"])["cutover_stop_pending"])
+
+    def test_stop_while_browser_prepares_prevents_new_native_run(self):
+        errands = load("r02_stop_during_prepare", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-stop-before-start-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional only", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            engine = errands.Engine(home, entry["id"], gateway=gateway,
+                                    judge=lambda *_: self.fail("stopped before dispatch"),
+                                    sleep=lambda _: None)
+            def stop_during_prepare(_home):
+                errands.update(home, entry["id"], status="stuck",
+                               cutover_stop_pending=True)
+                return True
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                 patch.object(errands, "prepare_browser", side_effect=stop_during_prepare):
+                self.assertEqual(engine.run("start"), "stuck")
+            gateway.start.assert_not_called()
+
+    def test_restart_retries_unverified_stop_without_restarting_run(self):
+        errands = load("r02_retry_pending_stop", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-restart-stop-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("Fictional only", now=1_000,
+                                       model_route={"model": "fixture-model", "provider": "fixture"})
+            entry.update(status="stuck", run_id="possibly-active-run",
+                         cutover_stop_pending=True)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.side_effect = [{"status": "running"}, {"status": "cancelled"}]
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                 patch.object(errands, "Gateway", return_value=gateway), \
+                 patch.object(errands, "launch") as launch:
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+                pending = errands.get(home, entry["id"])
+                self.assertEqual(pending["status"], "stuck")
+                self.assertTrue(pending["cutover_stop_pending"])
+                # The ordinary stop reaper is throttled, never a busy loop.
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+                self.assertEqual(gateway.stop.call_count, 1)
+                errands.update(home, entry["id"], cutover_stop_attempt_at=0)
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+                finished = errands.get(home, entry["id"])
+                self.assertEqual(finished["status"], "stopped")
+                self.assertFalse(finished["cutover_stop_pending"])
+                launch.assert_not_called()
 
     def test_write_failure_before_rename_preserves_existing_fence(self):
         errands = load("r02_fsync_barrier", "errands.py")

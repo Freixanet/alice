@@ -54,6 +54,10 @@ import os
 from pathlib import Path
 import sys
 for item in sys.argv[1:]:
+    # abspath() collapses '..' before the symlink walk; a path such as
+    # symlink/../.hermes otherwise resolves to the symlink target's parent.
+    if '..' in Path(item).parts:
+        raise SystemExit("Refusing parent traversal in Hermes installation path")
     leaf = Path(os.path.abspath(item))
     for parent in (*reversed(leaf.parents), leaf):
         if parent.is_symlink():

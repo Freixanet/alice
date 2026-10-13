@@ -567,6 +567,36 @@ passed **175 tests, with 9 optional Chromium skips** before the latest
 legacy and provenance changes. Exact-SHA official CI and available Swift/iOS
 checks must still be verified for the next published commit.
 
+### Stop/approval concurrency and dashboard route audit (subsequent increment)
+
+GitHub runs for published `b027763` showed H01, H02, H02.1 and Synthetic
+Runner successful at inspection, including the fictional HTTPS merchant and
+real Chromium fixture. Quality is evaluated separately for the exact SHA;
+this is not independent-host or real-account evidence.
+
+Independent review found a further race in the **legacy** Hermes paths: a
+stop pending remote verification could leave an old engine polling and
+accepting a pre-existing payment approval, or a delayed generic answer could
+resume a stopped job. The runner now serializes trusted stop marking with
+model approval and run-start admission, rereads persisted stop/uncertainty
+before forwarding any approval or native-tool run, and refuses generic
+reactivation while stop confirmation is pending. The dashboard's legacy
+approval endpoint now requires the **exact current request ID** and a live
+non-payment approval in the matching Hermes run, never a stale request or
+ASR-marked/uncertain/stopped job. A completed remote STOP is distinguished
+from a request to stop; ordinary (non-ASR) pending-stop records are retried
+after restart without launching an additional run. Human-facing
+`needs_approval`/input waiting states keep their polling lifecycle.
+
+Tests exercise stop-before-run admission, delayed approval and answer after
+STOP, status=404, lost run identity, replay/duplicate approvals, restart
+retry with terminal status and no new effects. These gates protect the
+pre-cutover Hermes path only: **the old payment mechanism remains unsuitable
+for authentic autonomous purchases and must not be granted Alice Secure
+Runner authority**. Installer tests now reject a crafted symlink followed
+by `..` which previously bypassed lexical ancestor checks. This is an
+offline filesystem fixture, not a personal Hermes installation.
+
 No real account, keychain, Hermes installation, browser profile, service,
 merchant or payment endpoint was accessed in these local hardening tests.
 The combined local Python/egress/installer suite for `6ae172b` reported

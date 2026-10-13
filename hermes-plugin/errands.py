@@ -1514,35 +1514,49 @@ class Engine:
             return False
 
     def _answer_approval(self, run_id: str, approval: Dict[str, Any]) -> None:
-        entry = self._entry()
         request_id = str(approval.get("request_id") or approval.get("id") or "")
-        if legacy_payment_blocked(self.home):
-            # Never let an already-running legacy Hermes model inherit ASR
-            # authority; a missed stop is NOT evidence the payment was undone.
-            self.gateway.approve(run_id, "deny", request_id)
-            return
-        if is_payment_consent(approval):
-            checkout = approved_checkout(entry, home=self.home)
-            accepted = self.gateway.approve(run_id, "once" if checkout else "deny", request_id)
-            if checkout and accepted:
-                _consume_surviving_checkout_approval(self.home, self.errand_id, run_id, checkout)
-            return
-        # Any other approval (a login the person wanted to be asked about, a repeat payment):
-        # the person answers it from the errand.
-        if (entry.get("approval") or {}).get("request_id") != request_id:
-            update(self.home, self.errand_id, status="needs_approval",
-                   approval={"run_id": run_id, "request_id": request_id,
-                             "title": _clean(approval.get("description") or approval.get("command"), 300),
-                             "command": _clean(approval.get("command"), 300),
-                             "choices": [c for c in approval.get("choices") or ["once", "deny"] if c in ("once", "deny")]})
+        # Stop, cutover and approval admission must linearize. The same lock
+        # also protects a competing /v1/runs dispatch; no model-visible
+        # checkout approval may race past a durable stop-pending marker.
+        with _cutover_admission_lock(self.home):
+            entry = self._entry()
+            if (entry.get("status") != "working" or entry.get("run_id") != run_id
+                    or entry.get("cutover_stop_pending")
+                    or entry.get("run_start_uncertain")
+                    or entry.get("run_status_uncertain")):
+                return
+            marker = Path(self.home) / ".alice" / "r02-asr-only-v1"
+            if (os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+                    or marker.exists() or marker.is_symlink()):
+                self.gateway.approve(run_id, "deny", request_id)
+                return
+            if is_payment_consent(approval):
+                checkout = approved_checkout(entry)
+                accepted = self.gateway.approve(run_id, "once" if checkout else "deny", request_id)
+                if checkout and accepted:
+                    _consume_surviving_checkout_approval(self.home, self.errand_id, run_id, checkout)
+                return
+            if (entry.get("approval") or {}).get("request_id") != request_id:
+                update(self.home, self.errand_id, status="needs_approval",
+                       approval={"run_id": run_id, "request_id": request_id,
+                                 "title": _clean(approval.get("description") or approval.get("command"), 300),
+                                 "command": _clean(approval.get("command"), 300),
+                                 "choices": [c for c in approval.get("choices") or ["once", "deny"]
+                                             if c in ("once", "deny")]})
 
     def _wait_run(self, run_id: str) -> Dict[str, Any]:
         seen, since = None, time.time()
         while True:
             if self._cutover_fence(run_id=run_id):
                 return {"status": "cancelled"}
-            if self._entry().get("status") == "stopped":
-                self.gateway.stop(run_id)
+            current = self._entry()
+            if (current.get("status") not in ACTIVE
+                    or current.get("cutover_stop_pending")
+                    or current.get("run_status_uncertain")):
+                # A trusted stop or pending cancellation takes precedence over
+                # model-side approval requests, even if Hermes still runs.
+                if current.get("status") == "stopped":
+                    self.gateway.stop(run_id)
                 return {"status": "cancelled"}
             try:
                 state = self.gateway.status(run_id)
@@ -1565,8 +1579,12 @@ class Engine:
                 return {"status": "stalled"}
             if status == "waiting_for_approval" and isinstance(state.get("approval"), dict):
                 self._answer_approval(run_id, state["approval"])
-            elif self._entry().get("approval") and status == "running":
-                update(self.home, self.errand_id, approval=None, status="working")
+            elif status == "running":
+                current = self._entry()
+                if (current.get("status") == "working"
+                        and not current.get("cutover_stop_pending")
+                        and current.get("approval")):
+                    update(self.home, self.errand_id, approval=None, status="working")
             if status in FINISHED:
                 return state
             self.sleep(POLL_SECONDS)
@@ -1652,7 +1670,12 @@ class Engine:
                 steps_before = entry.get("steps") or []
                 with _cutover_admission_lock(self.home):
                     marker = Path(self.home) / ".alice" / "r02-asr-only-v1"
-                    if (os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
+                    current = self._entry()
+                    if (current.get("status") != "working"
+                            or current.get("cutover_stop_pending")
+                            or current.get("run_start_uncertain")
+                            or current.get("run_status_uncertain")
+                            or os.environ.get("ALICE_R02_ASR_ONLY") == "yes"
                             or marker.exists() or marker.is_symlink()):
                         # A competing trusted cutover wins BEFORE dispatch.
                         blocked = True
@@ -1697,7 +1720,8 @@ class Engine:
                 return "stuck"
             if blocked:
                 self._cutover_fence(run_id=entry.get("run_id"))
-                return "stuck"
+                latest = self._entry()
+                return latest.get("status", "stuck") if latest.get("status") != "working" else "stuck"
             state = self._wait_run(run_id)
             # A trusted caller may have changed the job while the poll was
             # waiting. Never overwrite its durable terminal/stopping state.
@@ -1984,6 +2008,34 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
                            "No vuelvas a enviarlo: si hubo un pago, comprueba "
                            "independientemente el resultado."))
         return []
+    # Manual stop requests also need reconciliation after a restart when ASR
+    # cutover was not enabled. Never relaunch an errand carrying this marker.
+    now = time.time()
+    for entry in listing(home):
+        if not entry.get("cutover_stop_pending"):
+            continue
+        prior = entry.get("cutover_stop_attempt_at")
+        if prior is not None:
+            try:
+                if now - float(prior) < 30:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        run_id = entry.get("run_id")
+        terminal = False
+        if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
+            try:
+                gateway = Gateway(home, entry.get("profile") or "")
+                gateway.stop(run_id)
+                terminal = str(gateway.status(run_id).get("status") or "") in FINISHED
+            except Exception:
+                terminal = False
+        update(home, entry["id"],
+               status="stopped" if terminal else "stuck",
+               cutover_stop_pending=not terminal,
+               cutover_stop_attempt_at=now,
+               reason=("Hermes confirma que el run terminó; revisa cualquier efecto anterior."
+                       if terminal else "Parada remota no verificable; no se retomará automáticamente."))
     for entry in listing(home):
         if entry.get("status") == "working" and launch(
                 home, entry["id"], "[Continuing toward your standing goal] Se reinició el servicio: "
@@ -2066,9 +2118,20 @@ def resume(home: Path, errand_id: str, message: str, *, checkout: Optional[Dict[
             _write(path, entries)
             _resume_goal(entry)
             return launch(home, errand_id, approved_message(checkout))
-    entry = update(home, errand_id, status="working", questions=None, approval=None)
-    if entry is None:
-        return False
+    # Delayed answers are not authority to revive a stopped, indeterminate or
+    # remotely unverified run. Serialize this admission with stop()'s store
+    # update; a competing stop after admission is rechecked by Engine.run.
+    with _locked(home) as path:
+        entries = _read(path, strict=True)
+        entry = next((record for record in entries if record.get("id") == errand_id), None)
+        if (entry is None or entry.get("status") not in ACTIVE + ("stuck",)
+                or entry.get("cutover_stop_pending")
+                or entry.get("run_start_uncertain")
+                or entry.get("run_status_uncertain")):
+            return False
+        entry.update(status="working", questions=None, approval=None,
+                     updated_at=time.time())
+        _write(path, entries)
     _resume_goal(entry)
     return launch(home, errand_id, message)
 
@@ -2084,26 +2147,62 @@ def _resume_goal(entry: Dict[str, Any]) -> None:
         pass
 
 
-def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
-    entry = get(home, errand_id)
-    if entry is None:
+def approve_pending_run_request(home: Path, errand_id: str, choice: str,
+                                request_id: str) -> Optional[Dict[str, Any]]:
+    """Authenticate an existing non-payment Hermes approval against stop state.
+
+    This legacy route can NEVER certify Alice Secure Runner consent. A
+    competing STOP/ASR cutover serializes against the approval, including its
+    remote effect; all requests require a matching, current request ID.
+    """
+    if choice not in ("once", "deny") or not isinstance(request_id, str) or not request_id:
         return None
-    if entry.get("status") not in ACTIVE + ("stuck",):
-        return entry
-    if entry.get("run_start_uncertain") or entry.get("run_status_uncertain"):
-        # No known run_id to cancel. Never falsely acknowledge remote stop.
-        return update(home, errand_id, status="stuck", cutover_stop_pending=True,
-                      reason="Inicio Hermes incierto; puede quedar una ejecución remota activa. "
-                             "Necesita inspección y parada manual; no se ha confirmado cancelación.")
-    run_id = entry.get("run_id")
-    # Persist an unverified stop before asking Hermes to terminate a native
-    # tool run. An HTTP acknowledgement alone cannot cancel past effects.
-    entry = update(home, errand_id,
-                   status="stuck" if run_id else "stopped",
-                   cutover_stop_pending=bool(run_id),
-                   reason=("Parada solicitada a Hermes; estado remoto sin verificar."
-                           if run_id else "El recado no tiene una ejecución remota activa."),
-                   secure_request=None, resume_message=None)
+    with _cutover_admission_lock(home):
+        marker = Path(home) / ".alice" / "r02-asr-only-v1"
+        if os.environ.get("ALICE_R02_ASR_ONLY") == "yes" or marker.exists() or marker.is_symlink():
+            return None
+        with _locked(home) as path:
+            entries = _read(path, strict=True)
+            entry = next((item for item in entries if item.get("id") == errand_id), None)
+            if (entry is None or entry.get("status") != "needs_approval"
+                    or entry.get("cutover_stop_pending")
+                    or entry.get("run_start_uncertain")
+                    or entry.get("run_status_uncertain")):
+                return None
+            pending = entry.get("approval")
+            if (not isinstance(pending, dict) or pending.get("request_id") != request_id
+                    or not pending.get("run_id") or pending.get("run_id") != entry.get("run_id")
+                    or is_payment_consent(pending)):
+                return None
+            gateway = Gateway(home, entry.get("profile") or "")
+            if not gateway.approve(pending["run_id"], choice, request_id):
+                return None
+            entry.update(approval=None, status="working", updated_at=time.time())
+            _write(path, entries)
+            return entry
+
+
+def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
+    with _cutover_admission_lock(home):
+        entry = get(home, errand_id)
+        if entry is None:
+            return None
+        if entry.get("status") not in ACTIVE + ("stuck",):
+            return entry
+        if entry.get("run_start_uncertain") or entry.get("run_status_uncertain"):
+            # No known run_id to cancel. Never falsely acknowledge remote stop.
+            return update(home, errand_id, status="stuck", cutover_stop_pending=True,
+                          reason="Inicio Hermes incierto; puede quedar una ejecución remota activa. "
+                                 "Necesita inspección y parada manual; no se ha confirmado cancelación.")
+        run_id = entry.get("run_id")
+        # Persist an unverified stop BEFORE invoking the remote stop command.
+        # This is serialized against already-approved model approvals.
+        entry = update(home, errand_id,
+                       status="stuck" if run_id else "stopped",
+                       cutover_stop_pending=bool(run_id),
+                       reason=("Parada solicitada a Hermes; estado remoto sin verificar."
+                               if run_id else "El recado no tiene una ejecución remota activa."),
+                       secure_request=None, resume_message=None)
     try:
         _goal_manager(entry["session_id"]).clear()
     except Exception:

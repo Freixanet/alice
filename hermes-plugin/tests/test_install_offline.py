@@ -259,6 +259,19 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertEqual((outside / "preserve.txt").read_text(), "must remain unchanged\n")
         self.assertFalse((outside / ".hermes").exists())
 
+    def test_symlink_parent_followed_by_dotdot_is_rejected_before_mutation(self):
+        outside = self.root / "external-home"
+        (outside / "lower").mkdir(parents=True)
+        (outside / ".hermes").mkdir()
+        self._put(outside / "retain.txt", "must remain unchanged\n")
+        (self.root / "shortcut").symlink_to(outside / "lower", target_is_directory=True)
+        crafted = self.root / "shortcut" / ".." / ".hermes"
+        result = self._run(HERMES_HOME=crafted)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("parent traversal", result.stderr)
+        self.assertFalse((outside / ".hermes/plugins").exists())
+        self.assertEqual((outside / "retain.txt").read_text(), "must remain unchanged\n")
+
     def test_symlinked_plugin_or_backup_parent_is_refused_before_mutation(self):
         for part in ("plugins", "backups"):
             with self.subTest(part=part):
