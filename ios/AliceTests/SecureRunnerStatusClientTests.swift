@@ -36,8 +36,11 @@ private final class FictionalURLProtocol: URLProtocol {
 
     override func startLoading() {
         FictionalRequestCapture.shared.record(request)
+        let responseStatus = (request.url?.path == "/v1/human-cancel"
+            && request.value(forHTTPHeaderField: "Authorization")
+                == "Bearer " + String(repeating: "u", count: 48)) ? 409 : 200
         guard let url = request.url,
-              let response = HTTPURLResponse(url: url, statusCode: 200,
+              let response = HTTPURLResponse(url: url, statusCode: responseStatus,
                                              httpVersion: "HTTP/1.1",
                                              headerFields: ["Content-Type": "application/json"])
         else { client?.urlProtocol(self, didFailWithError:
@@ -51,6 +54,8 @@ private final class FictionalURLProtocol: URLProtocol {
             body = "{\"purpose\":\"alice-r02-device-enroll-v1\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"account\":\"fixture-account\",\"installation\":\"fixture-installation\",\"public_key_sha256\":\"\(String(repeating: "a", count: 64))\",\"operation\":\"enroll\",\"expected_version\":0,\"key_expires_at\":\(expiry + 86_400),\"nonce\":\"fixture-nonce\",\"expires_at\":\(expiry)}"
         } else if url.path == "/v1/human-enrollment-complete" {
             body = "{\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"account\":\"fixture-account\",\"installation\":\"fixture-installation\",\"version\":1,\"status\":\"enrolled_fixture_only\"}"
+        } else if url.path == "/v1/human-cancel" {
+            body = "{\"status\":\"stopped\",\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"browser_cleanup_verified\":true}"
         } else {
             body = "{\"status\":\"approved\",\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"checkout_id\":\"fixture-checkout\"}"
         }
@@ -181,6 +186,70 @@ final class SecureRunnerStatusClientTests: XCTestCase {
         // or enrollment by a genuine independent Alice identity provider.
     }
 
+    func testHumanCancellationIsBoundToTrustedOriginAndExactServerAck() async throws {
+        let origin = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let attacker = try XCTUnwrap(URL(string: "https://attacker-fixture.invalid"))
+        let client = try SecureRunnerStatusClient(
+            trustedAliceOrigin: origin, testProtocolClasses: [FictionalURLProtocol.self])
+        let bearer = String(repeating: "t", count: 48)
+        _ = FictionalRequestCapture.shared.take()
+        do {
+            _ = try await client.cancelFictionalJob(
+                baseURL: attacker, humanBearer: bearer, jobID: "fictional-job-01",
+                tenant: "fixture-t", ownerSession: "fixture-s")
+            XCTFail("Sent human cancellation credential to attacker origin")
+        } catch SecureRunnerStatusClient.Failure.invalidEndpoint {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        do {
+            _ = try await client.cancelFictionalJob(
+                baseURL: origin, humanBearer: bearer, jobID: "fictional-job-01",
+                tenant: "fixture-t", ownerSession: "other-session")
+            XCTFail("Accepted human cancellation acknowledgment for wrong session")
+        } catch SecureRunnerStatusClient.Failure.invalidResponse {
+            XCTAssertNotNil(FictionalRequestCapture.shared.take())
+        }
+        let browserClosed = try await client.cancelFictionalJob(
+            baseURL: origin, humanBearer: bearer, jobID: "fictional-job-01",
+            tenant: "fixture-t", ownerSession: "fixture-s")
+        XCTAssertTrue(browserClosed)
+        let request = try XCTUnwrap(FictionalRequestCapture.shared.take())
+        XCTAssertEqual(request.url?.absoluteString, "https://alice-fixture.invalid/v1/human-cancel")
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "Bearer " + bearer)
+        let raw: Data
+        if let direct = request.httpBody {
+            raw = direct
+        } else if let stream = request.httpBodyStream {
+            stream.open()
+            defer { stream.close() }
+            var received = Data()
+            var chunk = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let count = stream.read(&chunk, maxLength: chunk.count)
+                guard count > 0 else { break }
+                received.append(contentsOf: chunk[..<count])
+            }
+            raw = received
+        } else {
+            XCTFail("Fixture cancellation request had no HTTP body or body stream")
+            return
+        }
+        let requestJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: raw) as? [String: String])
+        XCTAssertEqual(requestJSON, ["job_id": "fictional-job-01"])
+        // Synthetic 409 is an uncertain dispatch outcome. Never report an
+        // HTTP response loss/409 as a successful cancellation or resubmit.
+        do {
+            _ = try await client.cancelFictionalJob(
+                baseURL: origin, humanBearer: String(repeating: "u", count: 48),
+                jobID: "fictional-job-01", tenant: "fixture-t",
+                ownerSession: "fixture-s")
+            XCTFail("Unknown fictional merchant outcome was called cancelled")
+        } catch SecureRunnerStatusClient.Failure.outcomeUnknown {
+            XCTAssertNotNil(FictionalRequestCapture.shared.take())
+        }
+    }
+
     private func status(
         _ state: String, receipt: [String: Any]? = nil,
         tenant: String = "tenant-fixture", session: String = "session-fixture"
@@ -203,11 +272,14 @@ final class SecureRunnerStatusClientTests: XCTestCase {
     func testReadOnlyStatusesNeverAuthorizeCheckout() throws {
         for (source, expected) in [
             ("awaiting_approval", SecureRunnerDisplayStatus.pending),
-            ("approved", .pending),
+            ("approved", .approved),
             ("dispatching", .unknown),
             ("unknown", .unknown),
             ("human_only", .handoff),
-            ("researching", .unverified)
+            ("researching", .researching),
+            ("selecting", .researching),
+            ("cart_ready", .cartReady),
+            ("stopped", .rejected)
         ] {
             let result = try read(status(source))
             XCTAssertEqual(result.status, expected)

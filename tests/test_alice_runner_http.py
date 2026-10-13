@@ -343,6 +343,8 @@ class RunnerHTTPSBoundaryTests(unittest.TestCase):
         cancelled = self.request("/v1/human-cancel", identity, token=self.human_token)
         self.assertEqual(cancelled["status"], "stopped")
         self.assertTrue(cancelled["browser_cleanup_verified"])
+        self.assertEqual(cancelled["tenant"], "user-A")
+        self.assertEqual(cancelled["session"], "paired")
         self.assertEqual(self.request("/v1/human-cancel", identity,
                                       token=self.human_token)["status"], "stopped")
         self.assertEqual(self.request("/v1/human-status", identity,

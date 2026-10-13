@@ -4,7 +4,8 @@ import XCTest
 final class SecureRunnerDisplayStatusTests: XCTestCase {
     func testAllStatusesAreReadOnlyAndNeverClaimFaceIDAsAuthorization() {
         XCTAssertEqual(Set(SecureRunnerDisplayStatus.allCases),
-                       [.unverified, .pending, .unknown, .confirmed, .handoff])
+                       [.unverified, .researching, .cartReady, .pending, .approved,
+                        .rejected, .unknown, .confirmed, .handoff])
         for status in SecureRunnerDisplayStatus.allCases {
             XCTAssertFalse(status.allowsCheckout)
             XCTAssertFalse(status.title(.spanish).isEmpty)

@@ -828,6 +828,19 @@ No work here authorizes a real purchase before its release gates pass.
   run is immediately quarantined regardless of a recent stop-attempt cooldown.
   The reaper may retry read-only status or STOP; it must never infer terminal
   status from a timeout or start a new legacy job.
+- **SwiftUI connected fictional flow:** `ErrandBoard` now uses an independently
+  provisioned Alice human status channel for R02-marked errands, with a
+  deliberately nil/default-disconnected environment. It distinguishes
+  research/proposal, exact cart, awaiting approval, approved-but-unconfirmed,
+  cancelled, UNKNOWN, independent confirmation and human handoff. Explicit
+  checkout review freezes SKU/variant/quantity/recipient and all charges
+  before the local Secure Enclave-compatible P-256 signature request.
+  Explicit fictional cancellation goes through the separate human-only
+  endpoint and validates the returned job/tenant/session/stop receipt; a 409,
+  lost acknowledgement or unverifiable browser closure cannot be displayed as
+  a fully verified cancellation. Every display state remains incapable of
+  launching a legacy or real payment. No trusted real Alice IdP supplies a
+  channel yet, so this is an integrated fail-closed UI seam, not live pairing.
 
 **Evidence and limits:** focused Hermes legacy-cutover suite **33/33 PASS**;
 full human HTTPS suite **21/21 PASS**; earlier Python

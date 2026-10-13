@@ -39,6 +39,7 @@ final class SecureRunnerAuthenticatedChannel {
     private(set) var enrolledKeyVersion: Int?
     private var approvalInFlight = false
     private var enrollmentInFlight = false
+    private var cancellationInFlight = false
 
     private let origin: URL
     private let humanBearer: String
@@ -89,7 +90,7 @@ final class SecureRunnerAuthenticatedChannel {
     func approveReviewedFictionalCheckout(
         _ observation: SecureRunnerStatusClient.Observation
     ) async throws {
-        guard !approvalInFlight, !enrollmentInFlight,
+        guard !approvalInFlight, !enrollmentInFlight, !cancellationInFlight,
               observation.isFictionalOnly, observation.status == .pending,
               let version = enrolledKeyVersion,
               let checkout = observation.checkout,
@@ -114,7 +115,8 @@ final class SecureRunnerAuthenticatedChannel {
     /// fixture account session, a fresh server challenge and a scoped P256
     /// possession proof. No local key creation alone marks a device enrolled.
     func enrollFictionalDevice() async throws {
-        guard enrolledKeyVersion == nil, !enrollmentInFlight, !approvalInFlight else {
+        guard enrolledKeyVersion == nil, !enrollmentInFlight, !approvalInFlight,
+              !cancellationInFlight else {
             throw SecureRunnerStatusClient.Failure.notAuthorized
         }
         enrollmentInFlight = true
@@ -145,6 +147,20 @@ final class SecureRunnerAuthenticatedChannel {
             expectedVersion: generation)
         enrolledKeyVersion = generation
     }
+
+    /// Explicit human cancellation of a fictional runner job, never a
+    /// merchant reversal. UNKNOWN and dispatching outcomes cannot be stopped
+    /// or retried by this path; the independent server decides atomically.
+    func cancelFictionalJob() async throws -> Bool {
+        guard !cancellationInFlight, !approvalInFlight, !enrollmentInFlight else {
+            throw SecureRunnerStatusClient.Failure.notAuthorized
+        }
+        cancellationInFlight = true
+        defer { cancellationInFlight = false }
+        return try await client.cancelFictionalJob(
+            baseURL: origin, humanBearer: humanBearer, jobID: jobID,
+            tenant: tenant, ownerSession: ownerSession)
+    }
 }
 
 private struct SecureRunnerChannelKey: EnvironmentKey {
@@ -170,9 +186,11 @@ struct SecureRunnerConnectedPanel: View {
     @State private var loading = false
     @State private var enrolling = false
     @State private var submitting = false
+    @State private var cancelling = false
     @State private var errorMessage: String?
     @State private var showingReview = false
     @State private var showingEnrollment = false
+    @State private var showingStopConfirmation = false
 
     private var bound: Bool {
         guard let channel else { return false }
@@ -181,12 +199,20 @@ struct SecureRunnerConnectedPanel: View {
     }
 
     private var canReview: Bool {
-        bound && !loading && !submitting && !enrolling
+        bound && !loading && !submitting && !enrolling && !cancelling
             && observationChannelID == channel?.id && channel?.enrolledKeyVersion != nil
             && observation?.status == .pending
             && observation?.checkout != nil
             && observation?.checkoutData != nil
             && observation?.approvalChallengeData != nil
+    }
+
+    private var canCancel: Bool {
+        guard bound, !loading, !submitting, !enrolling, !cancelling,
+              observationChannelID == channel?.id, let status = observation?.status else {
+            return false
+        }
+        return [.researching, .cartReady, .pending, .approved].contains(status)
     }
 
     var body: some View {
@@ -208,7 +234,7 @@ struct SecureRunnerConnectedPanel: View {
                     else { Label(errand.language.pick("Refresh trusted status", "Actualizar estado verificado"),
                                  systemImage: "arrow.clockwise") }
                 }
-                .disabled(loading || submitting)
+                .disabled(loading || submitting || cancelling)
                 .accessibilityIdentifier("secureRunner.refreshTrustedStatus")
 
                 Button(errand.language.pick("Device enrollment", "Inscripción del dispositivo")) {
@@ -223,6 +249,15 @@ struct SecureRunnerConnectedPanel: View {
                     }
                     .accessibilityIdentifier("secureRunner.reviewFictionalCheckout")
                 }
+                if canCancel {
+                    Button(role: .destructive) {
+                        showingStopConfirmation = true
+                    } label: {
+                        Label(errand.language.pick("Cancel fictional shopping", "Cancelar compra ficticia"),
+                              systemImage: "xmark.shield")
+                    }
+                    .accessibilityIdentifier("secureRunner.cancelFictionalShopping")
+                }
             } else {
                 Text(errand.language.pick(
                     "An independent Alice account connection is not available. No approval or payment can be made from this Hermes errand.",
@@ -230,6 +265,7 @@ struct SecureRunnerConnectedPanel: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             if submitting { ProgressView(errand.language.pick("Sending fictional signature…", "Enviando firma ficticia…")) }
+            if cancelling { ProgressView(errand.language.pick("Stopping fictional shopping…", "Deteniendo compra ficticia…")) }
             if let errorMessage {
                 Text(errorMessage).font(.footnote).foregroundStyle(.secondary)
                     .accessibilityIdentifier("secureRunner.connectionError")
@@ -241,6 +277,20 @@ struct SecureRunnerConnectedPanel: View {
             observationChannelID = nil
             errorMessage = nil
             if bound { await refresh() }
+        }
+        .confirmationDialog(
+            errand.language.pick("Stop this fictional shopping job?", "¿Detener esta compra ficticia?"),
+            isPresented: $showingStopConfirmation, titleVisibility: .visible
+        ) {
+            Button(errand.language.pick("Stop fictional shopping", "Detener compra ficticia"),
+                   role: .destructive) {
+                Task { await cancelFictionalShopping() }
+            }
+            Button(errand.language.pick("Keep reviewing", "Seguir revisando"), role: .cancel) {}
+        } message: {
+            Text(errand.language.pick(
+                "Cancellation only invalidates a checkout that has not been sent. If an effect is uncertain, verify the merchant's independent receipt; never resubmit.",
+                "La cancelación solo invalida un pedido que no se ha enviado. Si hay un efecto incierto, verifica el recibo independiente del comercio; nunca reenvíes."))
         }
         .sheet(isPresented: $showingEnrollment) {
             NavigationStack {
@@ -397,6 +447,35 @@ struct SecureRunnerConnectedPanel: View {
             errorMessage = errand.language.pick(
                 "Approval could not be verified. Do not retry without a fresh independent status.",
                 "No se ha podido verificar la aprobación. No reintentes sin consultar primero el estado independiente.")
+        }
+    }
+
+    @MainActor
+    private func cancelFictionalShopping() async {
+        guard canCancel, let channel else { return }
+        cancelling = true
+        defer { cancelling = false }
+        do {
+            let browserClosed = try await channel.cancelFictionalJob()
+            guard !Task.isCancelled, self.channel?.id == channel.id else { return }
+            observation = nil
+            reviewSnapshot = nil
+            observationChannelID = nil
+            errorMessage = browserClosed
+                ? errand.language.pick(
+                    "Fictional shopping stopped. Refresh the trusted status to confirm.",
+                    "Compra ficticia detenida. Actualiza el estado verificado para confirmarlo.")
+                : errand.language.pick(
+                    "Fictional stop was recorded, but browser closure was not verified. Do not retry.",
+                    "Se registró la detención ficticia, pero no se verificó el cierre del navegador. No reintentes.")
+        } catch {
+            guard !Task.isCancelled, self.channel?.id == channel.id else { return }
+            observation = nil
+            reviewSnapshot = nil
+            observationChannelID = nil
+            errorMessage = errand.language.pick(
+                "Cancellation was not independently verified. A merchant effect may be uncertain; refresh status before any action.",
+                "La cancelación no se ha verificado de forma independiente. Puede haber un efecto comercial incierto; actualiza el estado antes de actuar.")
         }
     }
 }

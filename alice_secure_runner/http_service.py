@@ -148,6 +148,7 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     out = runner.human_status(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-cancel":
                     out = runner.human_cancel(obj["job_id"], tenant=tenant, session=session)
+                    out = {**out, "tenant": tenant, "session": session}
                 elif self.path.startswith("/v1/human-enrollment-"):
                     # Enrollment is only possible with an explicitly configured
                     # trusted, account-bound Alice fixture principal and the

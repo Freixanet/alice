@@ -12,6 +12,7 @@ struct SecureRunnerStatusClient {
         case invalidResponse
         case identityMismatch
         case notAuthorized
+        case outcomeUnknown
     }
 
     struct Observation: Sendable {
@@ -85,14 +86,16 @@ struct SecureRunnerStatusClient {
 
         let status: SecureRunnerDisplayStatus
         switch response.status {
-        case "awaiting_approval", "approved": status = .pending
+        case "awaiting_approval": status = .pending
+        case "approved": status = .approved
         case "unknown", "dispatching": status = .unknown
         case "human_only", "handoff_pending_close",
              "completed_by_human_simulated": status = .handoff
         case "confirmed":
             status = .confirmed
-        case "researching", "selecting", "cart_ready", "stopped":
-            status = .unverified
+        case "researching", "selecting": status = .researching
+        case "cart_ready": status = .cartReady
+        case "stopped": status = .rejected
         default:
             throw Failure.invalidResponse
         }
@@ -349,6 +352,45 @@ struct SecureRunnerStatusClient {
               object["version"] as? Int == expectedVersion else {
             throw Failure.invalidResponse
         }
+    }
+
+    /// Human-only cancellation of an unsubmitted fictional checkout. The
+    /// backend must atomically invalidate any pending exact authorization.
+    /// A 409 means a merchant effect may exist; NEVER show 'cancelled' or
+    /// repeat the request blindly. Fresh independently scoped status is needed.
+    func cancelFictionalJob(
+        baseURL: URL, humanBearer: String, jobID: String,
+        tenant: String, ownerSession: String
+    ) async throws -> Bool {
+        try checkEnrollmentTransport(baseURL: baseURL, humanBearer: humanBearer)
+        guard !jobID.isEmpty, jobID.utf8.count <= 160,
+              jobID.utf8.allSatisfy({
+                  (48...57).contains($0) || (65...90).contains($0)
+                      || (97...122).contains($0) || $0 == 45 || $0 == 95
+              }) else { throw Failure.invalidResponse }
+        var request = URLRequest(url: trustedAliceOrigin.appendingPathComponent("v1/human-cancel"))
+        request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("Bearer " + humanBearer, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["job_id": jobID])
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw Failure.invalidResponse }
+        if http.statusCode == 409 { throw Failure.outcomeUnknown }
+        if http.statusCode == 401 || http.statusCode == 403 { throw Failure.notAuthorized }
+        guard http.statusCode == 200, data.count <= 2_048,
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == [
+                "status", "job_id", "tenant", "session", "browser_cleanup_verified"
+              ],
+              object["status"] as? String == "stopped",
+              object["job_id"] as? String == jobID,
+              object["tenant"] as? String == tenant,
+              object["session"] as? String == ownerSession,
+              let browserVerified = object["browser_cleanup_verified"] as? Bool else {
+            throw Failure.invalidResponse
+        }
+        return browserVerified
     }
 
     private func checkEnrollmentTransport(baseURL: URL, humanBearer: String) throws {
