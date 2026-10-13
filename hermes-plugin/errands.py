@@ -1645,6 +1645,7 @@ class Engine:
                            cutover_stop_pending=True, cutover_stop_attempt_at=time.time(),
                            reason="Run anterior detenido sin confirmación de Hermes. "
                                   "No se puede reanudar ni lanzar otro hasta verificar su parada.")
+                    arm_pending_stop_reaper(self.home)
                     return "stuck"
                 # Preserve unused instructions across recovery, but never replay an approval
                 # already accepted by the surviving run.
@@ -1757,6 +1758,7 @@ class Engine:
                                "El run de Hermes se quedó colgado. ") +
                               "Su parada sigue sin verificarse; inspecciona "
                               "los posibles efectos antes de cualquier reintento.")
+                arm_pending_stop_reaper(self.home)
                 return "stuck"
             if self._cutover_fence(run_id=run_id):
                 return "stuck"
@@ -1930,7 +1932,7 @@ def stop_cutover_reaper(home: Path) -> None:
             worker.join(timeout=3)
 
 
-def _reconcile_pending_stops(home: Path) -> bool:
+def _reconcile_pending_stops(home: Path, *, force_ids: frozenset[str] = frozenset()) -> bool:
     """Retry ONLY remote stop/status; never restart a Hermes run or a payment.
 
     Unknown run identity stays pending even if an older known run is terminal.
@@ -1940,9 +1942,9 @@ def _reconcile_pending_stops(home: Path) -> bool:
     for prior_entry in listing(home):
         if not prior_entry.get("cutover_stop_pending"):
             continue
-        # Re-read under the SAME local admission lock as STOP, approval and
-        # /v1/runs creation. Otherwise a late remote status for an old run
-        # could clear a freshly set uncertain-new-run or cutover fence.
+        # Reserve ONE bounded retry under the admission lock. Never make a
+        # potentially 30-second network call while holding this home-global
+        # lock: unrelated STOP, consent and admission must stay responsive.
         with _cutover_admission_lock(home):
             entry = get(home, prior_entry["id"])
             if entry is None or not entry.get("cutover_stop_pending"):
@@ -1950,22 +1952,39 @@ def _reconcile_pending_stops(home: Path) -> bool:
             prior = entry.get("cutover_stop_attempt_at")
             if prior is not None:
                 try:
-                    if now - float(prior) < 30:
+                    if now - float(prior) < 30 and entry["id"] not in force_ids:
                         continue
                 except (TypeError, ValueError):
                     pass
             run_id = entry.get("run_id")
             unidentified_run = bool(entry.get("run_start_uncertain")
                                     or entry.get("run_status_uncertain"))
-            terminal = False
-            if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
-                try:
-                    gateway = Gateway(home, entry.get("profile") or "")
-                    gateway.stop(run_id)
-                    terminal = (str(gateway.status(run_id).get("status") or "") in FINISHED
-                                and not unidentified_run)
-                except Exception:
-                    terminal = False
+            uncertain_start = bool(entry.get("run_start_uncertain"))
+            uncertain_status = bool(entry.get("run_status_uncertain"))
+            profile = entry.get("profile") or ""
+            update(home, entry["id"], cutover_stop_attempt_at=now)
+        # Gateway is outside the admission lock. Its answer can be stale when
+        # another actor changes the ledger, so it is NOT authority on its own.
+        terminal = False
+        if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
+            try:
+                gateway = Gateway(home, profile)
+                gateway.stop(run_id)
+                terminal = (str(gateway.status(run_id).get("status") or "") in FINISHED
+                            and not unidentified_run)
+            except Exception:
+                terminal = False
+        with _cutover_admission_lock(home):
+            fresh = get(home, prior_entry["id"])
+            if (fresh is None or not fresh.get("cutover_stop_pending")
+                    or fresh.get("cutover_stop_attempt_at") != now
+                    or fresh.get("run_id") != run_id
+                    or (fresh.get("profile") or "") != profile
+                    or bool(fresh.get("run_start_uncertain")) != uncertain_start
+                    or bool(fresh.get("run_status_uncertain")) != uncertain_status):
+                # A concurrent newer STOP / lost run identity cannot be
+                # cleared by this old remote reply.
+                continue
             update(home, entry["id"], status="stopped" if terminal else "stuck",
                    cutover_stop_pending=not terminal,
                    cutover_stop_attempt_at=now,
@@ -1997,7 +2016,16 @@ def arm_pending_stop_reaper(home: Path, *, interval: float = 30.0) -> bool:
             while not stopping.wait(interval):
                 try:
                     if not _reconcile_pending_stops(home):
-                        return
+                        # Exit and re-arm are synchronized. If a newly
+                        # persisted STOP arrives while this thread is still
+                        # alive, arm_pending_stop_reaper() may return False;
+                        # the last ledger check under this SAME lock ensures
+                        # no pending stop is left without a worker.
+                        with _pending_stop_reapers_lock:
+                            if not any(e.get("cutover_stop_pending") for e in listing(home)):
+                                if _pending_stop_reapers.get(key, (None,))[0] is worker:
+                                    _pending_stop_reapers.pop(key, None)
+                                return
                 except Exception:
                     # Ledger remains pending for restart or the next tick.
                     pass
@@ -2094,39 +2122,42 @@ def ensure_running(home: Path, *, arm_reaper: bool = True) -> List[str]:
         # for persisted runs and retain a durable unverified-stop marker for
         # bounded retry if gateway was unavailable.
         now = time.time()
-        for entry in listing(home):
-            if (entry.get("status") not in ACTIVE and not entry.get("cutover_stop_pending")
-                    and not entry.get("run_start_uncertain")):
-                continue
-            prior = entry.get("cutover_stop_attempt_at")
-            if prior is not None:
-                try:
-                    if now - float(prior) < 30:
-                        continue
-                except (TypeError, ValueError):
-                    pass
-            run_id = entry.get("run_id")
-            # Missing run_id is NOT evidence no run exists after a lost POST
-            # response; this needs a trusted Hermes run-list/recovery API.
-            unidentified_run = bool(entry.get("run_start_uncertain")
-                                    or entry.get("run_status_uncertain"))
-            stopped = not run_id and not unidentified_run
-            if isinstance(run_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,120}", run_id):
-                try:
-                    gateway = Gateway(home, entry.get("profile") or "")
-                    gateway.stop(run_id)
-                    # A stop request is NOT a proof of cessation. Only a
-                    # terminal state confirmed by Hermes removes retry flag.
-                    stopped = (str(gateway.status(run_id).get("status") or "") in FINISHED
-                               and not unidentified_run)
-                except Exception:
-                    stopped = False
-            update(home, entry["id"], status="stuck",
-                   cutover_stop_pending=not stopped,
-                   cutover_stop_attempt_at=now,
-                   reason=("Recado antiguo de Hermes interrumpido por ASR. "
-                           "No vuelvas a enviarlo: si hubo un pago, comprueba "
-                           "independientemente el resultado."))
+        newly_fenced: set[str] = set()
+        for prior_entry in listing(home):
+            # Persist the ASR-only stop fence BEFORE any remote network I/O,
+            # under the same admission lock as run creation and approvals.
+            # Recheck under lock: a concurrent STOP may have superseded the
+            # snapshot. The ordinary stop reconciler will verify each run
+            # outside this lock and reject stale terminal acknowledgements.
+            with _cutover_admission_lock(home):
+                entry = get(home, prior_entry["id"])
+                if entry is None or (entry.get("status") not in ACTIVE
+                                     and not entry.get("cutover_stop_pending")
+                                     and not entry.get("run_start_uncertain")
+                                     and not entry.get("run_status_uncertain")):
+                    continue
+                prior = entry.get("cutover_stop_attempt_at")
+                if prior is not None:
+                    try:
+                        if now - float(prior) < 30:
+                            continue
+                    except (TypeError, ValueError):
+                        pass
+                # A missing run_id after lost POST is NOT proof of no run.
+                uncertain = bool(entry.get("run_start_uncertain")
+                                 or entry.get("run_status_uncertain"))
+                stop_pending = bool(entry.get("run_id") or uncertain)
+                update(home, entry["id"], status="stuck",
+                       cutover_stop_pending=stop_pending,
+                       cutover_stop_attempt_at=now,
+                       secure_request=None, resume_message=None,
+                       reason=("Recado antiguo de Hermes interrumpido por ASR. "
+                               "No vuelvas a enviarlo: si hubo un pago, comprueba "
+                               "independientemente el resultado."))
+                if stop_pending:
+                    newly_fenced.add(entry["id"])
+        if newly_fenced:
+            _reconcile_pending_stops(home, force_ids=frozenset(newly_fenced))
         return []
     # Manual stop requests also need reconciliation after a restart when ASR
     # cutover was not enabled. Never relaunch an errand carrying this marker.
@@ -2294,11 +2325,13 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
                                  "Necesita inspección y parada manual; no se ha confirmado cancelación.")
         else:
             run_id = entry.get("run_id")
+            stop_reservation = time.time()
             # Persist an unverified stop BEFORE invoking the remote stop command.
             # This is serialized against already-approved model approvals.
             entry = update(home, errand_id,
                            status="stuck" if run_id else "stopped",
                            cutover_stop_pending=bool(run_id),
+                           cutover_stop_attempt_at=stop_reservation if run_id else None,
                            reason=("Parada solicitada a Hermes; estado remoto sin verificar."
                                    if run_id else "El recado no tiene una ejecución remota activa."),
                            secure_request=None, resume_message=None)
@@ -2319,11 +2352,22 @@ def stop(home: Path, errand_id: str) -> Optional[Dict[str, Any]]:
         except Exception:
             terminal = False
         if terminal:
-            entry = update(home, errand_id, status="stopped", cutover_stop_pending=False,
-                           reason="Hermes confirma ejecución terminada; "
-                                  "esto no garantiza que no existan efectos anteriores.")
+            with _cutover_admission_lock(home):
+                # A delayed terminal answer for an old run cannot clear a
+                # newer pending STOP or a newly unknown remote run.
+                latest = get(home, errand_id)
+                if (latest is not None and latest.get("status") == "stuck"
+                        and latest.get("cutover_stop_pending")
+                        and latest.get("run_id") == run_id
+                        and latest.get("cutover_stop_attempt_at") == stop_reservation
+                        and not latest.get("run_start_uncertain")
+                        and not latest.get("run_status_uncertain")):
+                    entry = update(home, errand_id, status="stopped", cutover_stop_pending=False,
+                                   reason="Hermes confirma ejecución terminada; "
+                                          "esto no garantiza que no existan efectos anteriores.")
     release_context(errand_id)
-    if run_id and not terminal:
+    latest = get(home, errand_id)
+    if run_id and latest and latest.get("cutover_stop_pending"):
         arm_pending_stop_reaper(home)
     return entry
 

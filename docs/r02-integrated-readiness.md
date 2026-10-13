@@ -714,6 +714,64 @@ must not be counted as a completed account-to-device-to-merchant trust chain.
 **Release unchanged: R02 P0 / NO-GO** until the external identity, iOS
 consent/UI, independent-host, production isolation and PSP requirements pass.
 
+### Follow-up independent audits and iOS CI repair after 2eeb0ec
+
+- **Baseline SHA `2eeb0ec8bc2f45b2f82482261c13c4a22d5ee997`:** the four
+  R02 workflows (Synthetic, H01, H02, H02.1) succeeded. Quality `verify`
+  (including official pinned Hermes plugin) and `browser` succeeded, but
+  Quality **failed in iOS compilation** with `SecureRunnerStatusClientTests`:
+  `FictionalURLProtocol: URLProtocol, @unchecked Sendable` redundantly
+  declared a conformance unavailable on the GitHub iOS SDK. The explicit
+  `@unchecked Sendable` declaration is removed. Do **not** label Quality
+  successful for `2eeb0ec`; verify the next exact published SHA.
+- **Independent security audits:** workers 7/9 confirmed race windows in
+  Hermes STOP/ASR cutover, including a live `run_status_uncertain` missed by
+  cutover and a delayed old terminal response clearing a newer pending STOP;
+  network STOP under home-wide lock could also block unrelated approvals.
+  The cutover now persists a pending fence under the common admission lock
+  _before_ any gateway I/O, then uses a two-phase verification outside the
+  lock and compare-and-swap on run identity, profile, timestamp and both
+  uncertainty markers. Both manual and cutover stop paths retain an unknown
+  state on conflict. The reaper's exit/arming handshake is synchronized.
+  These protections do **not** prove Hermes terminated a run without a real
+  Hermes terminal-state observation; UNKNOWN never permits blind replay.
+- **Installer independent audit:** worker 8 reproduced lost concurrent edits
+  to both newly activated and upgraded plugin directories on failed enable.
+  Rollback now preserves the swapped-out live directory inode as
+  `HERMES_HOME/backups/alice-plugin-recovery.*/failed-active-plugin` rather
+  than deleting the containing transaction. Config rollback performs an
+  atomic inode exchange, retaining the replaced live config at
+  `alice-config-recovery.*/live-at-rollback.yaml`. A late independent writer
+  is retained in recovery. This is **not** a cooperative multi-editor merge;
+  any ambiguous swap preserves manual-recovery paths and fails closed.
+- **Swift independent audit:** TLS destination is fixed at construction and
+  checked on each request; even fixture sessions use a redirect-denying
+  delegate. Human approval responses must match checkout, job, tenant and
+  session. Five macOS SwiftPM XCTest fixtures passed with no real network;
+  iOS SDK source typecheck passed, but standalone XCTest typecheck against
+  the host's simulator SDK cannot substitute a full generated Xcode project.
+  A confirmed-looking fixture response is still only a trusted-ASR contract,
+  not independent attestation of merchant settlement.
+- **Latest focused verification before publication:** 30/30 stop/cutover,
+  25/25 offline installer, 106/106 Hermes errand tests in a disposable Python
+  3.11 environment with isolated `websockets`, 14/14 ASR HTTPS, 152 Python
+  repository tests passing with 9 skipped. The personal Hermes source is no
+  longer an implicit fallback for memory tests; CI supplies the pinned
+  disposable upstream path. The broad plugin suite requires official Hermes
+  dependencies in that disposable CI and is not claimed green merely from
+  the local system Python environment.
+- **Measured/local versus unknown cost:** the installer suite is about
+  39 seconds, the synthetic Python repository suite about 35 seconds, the
+  SwiftPM fixture suite about 5 seconds on warm incremental builds. Cloud
+  infrastructure and per-operation costs have **not** been measured; no
+  production infrastructure or real merchant/PSP was provisioned.
+
+**Release remains R02 P0 / NO-GO.** Outstanding: authenticated Alice IdP,
+real iOS review/enrollment/attested consent, trusted independent-host proof,
+true tenant-level OS/browser isolation, live official Hermes model flow,
+production-grade distribution, and merchant/PSP certification. The next
+commit's complete exact-SHA Quality/iOS outcome must be recorded separately.
+
 The integrated branch advances plan A (security/architecture), B
 (identity contracts), C (official Hermes compatibility), D (shopping and
 recovery/R03), and E (distribution/iOS). The next **large mission** after

@@ -22,6 +22,143 @@ def load(name: str, filename: str):
 
 
 class R02NoLegacyPaymentFallback(unittest.TestCase):
+    def test_pending_stop_reaper_cannot_exit_between_final_check_and_new_arm(self):
+        errands = load("r02_stop_reaper_exit_race", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-reaper-exit-race-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="stuck", run_id="pending-stop-1",
+                         cutover_stop_pending=True, cutover_stop_attempt_at=1.0)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            entered, release = threading.Event(), threading.Event()
+            original = errands._reconcile_pending_stops
+            gateway = Mock()
+            gateway.status.return_value = {"status": "cancelled"}
+
+            def delayed_check(_home):
+                if not entered.is_set():
+                    entered.set()
+                    self.assertTrue(release.wait(3))
+                    # Simulate an old reaper considering itself finished even
+                    # though a concurrent STOP is still durable in the ledger.
+                    return False
+                return original(_home)
+
+            try:
+                with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
+                        patch.object(errands, "Gateway", return_value=gateway), \
+                        patch.object(errands, "_reconcile_pending_stops", side_effect=delayed_check):
+                    self.assertTrue(errands.arm_pending_stop_reaper(home, interval=0.02))
+                    self.assertTrue(entered.wait(2))
+                    self.assertFalse(errands.arm_pending_stop_reaper(home, interval=0.02))
+                    release.set()
+                    deadline = time.monotonic() + 2
+                    while (errands.get(home, entry["id"])["cutover_stop_pending"]
+                           and time.monotonic() < deadline):
+                        time.sleep(0.01)
+                self.assertFalse(errands.get(home, entry["id"])["cutover_stop_pending"])
+                gateway.stop.assert_called_once_with("pending-stop-1")
+                gateway.start.assert_not_called()
+            finally:
+                release.set()
+                errands.stop_pending_stop_reaper(home)
+
+    def test_cutover_ignores_stale_stop_ack_after_new_status_uncertainty(self):
+        errands = load("r02_cutover_stale_stop_ack", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-cutover-stale-ack-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="working", run_id="old-known-run")
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.stop.side_effect = lambda _id: errands.update(
+                home, entry["id"], run_status_uncertain=True)
+            gateway.status.return_value = {"status": "cancelled"}
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "Gateway", return_value=gateway):
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+            saved = errands.get(home, entry["id"])
+            self.assertEqual(saved["status"], "stuck")
+            self.assertTrue(saved["run_status_uncertain"])
+            self.assertTrue(saved["cutover_stop_pending"])
+            gateway.stop.assert_called_once_with("old-known-run")
+            gateway.start.assert_not_called()
+
+    def test_cutover_also_stops_stuck_run_with_uncertain_gateway_status(self):
+        errands = load("r02_uncertain_status_cutover", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-uncertain-cutover-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="stuck", run_id="prior-known-run", run_status_uncertain=True)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "cancelled"}
+            with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
+                    patch.object(errands, "Gateway", return_value=gateway):
+                self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
+            gateway.stop.assert_called_once_with("prior-known-run")
+            saved = errands.get(home, entry["id"])
+            self.assertEqual(saved["status"], "stuck")
+            self.assertTrue(saved["cutover_stop_pending"])
+            self.assertTrue(saved["run_status_uncertain"])
+            gateway.start.assert_not_called()
+
+    def test_stop_reaper_gateway_delay_does_not_hold_admission_lock(self):
+        errands = load("r02_nonblocking_gateway_stop", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-nonblocking-stop-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="stuck", run_id="prior-known-run", cutover_stop_pending=True,
+                         cutover_stop_attempt_at=1.0)
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            entered, resume = threading.Event(), threading.Event()
+            gateway = Mock()
+            def blocked_stop(_run):
+                entered.set()
+                self.assertTrue(resume.wait(3), "gateway STOP was blocked")
+            gateway.stop.side_effect = blocked_stop
+            gateway.status.return_value = {"status": "cancelled"}
+            failures = []
+            def reaper():
+                try:
+                    errands._reconcile_pending_stops(home)
+                except Exception as exc:
+                    failures.append(exc)
+            try:
+                with patch.object(errands, "Gateway", return_value=gateway):
+                    thread = threading.Thread(target=reaper)
+                    thread.start()
+                    self.assertTrue(entered.wait(2), "retry did not reach Gateway")
+                    # While stop() is blocked on the network, unrelated
+                    # admission mutations must complete promptly. Persist a
+                    # NEW uncertainty flag so stale terminal reply cannot
+                    # clear this run's pending stop.
+                    started = time.monotonic()
+                    with errands._cutover_admission_lock(home):
+                        errands.update(home, entry["id"], run_status_uncertain=True)
+                    self.assertLess(time.monotonic() - started, 1)
+            finally:
+                resume.set()
+                thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(failures, [])
+            saved = errands.get(home, entry["id"])
+            self.assertTrue(saved["cutover_stop_pending"])
+            self.assertTrue(saved["run_status_uncertain"])
+            self.assertNotEqual(saved["status"], "stopped")
+
     def test_surviving_stalled_run_never_starts_a_replacement(self):
         errands = load("r02_stalled_survivor", "errands.py")
         with tempfile.TemporaryDirectory(prefix="alice-r02-surviving-run-") as temporary:
@@ -37,8 +174,10 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             engine = errands.Engine(home, entry["id"], gateway=gateway,
                                     sleep=lambda _: None)
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
-                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}):
+                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}), \
+                    patch.object(errands, "arm_pending_stop_reaper") as reaper:
                 self.assertEqual(engine.run(), "stuck")
+                reaper.assert_called_once_with(home)
             gateway.start.assert_not_called()
             saved = errands.get(home, entry["id"])
             self.assertTrue(saved["cutover_stop_pending"])
@@ -61,8 +200,10 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                                     sleep=lambda _: None)
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
                     patch.object(errands, "prepare_browser", return_value=True), \
-                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}):
+                    patch.object(engine, "_wait_run", return_value={"status": "stalled"}), \
+                    patch.object(errands, "arm_pending_stop_reaper") as reaper:
                 self.assertEqual(engine.run("start"), "stuck")
+                reaper.assert_called_once_with(home)
             gateway.start.assert_called_once()
             self.assertTrue(errands.get(home, entry["id"])["cutover_stop_pending"])
 
@@ -235,6 +376,30 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                 verified = errands.stop(home, entry["id"])
                 self.assertEqual(verified["status"], "stopped")
                 self.assertFalse(verified["cutover_stop_pending"])
+
+    def test_late_manual_stop_ack_cannot_clear_new_uncertain_remote_run(self):
+        errands = load("r02_stop_stale_ack", "errands.py")
+        with tempfile.TemporaryDirectory(prefix="alice-r02-stale-stop-ack-") as temporary:
+            home = Path(temporary)
+            entry = errands._new_entry("fictional", now=1_000,
+                                       model_route={"model": "fixture", "provider": "fixture"})
+            entry.update(status="working", run_id="old-known-run")
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True)
+            errands._write(archive, [entry])
+            gateway = Mock()
+            gateway.status.return_value = {"status": "cancelled"}
+            gateway.stop.side_effect = lambda _run: errands.update(
+                home, entry["id"], run_status_uncertain=True)
+            with patch.object(errands, "Gateway", return_value=gateway), \
+                    patch.object(errands, "release_context"), \
+                    patch.object(errands, "_goal_manager"), \
+                    patch.object(errands, "arm_pending_stop_reaper"):
+                result = errands.stop(home, entry["id"])
+            self.assertTrue(result["cutover_stop_pending"])
+            self.assertEqual(errands.get(home, entry["id"])["status"], "stuck")
+            self.assertTrue(errands.get(home, entry["id"])["run_status_uncertain"])
+            gateway.stop.assert_called_once_with("old-known-run")
 
     def test_stop_pending_prevents_delayed_reply_and_payment_approval(self):
         errands = load("r02_pending_stop_approval", "errands.py")
@@ -528,16 +693,17 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
                            "run_id": "still-running-1"}
                 unrelated = {"id": "study-1", "status": "working",
                              "request": "Leer un documento"}
-                with patch.object(errands, "listing", return_value=[pending, unrelated]), \
-                        patch.object(errands, "launch", return_value=True) as launch, \
-                        patch.object(errands, "Gateway") as gateway, \
-                        patch.object(errands, "update") as update:
+                archive = home / ".alice" / "errands.json"
+                archive.parent.mkdir(parents=True, exist_ok=True)
+                errands._write(archive, [pending, unrelated])
+                with patch.object(errands, "launch", return_value=True) as launch, \
+                        patch.object(errands, "Gateway") as gateway:
                     gateway.return_value.status.return_value = {"status": "cancelled"}
                     self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
                     launch.assert_not_called()
                     gateway.return_value.stop.assert_called_once_with("still-running-1")
-                    self.assertEqual(update.call_count, 2)
-                    self.assertFalse(update.call_args_list[0].kwargs["cutover_stop_pending"])
+                    self.assertFalse(errands.get(home, "buy-1")["cutover_stop_pending"])
+                    self.assertFalse(errands.get(home, "study-1")["cutover_stop_pending"])
                 with patch.object(errands, "get", return_value=pending):
                     self.assertFalse(errands.launch(home, "buy-1"))
                 blocked = errands.start(home, {"task": "Comprar zapatillas"}, offer={"option_id": "sku-1"})
@@ -604,32 +770,26 @@ class R02NoLegacyPaymentFallback(unittest.TestCase):
             home = Path(directory)
             entry = {"id": "old-job", "status": "working",
                      "run_id": "persistent-old-run", "request": "Encárgame pienso"}
-            updates = []
+            archive = home / ".alice" / "errands.json"
+            archive.parent.mkdir(parents=True, exist_ok=True)
+            errands._write(archive, [entry])
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "yes"}), \
-                    patch.object(errands, "listing", return_value=[entry]) as listing, \
                     patch.object(errands, "Gateway") as gateway, \
-                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
-                                 updates.append(kw)), \
                     patch.object(errands.time, "time", return_value=1_000):
                 gateway.return_value.stop.return_value = None
                 gateway.return_value.status.return_value = {"status": "running"}
                 self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
-                self.assertTrue(updates[-1]["cutover_stop_pending"])
-                self.assertEqual(updates[-1]["status"], "stuck")
+                self.assertTrue(errands.get(home, "old-job")["cutover_stop_pending"])
+                self.assertEqual(errands.get(home, "old-job")["status"], "stuck")
                 gateway.return_value.stop.assert_called_once_with("persistent-old-run")
             # A gateway timeout/unconfirmed stop is NOT a terminal receipt.
-            entry = {**entry, "status": "stuck", "cutover_stop_pending": True,
-                     "cutover_stop_attempt_at": 1_000}
             with patch.dict(os.environ, {"ALICE_R02_ASR_ONLY": "no"}), \
-                    patch.object(errands, "listing", return_value=[entry]), \
                     patch.object(errands, "Gateway") as gateway, \
-                    patch.object(errands, "update", side_effect=lambda *_a, **kw:
-                                 updates.append(kw)), \
                     patch.object(errands.time, "time", return_value=1_031):
                 gateway.return_value.status.return_value = {"status": "cancelled"}
                 self.assertEqual(errands.ensure_running(home, arm_reaper=False), [])
                 gateway.return_value.stop.assert_called_once_with("persistent-old-run")
-                self.assertFalse(updates[-1]["cutover_stop_pending"])
+                self.assertFalse(errands.get(home, "old-job")["cutover_stop_pending"])
 
     def test_live_cutover_reaper_retries_without_process_restart(self):
         errands = load("r02_scheduler_guarded_errands", "errands.py")

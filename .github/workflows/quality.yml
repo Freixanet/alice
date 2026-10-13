@@ -78,6 +78,9 @@ jobs:
           git checkout -q FETCH_HEAD
           python -m pip install -q -e .
       - name: Test Hermes plugin and Mac notifier
+        env:
+          # The test must NEVER discover ~/.hermes/hermes-agent implicitly.
+          ALICE_TEST_OFFICIAL_HERMES_ROOT: ${{ runner.temp }}/hermes-agent
         run: |
           set -euo pipefail
           python -m unittest discover -s hermes-plugin/tests

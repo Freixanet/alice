@@ -116,12 +116,32 @@ cleanup() {
       if ! swap_dirs "$transaction/new" "$dest"; then
         restore_failed=1
         print -u2 "RESTORE REQUIRED: original plugin is at $transaction/new; recovery details: $lock_dir"
+      else
+        # The replaced plugin's inode could have been modified by an editor
+        # while our installer lock was held (it only excludes other installers).
+        # Save that EXACT inode outside staging, even when it appears to be
+        # only the new Alice distribution. Never rm -rf arbitrary live edits.
+        local plugin_recovery=''
+        plugin_recovery=$(mktemp -d "$hermes_home/backups/alice-plugin-recovery.XXXXXX") || restore_failed=1
+        if (( ! restore_failed )); then
+          if ! mv -- "$transaction/new" "$plugin_recovery/failed-active-plugin"; then
+            restore_failed=1
+            print -u2 "RESTORE REQUIRED: failed live plugin still at $transaction/new"
+          else
+            print -u2 "PLUGIN RECOVERY: swapped-out live plugin saved at $plugin_recovery/failed-active-plugin; reconcile edits."
+          fi
+        fi
       fi
     elif (( new_moved )); then
-      rm -rf -- "$dest" || {
+      # A fresh install can also have been modified before the failure.
+      local plugin_recovery=''
+      plugin_recovery=$(mktemp -d "$hermes_home/backups/alice-plugin-recovery.XXXXXX") || restore_failed=1
+      if (( ! restore_failed )) && ! mv -- "$dest" "$plugin_recovery/failed-active-plugin"; then
         restore_failed=1
-        print -u2 "Could not remove new installation: $dest"
-      }
+        print -u2 "RESTORE REQUIRED: failed plugin could not be preserved at $dest"
+      elif (( ! restore_failed )); then
+        print -u2 "PLUGIN RECOVERY: newly activated plugin saved at $plugin_recovery/failed-active-plugin."
+      fi
     fi
     if (( config_started )); then
       # Hermes' CLI (and an unrelated user/editor) can write config without
@@ -133,28 +153,53 @@ cleanup() {
       if [[ -L $config || ( -e $config && ! -f $config ) ]]; then
         restore_failed=1
         print -u2 "RESTORE REQUIRED: Hermes config became an unsafe path: $config"
-      elif [[ -f $config ]]; then
-        config_recovery=$(mktemp -d "$hermes_home/backups/alice-config-recovery.XXXXXX")
-        if ! cp -p -- "$config" "$config_recovery/live-after-failure.yaml"; then
-          restore_failed=1
-          print -u2 "RESTORE REQUIRED: could not preserve concurrent Hermes config: $config"
-        else
-          print -u2 "CONFIG RECOVERY: saved live config at $config_recovery/live-after-failure.yaml; reconcile any concurrent edits."
+      else
+        config_recovery=$(mktemp -d "$hermes_home/backups/alice-config-recovery.XXXXXX") || restore_failed=1
+        if (( ! restore_failed )) && [[ -f $config ]]; then
+          if ! cp -p -- "$config" "$config_recovery/live-after-failure.yaml"; then
+            restore_failed=1
+            print -u2 "RESTORE REQUIRED: could not preserve concurrent Hermes config: $config"
+          else
+            print -u2 "CONFIG RECOVERY: saved earlier live config at $config_recovery/live-after-failure.yaml."
+          fi
         fi
       fi
       if (( ! restore_failed )); then
         if (( had_config )); then
           local config_restore=$hermes_home/.alice-config-restore.$$
-          if ! cp -p -- "$transaction/config.before" "$config_restore" || ! mv -f -- "$config_restore" "$config"; then
+          if ! cp -p -- "$transaction/config.before" "$config_restore"; then
             restore_failed=1
-            print -u2 "RESTORE REQUIRED: Hermes config could not be restored: $config"
+            print -u2 "RESTORE REQUIRED: Hermes original config could not be staged: $config"
+          elif [[ -f $config && ! -L $config ]]; then
+            # Atomically exchange both FILE inodes, not a copy followed by
+            # destructive mv: even a writer between snapshot and exchange
+            # keeps writing the old inode, now in config_restore. Move that
+            # exact old inode to persistent recovery before deleting anything.
+            if ! swap_dirs "$config_restore" "$config"; then
+              restore_failed=1
+              print -u2 "RESTORE REQUIRED: config atomic exchange uncertain; preserve $config_restore and $config"
+            elif ! mv -f -- "$config_restore" "$config_recovery/live-at-rollback.yaml"; then
+              restore_failed=1
+              print -u2 "RESTORE REQUIRED: concurrent config inode still at $config_restore"
+            else
+              print -u2 "CONFIG RECOVERY: preserved replaced live inode at $config_recovery/live-at-rollback.yaml."
+            fi
+          else
+            # A missing or changed-type live path cannot be safely replaced
+            # by a non-cooperating editor; leave original staged for review.
+            restore_failed=1
+            print -u2 "RESTORE REQUIRED: Hermes live config path changed; staged original at $config_restore"
           fi
-          rm -f -- "$config_restore"
         else
-          rm -f -- "$config" || {
-            restore_failed=1
-            print -u2 "RESTORE REQUIRED: remove $config created by the failed install"
-          }
+          if [[ -f $config && ! -L $config ]]; then
+            # Newly created config also might contain independent edits.
+            # Rename it into persistent recovery, never unlink an editor's
+            # only copy of a live inode.
+            mv -- "$config" "$config_recovery/live-at-rollback.yaml" || {
+              restore_failed=1
+              print -u2 "RESTORE REQUIRED: could not preserve new Hermes config: $config"
+            }
+          fi
         fi
       fi
     fi

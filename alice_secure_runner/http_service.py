@@ -126,6 +126,8 @@ def make_handler(runner: AliceRunner, principals: Mapping[str, FixturePrincipal]
                     # granted to this HTTPS route. ASR verifies the signature.
                     out = runner.approve(obj["job_id"], tenant=tenant,
                                          session=session, signature=obj["signature"])
+                    out = {**out, "job_id": obj["job_id"], "tenant": tenant,
+                           "session": session}
                 elif self.path == "/v1/human-reissue":
                     out = runner.reissue_human_handle(obj["job_id"], tenant=tenant, session=session)
                 elif self.path == "/v1/human-finish":

@@ -55,6 +55,9 @@ class OfflineInstallTests(unittest.TestCase):
             "#!/bin/sh\n"
             "printf 'hermes %s\\n' \"$*\" >> \"$ALICE_FAKE_TRACE\"\n"
             "if [ \"$1\" = plugins ] && [ \"${FAKE_ENABLE_DELAY:-0}\" = 1 ]; then sleep 0.2; fi\n"
+            "if [ \"$1:$2\" = plugins:enable ] && [ \"${FAKE_MODIFY_LIVE_PLUGIN:-0}\" = 1 ]; then\n"
+            "  echo 'INDEPENDENT_WRITER_DATA' > \"$HERMES_HOME/plugins/alice/independent-writer.txt\"\n"
+            "fi\n"
             "if [ \"$1\" = plugins ] && [ \"${FAKE_FAIL_ENABLE:-0}\" = 1 ]; then exit 4; fi\n"
             "printf 'fake_config_change: true\\n' >> \"$HERMES_HOME/config.yaml\"\n"
             "if [ \"$1\" = config ] && [ \"${FAKE_FAIL_CONFIG_SET:-0}\" = 1 ]; then exit 7; fi\n",
@@ -105,6 +108,11 @@ class OfflineInstallTests(unittest.TestCase):
             "if [ \"$1\" = - ] && [ \"$#\" = 3 ] && [ \"${FAKE_LOST_SWAP_RESULT:-0}\" = 1 ]; then\n"
             "  \"$ALICE_FAKE_PYTHON\" \"$@\" || exit $?\n"
             "  exit 9\n"
+            "fi\n"
+            "if [ \"$1\" = - ] && [ \"$#\" = 3 ] && [ \"${FAKE_EDIT_BEFORE_CONFIG_SWAP:-0}\" = 1 ]; then\n"
+            "  case \"$2\" in */.alice-config-restore.*)\n"
+            "    printf 'very_late_independent_setting: PRESERVED\\n' >> \"$3\" ;;\n"
+            "  esac\n"
             "fi\n"
             "exec \"$ALICE_FAKE_PYTHON\" \"$@\"\n",
             executable=True,
@@ -194,6 +202,30 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
         self._assert_no_staging()
 
+    def test_failed_update_keeps_concurrent_live_plugin_edit_in_stable_recovery(self):
+        old = self._old_plugin()
+        result = self._run(FAKE_FAIL_ENABLE=1, FAKE_MODIFY_LIVE_PLUGIN=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((old / "old-marker.txt").is_file(), result.stderr)
+        self.assertFalse((old / "independent-writer.txt").exists())
+        copies = list((self.home / "backups").glob(
+            "alice-plugin-recovery.*/failed-active-plugin/independent-writer.txt"))
+        self.assertEqual(len(copies), 1, result.stderr)
+        self.assertEqual(copies[0].read_text().strip(), "INDEPENDENT_WRITER_DATA")
+        self.assertIn("PLUGIN RECOVERY:", result.stderr)
+        self._assert_no_staging()
+
+    def test_failed_fresh_install_preserves_concurrent_live_plugin_edit(self):
+        result = self._run(FAKE_FAIL_ENABLE=1, FAKE_MODIFY_LIVE_PLUGIN=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.home / "plugins/alice").exists())
+        copies = list((self.home / "backups").glob(
+            "alice-plugin-recovery.*/failed-active-plugin/independent-writer.txt"))
+        self.assertEqual(len(copies), 1, result.stderr)
+        self.assertEqual(copies[0].read_text().strip(), "INDEPENDENT_WRITER_DATA")
+        self.assertIn("PLUGIN RECOVERY:", result.stderr)
+        self._assert_no_staging()
+
     def test_failed_enable_preserves_concurrent_config_edit_for_recovery(self):
         self._old_plugin()
         config = self.home / "config.yaml"
@@ -222,6 +254,23 @@ class OfflineInstallTests(unittest.TestCase):
             "alice-config-recovery.*/live-after-failure.yaml"))
         self.assertEqual(len(copies), 1, result.stderr)
         self.assertIn("CHANGED_BY_OTHER_WRITER", copies[0].read_text())
+        self.assertIn("CONFIG RECOVERY:", result.stderr)
+
+    def test_atomic_config_rollback_saves_writer_after_initial_recovery_copy(self):
+        self._old_plugin()
+        config = self.home / "config.yaml"
+        original = "skills: {external_dirs: []}\noriginal_setting: preserved\n"
+        self._put(config, original)
+        # The fake interpreter injects an unrelated writer at the exact
+        # config exchange call, AFTER the earlier recovery copy. The writer's
+        # inode must be moved to permanent recovery, never overwritten.
+        result = self._run(FAKE_FAIL_ENABLE=1, FAKE_EDIT_BEFORE_CONFIG_SWAP=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(config.read_text(), original, result.stderr)
+        copies = list((self.home / "backups").glob(
+            "alice-config-recovery.*/live-at-rollback.yaml"))
+        self.assertEqual(len(copies), 1, result.stderr)
+        self.assertIn("very_late_independent_setting: PRESERVED", copies[0].read_text())
         self.assertIn("CONFIG RECOVERY:", result.stderr)
 
     def test_failed_atomic_exchange_keeps_original_before_activation(self):

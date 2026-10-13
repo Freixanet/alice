@@ -1,7 +1,8 @@
 """What the person said about themselves and no agent kept: read once, checked against
 their own words, kept with its origin, and undoable.
 
-    ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
+    ALICE_TEST_OFFICIAL_HERMES_ROOT=/tmp/disposable-pinned-hermes-agent \
+        python -m unittest discover -s hermes-plugin/tests
 """
 import importlib.util
 import json
@@ -247,9 +248,18 @@ class HermesReviewTests(unittest.TestCase):
         import os
         import subprocess
 
-        hermes = Path.home() / ".hermes" / "hermes-agent"
+        # NEVER fall back to ~/.hermes, even on a development Mac with a
+        # personal installation. The caller must explicitly select an
+        # independent, disposable checkout of the pinned official source.
+        configured = os.environ.get("ALICE_TEST_OFFICIAL_HERMES_ROOT", "")
+        if not configured:
+            self.skipTest("disposable official Hermes source was not configured")
+        hermes = Path(configured).expanduser().resolve()
+        private_home = (Path.home() / ".hermes").resolve()
+        if hermes == private_home or private_home in hermes.parents:
+            self.skipTest("refusing the personal Hermes checkout")
         if not (hermes / "hermes_state.py").is_file():
-            self.skipTest("Hermes is not installed here")
+            self.skipTest("disposable pinned Hermes source is missing")
         with tempfile.TemporaryDirectory() as home:
             env = dict(os.environ, HERMES_HOME=home, PYTHONPATH=str(hermes))
             proc = subprocess.run([sys.executable, "-c", HERMES_TEST, str(HERE / "__init__.py")],

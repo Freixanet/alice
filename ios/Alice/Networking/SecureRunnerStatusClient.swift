@@ -151,21 +151,32 @@ struct SecureRunnerStatusClient {
     }
 
     private let session: URLSession
+    private let trustedAliceOrigin: URL
 
-    init(session: URLSession? = nil) {
-        if let session {
-            self.session = session
-        } else {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.timeoutIntervalForRequest = 10
-            configuration.timeoutIntervalForResource = 15
-            configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
-            self.session = URLSession(
-                configuration: configuration,
-                delegate: SecureRunnerNoRedirects(),
-                delegateQueue: nil
-            )
+    /// Only the trusted Alice application configuration can select this
+    /// origin. No per-job Hermes URL, QR text or merchant URL is permitted.
+    /// Until Alice provisions its independent account/IdP authority, there
+    /// must be NO caller creating this client in an active purchase flow.
+    init(trustedAliceOrigin: URL, testProtocolClasses: [AnyClass]? = nil) throws {
+        guard trustedAliceOrigin.scheme?.lowercased() == "https",
+              trustedAliceOrigin.host != nil,
+              trustedAliceOrigin.user == nil, trustedAliceOrigin.password == nil,
+              trustedAliceOrigin.query == nil, trustedAliceOrigin.fragment == nil,
+              trustedAliceOrigin.path.isEmpty || trustedAliceOrigin.path == "/" else {
+            throw Failure.invalidEndpoint
         }
+        self.trustedAliceOrigin = trustedAliceOrigin
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 15
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.protocolClasses = testProtocolClasses ?? configuration.protocolClasses
+        // Always enforce redirect denial, including an injected test protocol
+        // configuration; supplying a custom URLSession could silently drop it.
+        self.session = URLSession(
+            configuration: configuration,
+            delegate: SecureRunnerNoRedirects(), delegateQueue: nil
+        )
     }
 
     /// Cannot create a charge, request an approval, or reconcile an UNKNOWN.
@@ -174,7 +185,8 @@ struct SecureRunnerStatusClient {
         baseURL: URL, humanBearer: String,
         jobID: String, tenant: String, session ownerSession: String
     ) async throws -> Observation {
-        guard baseURL.scheme?.lowercased() == "https",
+        guard baseURL == trustedAliceOrigin,
+              baseURL.scheme?.lowercased() == "https",
               baseURL.host != nil, baseURL.user == nil,
               baseURL.password == nil, baseURL.query == nil,
               baseURL.fragment == nil,
@@ -206,9 +218,12 @@ struct SecureRunnerStatusClient {
     /// The caller must display the exact checkout and receive an explicit
     /// human action before invoking the separately protected device signer.
     func submitFictionalHumanSignature(
-        baseURL: URL, humanBearer: String, jobID: String, signature: String
+        baseURL: URL, humanBearer: String, jobID: String,
+        tenant: String, ownerSession: String, checkoutID: String,
+        signature: String
     ) async throws {
-        guard baseURL.scheme?.lowercased() == "https",
+        guard baseURL == trustedAliceOrigin,
+              baseURL.scheme?.lowercased() == "https",
               baseURL.host != nil, baseURL.user == nil,
               baseURL.password == nil, baseURL.query == nil,
               baseURL.fragment == nil,
@@ -243,7 +258,13 @@ struct SecureRunnerStatusClient {
         }
         guard http.statusCode == 200, body.count <= 2048,
               let object = try? JSONSerialization.jsonObject(with: body)
-                  as? [String: Any], object["status"] as? String == "approved"
+                  as? [String: Any],
+              Set(object.keys) == ["status", "checkout_id", "job_id", "tenant", "session"],
+              object["status"] as? String == "approved",
+              object["checkout_id"] as? String == checkoutID,
+              object["job_id"] as? String == jobID,
+              object["tenant"] as? String == tenant,
+              object["session"] as? String == ownerSession
         else { throw Failure.invalidResponse }
     }
 }

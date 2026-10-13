@@ -24,7 +24,7 @@ private final class FictionalRequestCapture: @unchecked Sendable {
 }
 
 /// Pure in-process URLProtocol fixture: never resolves DNS or submits payment.
-private final class FictionalURLProtocol: URLProtocol, @unchecked Sendable {
+private final class FictionalURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool {
         request.url?.host == "alice-fixture.invalid"
     }
@@ -42,7 +42,7 @@ private final class FictionalURLProtocol: URLProtocol, @unchecked Sendable {
         else { client?.urlProtocol(self, didFailWithError:
             URLError(.badServerResponse)); return }
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data("{\"status\":\"approved\"}".utf8))
+        client?.urlProtocol(self, didLoad: Data("{\"status\":\"approved\",\"job_id\":\"fictional-job-01\",\"tenant\":\"fixture-t\",\"session\":\"fixture-s\",\"checkout_id\":\"fixture-checkout\"}".utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 
@@ -189,17 +189,18 @@ final class SecureRunnerStatusClientTests: XCTestCase {
     }
 
     func testHumanSignatureTransportIsScopedAndNeverPostsPayment() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [FictionalURLProtocol.self]
-        let client = SecureRunnerStatusClient(session: URLSession(configuration: configuration))
         let endpoint = try XCTUnwrap(URL(string: "https://alice-fixture.invalid"))
+        let client = try SecureRunnerStatusClient(
+            trustedAliceOrigin: endpoint, testProtocolClasses: [FictionalURLProtocol.self])
         let humanBearer = String(repeating: "t", count: 48)
         let signature = String(repeating: "a", count: 88)
         _ = FictionalRequestCapture.shared.take()
 
         try await client.submitFictionalHumanSignature(
             baseURL: endpoint, humanBearer: humanBearer,
-            jobID: "fictional-job-01", signature: signature)
+            jobID: "fictional-job-01", tenant: "fixture-t",
+            ownerSession: "fixture-s", checkoutID: "fixture-checkout",
+            signature: signature)
         let request = try XCTUnwrap(FictionalRequestCapture.shared.take())
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertEqual(request.url?.absoluteString,
@@ -235,8 +236,23 @@ final class SecureRunnerStatusClientTests: XCTestCase {
         do {
             try await client.submitFictionalHumanSignature(
                 baseURL: insecure, humanBearer: humanBearer,
-                jobID: "fictional-job-01", signature: signature)
+                jobID: "fictional-job-01", tenant: "fixture-t",
+                ownerSession: "fixture-s", checkoutID: "fixture-checkout",
+                signature: signature)
             XCTFail("Insecure origin was accepted")
+        } catch SecureRunnerStatusClient.Failure.invalidEndpoint {
+            XCTAssertNil(FictionalRequestCapture.shared.take())
+        }
+        // Even a TLS URL is an exfiltration destination if Hermes could
+        // substitute it at call-time: the trusted origin is pinned at init.
+        let attacker = try XCTUnwrap(URL(string: "https://fake-agent.invalid"))
+        do {
+            try await client.submitFictionalHumanSignature(
+                baseURL: attacker, humanBearer: humanBearer,
+                jobID: "fictional-job-01", tenant: "fixture-t",
+                ownerSession: "fixture-s", checkoutID: "fixture-checkout",
+                signature: signature)
+            XCTFail("Untrusted HTTPS origin was accepted")
         } catch SecureRunnerStatusClient.Failure.invalidEndpoint {
             XCTAssertNil(FictionalRequestCapture.shared.take())
         }
