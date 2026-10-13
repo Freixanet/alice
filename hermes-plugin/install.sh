@@ -13,6 +13,8 @@ transaction=''
 backup=''
 old_moved=0
 old_swapped=0
+swap_intent=0
+fresh_intent=0
 new_moved=0
 config_started=0
 had_config=0
@@ -23,8 +25,20 @@ lock_owned=0
 restore_failed=0
 lock_dir=$plugins_dir/.alice-install.lock
 
+# The macOS GUI service labels are global to the logged-in user, not scoped
+# by HERMES_HOME. Never restart them when installing to a throwaway or another
+# user's Hermes home. File-only installation remains supported in that case.
+restart_services=0
+if [[ ${hermes_home:A} == ${HOME:A}/.hermes ]]; then
+  restart_services=1
+fi
+
 if ! command -v hermes >/dev/null; then
   print -u2 'The hermes command was not found. Install Hermes first.'
+  exit 1
+fi
+if [[ -L $hermes_home || -L $plugins_dir || -L $hermes_home/backups ]]; then
+  print -u2 'Refusing a symlink in Hermes home, plugins or backup directory.'
   exit 1
 fi
 if [[ -L $dest || ( -e $dest && ! -d $dest ) ]]; then
@@ -47,12 +61,14 @@ import sys
 libc = ctypes.CDLL(None, use_errno=True)
 if sys.platform == 'darwin':
     rename = libc.renameatx_np
+    at_fdcwd = -2
 else:
     # Linux hosts with renameat2 also support a directory exchange.
     rename = libc.renameat2
+    at_fdcwd = -100
 rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
 rename.restype = ctypes.c_int
-result = rename(-2, os.fsencode(sys.argv[1]), -2, os.fsencode(sys.argv[2]), 2)
+result = rename(at_fdcwd, os.fsencode(sys.argv[1]), at_fdcwd, os.fsencode(sys.argv[2]), 2)
 if result != 0:
     error = ctypes.get_errno()
     raise OSError(error, os.strerror(error))
@@ -64,7 +80,13 @@ cleanup() {
   trap - EXIT HUP INT TERM
   set +e
   if (( ! complete && exit_code != 0 )); then
-    if (( old_swapped )); then
+    if (( (swap_intent && ! old_swapped) || (fresh_intent && ! new_moved) )); then
+      # The kernel exchange may have completed even if its userspace caller
+      # was interrupted before acknowledging it. NEVER delete the recovery
+      # copy in transaction/new when the result is uncertain.
+      restore_failed=1
+      print -u2 "RESTORE REQUIRED: atomic swap outcome uncertain; preserve $transaction and $lock_dir"
+    elif (( old_swapped )); then
       if ! swap_dirs "$transaction/new" "$dest"; then
         restore_failed=1
         print -u2 "RESTORE REQUIRED: original plugin is at $transaction/new; recovery details: $lock_dir"
@@ -108,7 +130,7 @@ cleanup() {
   fi
   [[ -n $backup && -d $backup && ! -e $backup/alice ]] && rmdir -- "$backup" 2>/dev/null
   if (( lock_owned && ! restore_failed )); then
-    rm -f -- "$lock_dir/owner" "$lock_dir/recovery"
+    rm -f -- "$lock_dir/owner" "$lock_dir/recovery" "$lock_dir/swap-intent" "$lock_dir/fresh-intent"
     rmdir -- "$lock_dir" || print -u2 "Could not release installer lock: $lock_dir"
   fi
   return "$exit_code"
@@ -235,13 +257,17 @@ PY
 if [[ -d $dest ]]; then
   backup=$(mktemp -d "$hermes_home/backups/alice-$(date +%Y%m%d-%H%M%S).XXXXXX")
   print -r -- "$transaction/new" > "$lock_dir/recovery"
+  print -r -- 'swap-started' > "$lock_dir/swap-intent"
+  swap_intent=1
   if ! swap_dirs "$stage" "$dest"; then
-    print -u2 'Atomic directory exchange failed; the installed Alice plugin was not changed.'
+    print -u2 'Atomic directory exchange not acknowledged; inspect recovery journal before retrying.'
     exit 1
   fi
   old_swapped=1
   new_moved=1
 else
+  print -r -- 'fresh-started' > "$lock_dir/fresh-intent"
+  fresh_intent=1
   mv -- "$stage" "$dest"
   new_moved=1
 fi
@@ -256,33 +282,42 @@ fi
 
 # The gateway loads the Python plugin. Restart it before the dashboard so the
 # latter does not expose an interface backed by stale plugin code.
-for name in ai.hermes.gateway ai.hermes.dashboard; do
-  service=gui/$(id -u)/$name
-  if launchctl print "$service" >/dev/null 2>&1; then
-    services_started=1
-    launchctl kickstart -k "$service"
-    if [[ $name == ai.hermes.gateway ]]; then
-      gateway_restarted=1
-      ready=0
-      for attempt in {1..10}; do
-        if launchctl print "$service" 2>/dev/null | grep -q 'state = running'; then
-          ready=1
-          break
+if (( restart_services )); then
+  for name in ai.hermes.gateway ai.hermes.dashboard; do
+    service=gui/$(id -u)/$name
+    if launchctl print "$service" >/dev/null 2>&1; then
+      services_started=1
+      launchctl kickstart -k "$service"
+      if [[ $name == ai.hermes.gateway ]]; then
+        gateway_restarted=1
+        ready=0
+        for attempt in {1..10}; do
+          if launchctl print "$service" 2>/dev/null | grep -q 'state = running'; then
+            ready=1
+            break
+          fi
+          sleep 1
+        done
+        if (( ! ready )); then
+          print -u2 'Hermes gateway did not reach the running state.'
+          exit 1
         fi
-        sleep 1
-      done
-      if (( ! ready )); then
-        print -u2 'Hermes gateway did not reach the running state.'
-        exit 1
+        # launchctl running does not attest to API health/authentication.
       fi
-      # launchctl confirms only that the process is running; neither endpoint
-      # health nor authenticated R02 pairing/approvals are established here.
     fi
-  fi
-done
+  done
+else
+  print 'Hermes services NOT restarted: HERMES_HOME is not the current user default.'
+fi
 
 if (( old_swapped )); then
-  mv -- "$stage" "$backup/alice"
+  # Copy, rather than cross-filesystem mv, so an interrupted backup cannot
+  # consume the only rollback source in the same-filesystem transaction/new.
+  cp -R -- "$stage" "$backup/alice"
+  if ! diff -rq "$stage" "$backup/alice" >/dev/null; then
+    print -u2 'Backup verification failed; restoring the old plugin.'
+    exit 1
+  fi
   old_moved=1
 fi
 complete=1

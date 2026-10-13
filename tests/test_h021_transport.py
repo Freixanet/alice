@@ -16,13 +16,23 @@ from types import SimpleNamespace
 from unittest import mock
 
 from alice_secure_runner.h021_transport import (
-    HeaderDeadlineReader, LimitedHTTPServer, handshake_with_deadline,
+    HeaderBoundHTTPSHandler, HeaderDeadlineReader, LimitedHTTPServer,
+    handshake_with_deadline,
     _ResponseWithHeaderDeadline, read_body_with_deadline,
     read_https_response_with_deadline,
 )
 
 
 class H021TransportTests(unittest.TestCase):
+    def test_https_handler_works_without_removed_python312_attribute(self):
+        context = ssl.create_default_context()
+        handler = HeaderBoundHTTPSHandler(context=context)
+        if hasattr(handler, "_check_hostname"):
+            del handler._check_hostname
+        with mock.patch.object(handler, "do_open", return_value="synthetic") as opened:
+            self.assertEqual(handler.https_open("fictional-request"), "synthetic")
+        self.assertEqual(opened.call_args.kwargs, {"context": context})
+
     def test_https_header_wrapper_parses_status_and_keeps_body_readable(self):
         connection = mock.Mock()
 

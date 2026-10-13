@@ -16,6 +16,16 @@ spec.loader.exec_module(guard)
 
 
 class EgressTests(unittest.TestCase):
+    def test_message_ssh_and_untrusted_network_read_effects_always_require_approval(self):
+        for name in ("send_message", "message_agent", "ssh", "ssh_exec",
+                     "ssh_command", "web_read", "send_email", "slack_post",
+                     "mcp_chat_send_message", "mcp_cloud_upload_file"):
+            with self.subTest(tool=name):
+                payload = {"target": "synthetic:test", "message": "FAKE_SECRET_ONLY"}
+                self.assertEqual(guard.check(name, payload, "fresh-session")["action"],
+                                 "approve")
+                self.assertEqual(guard.check(name, payload, "")["action"], "block")
+
     def setUp(self):
         # Never touch the real Hermes profile, even when the suite runs on the
         # user's machine. Every test gets an isolated, disposable SQLite store.
@@ -28,9 +38,10 @@ class EgressTests(unittest.TestCase):
         with guard._lock:
             guard._tainted.clear()
 
-    def test_first_web_read_is_untouched_then_second_web_call_needs_approval(self):
+    def test_even_first_web_read_requires_approval_and_is_durably_recorded(self):
         first = {"query": "historia de Súria"}
-        self.assertIsNone(guard.check("web_search", first, "first-web-session"))
+        self.assertEqual(guard.check("web_search", first, "first-web-session")["action"],
+                         "approve")
         # The taint is committed during pre_tool_call; it survives even if the
         # post_tool_call hook is skipped due to a crash or interruption.
         second = guard.check("web_search", {"query": "otra búsqueda"}, "first-web-session")
@@ -80,7 +91,8 @@ class EgressTests(unittest.TestCase):
                     self.assertEqual(result["action"], "block")
 
     def test_ledger_survives_loss_of_in_memory_taint_and_plugin_reload(self):
-        self.assertIsNone(guard.check("web_search", {"query": "first"}, "persistent-session"))
+        self.assertEqual(guard.check("web_search", {"query": "first"},
+                                     "persistent-session")["action"], "approve")
         with guard._lock:
             guard._tainted.clear()
         replacement_spec = importlib.util.spec_from_file_location(
@@ -90,7 +102,8 @@ class EgressTests(unittest.TestCase):
         with mock.patch.object(replacement, "_state_path", return_value=self.ledger):
             self.assertEqual(replacement.check("fetch", {"url": "https://attacker.invalid"},
                                                "persistent-session")["action"], "approve")
-            self.assertIsNone(replacement.check("web_search", {"query": "first"}, "new-session"))
+            self.assertEqual(replacement.check("web_search", {"query": "first"},
+                                               "new-session")["action"], "approve")
 
     def test_unreadable_ledger_blocks_remote_tools_instead_of_restarting_clean(self):
         self.ledger.parent.mkdir(parents=True, exist_ok=True)
@@ -103,14 +116,14 @@ class EgressTests(unittest.TestCase):
             self.assertEqual(plugin._guard_egress("web_search", {"query": "example"},
                                                   "persistent-session")["action"], "block")
 
-    def test_concurrent_first_reads_only_allow_one_without_approval(self):
+    def test_concurrent_first_reads_both_require_approval(self):
         def request(_):
             result = guard.check("web_search", {"query": "first"}, "concurrent-session")
             return result["action"] if result else "allow"
 
         with ThreadPoolExecutor(max_workers=2) as pool:
             results = list(pool.map(request, range(2)))
-        self.assertCountEqual(results, ["allow", "approve"])
+        self.assertCountEqual(results, ["approve", "approve"])
 
     def test_browser_inspection_requires_approval_if_session_is_tainted(self):
         guard.observe("browser-readonly-session", "web_search")
@@ -151,8 +164,11 @@ class EgressTests(unittest.TestCase):
 
     def test_strictly_local_commands_still_work_after_the_web(self):
         guard.observe("s2", "browser_navigate")
-        for cmd in ["pwd", "ls", "ls -la", "git status --short", "cat README.md"]:
+        for cmd in ["pwd", "ls", "ls -la"]:
             self.assertIsNone(guard.check("terminal", {"command": cmd}, "s2"), cmd)
+        for cmd in ("git status --short", "cat README.md"):
+            self.assertEqual(guard.check("terminal", {"command": cmd}, "s2")["action"],
+                             "approve")
         self.assertIsNone(guard.check("read_file", {"path": "~/.ssh/id_rsa"}, "s2"))  # not a command tool
 
     def test_other_code_entrypoints_and_ambiguous_argument_shapes_need_approval(self):

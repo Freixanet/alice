@@ -49,10 +49,19 @@ _REMOTE_TOOLS = re.compile(
     r"browser_\w+|browser-use\w*|"
     r"mcp_\w*(?:gmail|mail|web|browse|browser|fetch|scrape|search)\w*)$", re.I)
 
+# Sending a message or opening an SSH command may disclose arbitrary model
+# context without using the terminal or web_search hooks. Unlike the first
+# web read these effects ALWAYS require approval, even in a fresh session.
+_EFFECT_TOOLS = re.compile(
+    r"^(?:send_message|message_agent|send_email|mail_send|web_read|"
+    r"ssh(?:_\w+)?|scp|sftp|smtp\w*|telegram_\w*|slack_\w*|"
+    r"mcp_\w*(?:send|message|post|publish|upload|ssh|slack|telegram|discord|email)\w*)$",
+    re.I)
+
 # These exact commands cannot interpolate shell input, run a build hook or use
 # user-selected paths. Everything else, including seemingly read-only curl GET,
 # needs approval because a URL or argument can carry local information out.
-_LOCAL_READ_ONLY = frozenset({"pwd", "ls", "ls -la", "git status --short", "cat README.md"})
+_LOCAL_READ_ONLY = frozenset({"pwd", "ls", "ls -la"})
 _COMMAND_KEYS = frozenset({"command", "cmd", "code", "script", "input"})
 _SECRETS = re.compile(
     r"~/\.ssh|/\.ssh/|id_(rsa|ed25519|ecdsa)\b|\.aws/credentials|\.netrc\b|(^|[\s/'\"])\.env\b"
@@ -156,15 +165,21 @@ def check(tool_name: str, args: Any, session_id: str) -> Optional[Dict[str, str]
     through Hermes' own approval card, with the exact command, so only the person's yes runs it.
     The rule key includes the complete tool arguments: "always allow" cannot cover a
     different command field or another interpreter tool."""
-    if _REMOTE_TOOLS.fullmatch(tool_name or "") and tool_name not in RUNS_CODE:
+    if (_EFFECT_TOOLS.fullmatch(tool_name or "")
+            or (tool_name or "").lower().startswith(("mcp_", "plugin_"))):
+        if not isinstance(session_id, str) or not session_id.strip():
+            return {"action": "block", "message":
+                    "No se puede verificar la sesión para emitir mensajes o conectarse a otros equipos."}
+        _has_remote_read(session_id, mark=True)
+        what = "enviar mensajes o datos fuera del proceso autorizado"
+    elif _REMOTE_TOOLS.fullmatch(tool_name or "") and tool_name not in RUNS_CODE:
         if not isinstance(session_id, str) or not session_id.strip():
             return {"action": "block", "message":
                     "No se puede verificar la sesión para acceder a la red."}
-        # Unseen sessions may perform their FIRST web read without an approval
-        # loop; record it durably first. Later requests need explicit approval.
-        seen = _has_remote_read(session_id, mark=True)
-        if not seen:
-            return None
+        # Even a FIRST network request can send local secrets via URL/query,
+        # HTTP POST or an authenticated integration. Durable taint alone is
+        # insufficient to authorize the first outbound request.
+        _has_remote_read(session_id, mark=True)
         what = "enviar datos mediante una URL, búsqueda o acción del navegador"
     elif tool_name in RUNS_CODE:
         # A missing, expired or process-lost taint record is NOT proof of safety.
@@ -182,7 +197,8 @@ def check(tool_name: str, args: Any, session_id: str) -> Optional[Dict[str, str]
         return None
     # Bind "always allow" to the complete tool/arguments, not merely the first
     # command field (which can be accompanied by another executable field).
-    request = json.dumps({"tool": tool_name, "args": args}, sort_keys=True,
+    request = json.dumps({"scope": str(_state_path()), "session": session_id,
+                          "tool": tool_name, "args": args}, sort_keys=True,
                          separators=(",", ":"), ensure_ascii=False)
     return {"action": "approve",
             "message": f"Esta operación podría {what}. "

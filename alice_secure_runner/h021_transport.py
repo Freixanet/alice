@@ -229,5 +229,7 @@ class HeaderBoundHTTPSHandler(urllib.request.HTTPSHandler):
     """stdlib pinned-CA HTTPS handler with absolute response-header deadline."""
 
     def https_open(self, req):
+        # CPython 3.12 removed HTTPSHandler._check_hostname; the pinned
+        # SSLContext already enforces hostname verification on both runtimes.
         return self.do_open(_ConnectionWithHeaderDeadline, req,
-                            context=self._context, check_hostname=self._check_hostname)
+                            context=self._context)

@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -20,11 +21,11 @@ class OfflineInstallTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.source = self.root / "source"
-        self.home = self.root / "fictional-hermes"
+        self.home = self.root / "fictional-user" / ".hermes"
         self.bin = self.root / "fake-bin"
         self.trace = self.root / "trace.log"
         self.source.mkdir()
-        self.home.mkdir()
+        self.home.mkdir(parents=True)
         self.bin.mkdir()
         shutil.copy2(SCRIPT, self.source / "install.sh")
         self._put(self.source / "plugin.yaml", "name: alice\nversion: 1.0.0\nkind: standalone\nprovides_tools: [example_tool]\nprovides_hooks: [pre_tool_call]\n")
@@ -81,6 +82,10 @@ class OfflineInstallTests(unittest.TestCase):
             "  exit 0\n"
             "fi\n"
             "if [ \"$1\" = - ] && [ \"$#\" = 3 ] && [ \"${FAKE_FAIL_SWAP:-0}\" = 1 ]; then exit 9; fi\n"
+            "if [ \"$1\" = - ] && [ \"$#\" = 3 ] && [ \"${FAKE_LOST_SWAP_RESULT:-0}\" = 1 ]; then\n"
+            "  \"$ALICE_FAKE_PYTHON\" \"$@\" || exit $?\n"
+            "  exit 9\n"
+            "fi\n"
             "exec \"$ALICE_FAKE_PYTHON\" \"$@\"\n",
             executable=True,
         )
@@ -95,9 +100,12 @@ class OfflineInstallTests(unittest.TestCase):
     def _run(self, **extra):
         env = dict(os.environ)
         env.update({
+            "HOME": str(self.home.parent),
             "HERMES_HOME": str(self.home),
             "ALICE_FAKE_TRACE": str(self.trace),
             "ALICE_FAKE_PYTHON": sys.executable,
+            "PYTHONPATH": os.pathsep.join(filter(None, (
+                site.getusersitepackages(), os.environ.get("PYTHONPATH", "")))),
             "PATH": f"{self.bin}{os.pathsep}{os.environ.get('PATH', '')}",
         })
         env.update({key: str(value) for key, value in extra.items()})
@@ -172,7 +180,40 @@ class OfflineInstallTests(unittest.TestCase):
         self.assertFalse((old / "__init__.py").exists())
         self.assertEqual(self._backup_plugins(), [])
         self.assertFalse(any(row.startswith("hermes ") for row in self._trace()))
-        self.assertEqual(list((self.home / "plugins").glob(".alice-install.*")), [], result.stderr)
+        self.assertTrue((self.home / "plugins/.alice-install.lock/recovery").is_file())
+        self.assertTrue(list((self.home / "plugins").glob(".alice-install.*/new/__init__.py")))
+
+    def test_lost_swap_acknowledgement_preserves_original_and_recovery_lock(self):
+        self._old_plugin()
+        result = self._run(FAKE_LOST_SWAP_RESULT=1)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.home / "plugins/alice/__init__.py").is_file())
+        self.assertTrue(list((self.home / "plugins").glob(".alice-install.*/new/old-marker.txt")))
+        self.assertTrue((self.home / "plugins/.alice-install.lock/recovery").is_file())
+        self.assertIn("outcome uncertain", result.stderr)
+
+    def test_nondefault_home_must_not_restart_real_gui_service_labels(self):
+        alternate = self.root / "alternate-hermes"
+        alternate.mkdir()
+        fake_python = alternate / "hermes-agent/venv/bin/python"
+        self._put(fake_python,
+                  (self.home / "hermes-agent/venv/bin/python").read_text(), executable=True)
+        result = self._run(HERMES_HOME=alternate)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("services NOT restarted", result.stdout)
+        self.assertFalse(any(row.startswith("kickstart ") for row in self._trace()))
+
+    def test_symlinked_plugin_or_backup_parent_is_refused_before_mutation(self):
+        for part in ("plugins", "backups"):
+            with self.subTest(part=part):
+                target = self.root / ("unrelated-" + part)
+                self._put(target / "retain.txt", "outside contents\n")
+                (self.home / part).symlink_to(target, target_is_directory=True)
+                result = self._run()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("symlink", result.stderr)
+                self.assertEqual((target / "retain.txt").read_text(), "outside contents\n")
+                (self.home / part).unlink()
 
     def test_failed_dashboard_restart_rolls_back_and_restarts_original_gateway(self):
         old = self._old_plugin()

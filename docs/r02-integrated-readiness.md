@@ -450,20 +450,28 @@ command text for known upload patterns; GET URLs, Python socket clients,
 The new plugin hook uses a tiny exact allowlist of purely local commands,
 requires Hermes user approval for other known code/terminal executors even
 when taint history is absent, and blocks if its guard raises an exception.
-A scoped private SQLite ledger records the first network read before dispatch
-and survives plugin reloads; further recognised web/browser network requests
-require approval. Missing session identity or a corrupt ledger fails closed.
-Its approval key binds the complete tool and argument object. This is
+A scoped private SQLite ledger records attempted network access before
+dispatch and survives plugin reloads. **Even the first** recognised web,
+HTTP, message, SSH or MCP request requires approval: an initial URL, query or
+message can already contain private data. Missing session identity or a
+corrupt ledger fails closed. The approval key binds the complete tool,
+arguments, session and profile scope. Unsafe shell allowlist entries such as
+`git status` with external fsmonitor and `cat` with arbitrary relative paths
+were removed. This is
 **defense in depth, not an OS-enforced network boundary**:
 unknown Hermes tools, privileged extensions and independent processes may
-still reach the network, and the first authorised-session web call is not
-reviewed, so Host A must remain untrusted.
+still reach the network, so Host A must remain untrusted.
 
 Installer changes are tested with a fake `hermes` CLI and a throwaway
 `HERMES_HOME`, never against the owner's Hermes profile. Installation stages
 an entire validated plugin before activating it, saves the previous copy and
-configuration for rollback, rejects package/vendor symlinks, and orders
-the gateway restart before the dashboard. Offline rollback/manifest tests
+configuration for rollback, rejects plugin/vendor and immediate parent
+symlinks, and orders the gateway restart before the dashboard. Service
+restart is forbidden for non-default `HERMES_HOME`, avoiding accidental
+restart of personal GUI services during a sandbox installation. An ambiguous
+atomic directory exchange preserves its journal, lock and recovery copy;
+backup is copied and compared without consuming the rollback source across
+filesystem boundaries. Offline rollback/manifest tests
 are not equivalent to verifying a clean deployment or upgraded official
 Hermes running on a separately managed host. Neither rollout nor rollback
 grants an authenticated R02 pairing or checkout capability.
@@ -484,10 +492,22 @@ completed at inspection time. The format is corrected with offline cached
 Prettier and will be reverified at the next published SHA. Do not attribute
 green CI to this candidate until checks refer to its exact commit.
 
+For the published `6ae172b` SHA, H01, H02.1 and synthetic runner checks
+found a genuine Python-version regression: CPython 3.12 no longer provides
+the `HTTPSHandler._check_hostname` attribute used by the new bounded-header
+adapter. The handler was corrected to pass its already hostname-checking
+SSL context directly, and a negative regression test removes that attribute
+under Python 3.9 before invoking the handler. Independent cross-worker
+audits additionally found the unsafe initial network-call exception,
+unrecognised message/SSH effect tools, sandbox-home service restart,
+ancestor symlinks and ambiguous installer swap handling, which are fixed in
+the subsequent local increment. All CI claims for this newer increment
+remain **pending exact-SHA verification** until the checks complete.
+
 No real account, keychain, Hermes installation, browser profile, service,
 merchant or payment endpoint was accessed in these local hardening tests.
-The final combined local Python/egress/installer suite for this increment
-reported **165 PASS, 9 SKIPPED** (the skips require optional Chromium), with
+The combined local Python/egress/installer suite for `6ae172b` reported
+**165 PASS, 9 SKIPPED** (the skips require optional Chromium), with
 `zsh -n`, `git diff --check` and offline Prettier check successful. Local
 verification is not a substitute for the exact published SHA's GitHub CI.
 
