@@ -440,7 +440,6 @@ Fases 2–3 pendientes: tablero Tasks/Needs Review, aprobación versionada, ruti
 proactivas y presentación enriquecida en chat. Esta fase entrega avisos agrupados
 al chat existente, sin afirmar que esas fases estén implementadas.
 
-
 ## Comparación anterior a fase 2 (9 de octubre de 2026)
 
 Por petición del usuario se obtuvo un checkout detached de `684c4da`, padre de
@@ -457,14 +456,14 @@ Log conservado en `/private/tmp/alice-baseline-684c4da-tests.log`.
 Estos seis nombres y causas coinciden con la ejecución completa reportada en
 fase 1 (565 pruebas, 4 failures, 2 errors, 19 skipped):
 
-| Resultado | Test | Causa en ambas ejecuciones |
-| --- | --- | --- |
-| FAIL | `test_agent_engine.Safety.test_delayed_hermes_session_is_refused_before_any_move` | `hermes_yaml` no importable |
-| FAIL | `test_ask_person.GoalWaitTests.test_an_open_question_parks_the_goal_and_its_answer_releases_it` | Goal no queda esperando; SessionDB no disponible |
-| FAIL | `test_task_finish.AutoGoalTests.test_an_errand_opens_its_goal` | Goal no queda activo; SessionDB no disponible |
-| FAIL | `test_task_finish.AutoGoalTests.test_the_same_reply_twice_pauses_the_goal` | Guard de repetición no pausa Goal |
-| ERROR | `test_task_finish.FinishTaskTests.test_the_tool_uses_the_chat_turn_session` | `hermes_yaml` no importable |
-| ERROR | `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes` | Subprocess timeout de 60 segundos |
+| Resultado | Test                                                                                            | Causa en ambas ejecuciones                       |
+| --------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| FAIL      | `test_agent_engine.Safety.test_delayed_hermes_session_is_refused_before_any_move`               | `hermes_yaml` no importable                      |
+| FAIL      | `test_ask_person.GoalWaitTests.test_an_open_question_parks_the_goal_and_its_answer_releases_it` | Goal no queda esperando; SessionDB no disponible |
+| FAIL      | `test_task_finish.AutoGoalTests.test_an_errand_opens_its_goal`                                  | Goal no queda activo; SessionDB no disponible    |
+| FAIL      | `test_task_finish.AutoGoalTests.test_the_same_reply_twice_pauses_the_goal`                      | Guard de repetición no pausa Goal                |
+| ERROR     | `test_task_finish.FinishTaskTests.test_the_tool_uses_the_chat_turn_session`                     | `hermes_yaml` no importable                      |
+| ERROR     | `test_memory_review.HermesReviewTests.test_reads_each_message_once_and_writes_through_hermes`   | Subprocess timeout de 60 segundos                |
 
 **Ninguno de los seis es nuevo en Watchers.** La ejecución actual no se repitió
 completa: ya existía esa evidencia; se verificaron los 31 tests específicos tras
@@ -493,7 +492,6 @@ resultado y `git apply --check` sobre el plugin real: resultado 0, sin modificar
 No se usó el instalador general, que sobrescribiría archivos vivos.
 **Fase 2 no iniciada.**
 
-
 ## Despliegue solicitado (9 de octubre de 2026)
 
 - Paso 1: iPhone `A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B` tenía build 87.
@@ -514,7 +512,6 @@ No se usó el instalador general, que sobrescribiría archivos vivos.
   configuró Bark. La creación no inicia trabajo hasta activarse explícitamente.
   Fase 2 no iniciada.
 
-
 ## Recuperación de regresión de instalación
 
 El build 88 salió de una rama basada en `28f48c8` (main) que no contenía las
@@ -528,7 +525,6 @@ No se reconstruyen esos controles de memoria ni se modifica el journal real.
 La UI existente queda igual que `18a214d`, salvo el enlace de Watchers y su cliente.
 La guía de instalación debe aplicar las reglas actuales de AGENTS: rama subida,
 ancestría del origen instalado y lectura del build justo antes de instalar.
-
 
 Resultado de recuperación: **build 89 instalado y leído de vuelta desde el iPhone**,
 con revisión de código `4befbc1`, rama subida `codex/proactive-watchers`.

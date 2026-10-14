@@ -48,6 +48,12 @@ and other tools. Tool-specific files point here rather than duplicate policy.
 - Web: `npm ci` with the pinned npm version, then `npm run check:static` and
   `npm run test:e2e`. Run `npm run security:check` and `npm run deps:check` for releases.
 - Plugin: use the Hermes virtualenv to run `python -m unittest discover -s hermes-plugin/tests`.
+  Match the official Hermes revision pinned in `.github/workflows/quality.yml`;
+  an arbitrary installed checkout or an old virtualenv may not match that contract.
+  The pre-push hook accepts `ALICE_HERMES_TEST_PYTHON` for an isolated matching
+  test interpreter. Do not change the person's live Hermes to prepare tests.
+- iPhone installation helper: `python3 scripts/tests/test_install_iphone.py`
+  checks the workflow with fixtures; it does not install on the person's phone.
 - Notifier: `python -m unittest discover -s mac/notifier`.
 - Cross-surface changes: check both transports, profile scoping and
   `npm run slash:check`. Regenerate `ios/Alice.xcodeproj` from `ios/project.yml`;

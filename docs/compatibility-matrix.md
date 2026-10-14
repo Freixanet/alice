@@ -76,17 +76,17 @@ instead of treating a fixture version as a universal compatibility certificate.
 
 ## Watchers phase 1
 
-| Surface | Implemented / qualification |
-| --- | --- |
-| iOS | Settings → Watchers, cheap-route setup, pause/retry/discard, dry run and feedback; generic device build passes, physical interaction pending |
-| Activation / baseline | Actual-code alert-path probe plus explicit cheap-route dry run; rejection reason persists in Settings. First poll skips history; Gmail uses server arrival cutoff. Fixture and real Seatbelt checks pass; see [setup](watchers-first-email.md#activation-validation-and-starting-point) |
-| Host runner | macOS Seatbelt only; other platforms refuse activation; real sandbox tests pass |
-| Classifier | Explicit per-host/user OpenAI-compatible route with JSON-schema output; no auxiliary-client fallback; fake transport/error tests pass |
-| Sources | Existing Gmail skill, public HTTPS RSS/JSON and GitHub; isolated fixtures, live account checks pending |
-| Delivery | Durable local inbox then main-profile Hermes Bot Chat defer; inspected Hermes commit `6b2fe92`, live delivery pending |
-| Push | Existing optional Mac/Bark notifier, generic notices; notifier tests pass, physical delivery pending |
-| Review Tasks / phase 2 | Host-owned versioned Tasks, single-use approvals, native four-column board; fixture tests and generic device compilation; live model and visual interaction still require validation |
-| Proactive messages / phase 3 | Marked notice cards with one reply, one configurable Madrid morning briefing, owner-wide batching and daily invocation counters; fixture verification and device compilation; see [phase 3](watchers-phase3.md) |
+| Surface                      | Implemented / qualification                                                                                                                                                                                                                                                             |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| iOS                          | Settings → Watchers, cheap-route setup, pause/retry/discard, dry run and feedback; generic device build passes, physical interaction pending                                                                                                                                            |
+| Activation / baseline        | Actual-code alert-path probe plus explicit cheap-route dry run; rejection reason persists in Settings. First poll skips history; Gmail uses server arrival cutoff. Fixture and real Seatbelt checks pass; see [setup](watchers-first-email.md#activation-validation-and-starting-point) |
+| Host runner                  | macOS Seatbelt only; other platforms refuse activation; real sandbox tests pass                                                                                                                                                                                                         |
+| Classifier                   | Explicit per-host/user OpenAI-compatible route with JSON-schema output; no auxiliary-client fallback; fake transport/error tests pass                                                                                                                                                   |
+| Sources                      | Existing Gmail skill, public HTTPS RSS/JSON and GitHub; isolated fixtures, live account checks pending                                                                                                                                                                                  |
+| Delivery                     | Durable local inbox then main-profile Hermes Bot Chat defer; inspected Hermes commit `6b2fe92`, live delivery pending                                                                                                                                                                   |
+| Push                         | Existing optional Mac/Bark notifier, generic notices; notifier tests pass, physical delivery pending                                                                                                                                                                                    |
+| Review Tasks / phase 2       | Host-owned versioned Tasks, single-use approvals, native four-column board; fixture tests and generic device compilation; live model and visual interaction still require validation                                                                                                    |
+| Proactive messages / phase 3 | Marked notice cards with one reply, one configurable Madrid morning briefing, owner-wide batching and daily invocation counters; fixture verification and device compilation; see [phase 3](watchers-phase3.md)                                                                         |
 
 The full plugin regression run is not green in the installed Hermes environment;
 see the exact outcomes in [proactive-plan](proactive-plan.md). No universal Hermes
