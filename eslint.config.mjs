@@ -44,6 +44,12 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "error",
     },
   },
+  {
+    // Embedded by InteractiveDocument.swift as a classic script. Its entry
+    // point is called by the native host, outside this standalone file.
+    files: ["ios/Alice/Resources/OpenIntelligentUI/openintelligentui-host.js"],
+    languageOptions: { sourceType: "script" },
+  },
   // Disable rules that conflict with Prettier formatting.
   prettier,
 );

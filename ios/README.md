@@ -26,6 +26,21 @@ open Alice.xcodeproj
 The project file is generated, so it is not committed — `project.yml` is the
 source of truth and merge conflicts in a `.pbxproj` never happen.
 
+## Updating a physical iPhone without opening Xcode
+
+From the intended repository checkout, after committing and publishing its changes:
+
+```bash
+python3 scripts/install-iphone.py --repo "$PWD"
+```
+
+The helper reuses `ios/.build/DeviceData`, builds Debug, installs directly and
+verifies the version on the iPhone. It does not open Xcode or a simulator.
+`--check` verifies the source and device without an update; `--build-only`
+compiles without needing the phone. Use `--derived-data /existing/cache/path`
+when your previous workflow used another incremental cache. See `AGENTS.md`
+for source provenance, cache preservation and this Mac's signing repair.
+
 ## Shape
 
 Chat is the app. A tab bar would put peers at the bottom of a screen that is

@@ -192,8 +192,14 @@ class BusinessIsolationTests(unittest.TestCase):
         ctx.register_system_prompt_section.assert_any_call("alice.dudas", self.plugin.doubts_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.compras", self.plugin.purchases_prompt)
         ctx.register_system_prompt_section.assert_any_call("alice.preguntas", self.plugin.ask_prompt)
+        # Interactive replies already have a documented prompt section; verify
+        # its real registration too, while retaining the exact section set.
+        interactive = next(c.args[1] for c in ctx.register_system_prompt_section.call_args_list
+                           if c.args[0] == "alice.interactive")
+        self.assertIn("openintelligentui", interactive())
+        self.assertEqual(interactive({"platform": "telegram"}), "")
         sections = [c.args[0] for c in ctx.register_system_prompt_section.call_args_list]
-        self.assertEqual(set(sections), {'alice.equipos', 'alice.debug', 'alice.resolver', 'alice.canal', 'alice.tasks', 'alice.claves', 'alice.recados', 'alice.dudas', 'alice.tarjetas', 'alice.compras', 'alice.preguntas', 'alice.objetivos'})
+        self.assertEqual(set(sections), {'alice.equipos', 'alice.debug', 'alice.resolver', 'alice.canal', 'alice.tasks', 'alice.claves', 'alice.recados', 'alice.dudas', 'alice.tarjetas', 'alice.compras', 'alice.preguntas', 'alice.objetivos', 'alice.interactive'})
         self.assertEqual(len(sections), len(set(sections)))
 
 

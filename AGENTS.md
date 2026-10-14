@@ -48,6 +48,12 @@ and other tools. Tool-specific files point here rather than duplicate policy.
 - Web: `npm ci` with the pinned npm version, then `npm run check:static` and
   `npm run test:e2e`. Run `npm run security:check` and `npm run deps:check` for releases.
 - Plugin: use the Hermes virtualenv to run `python -m unittest discover -s hermes-plugin/tests`.
+  Match the official Hermes revision pinned in `.github/workflows/quality.yml`;
+  an arbitrary installed checkout or an old virtualenv may not match that contract.
+  The pre-push hook accepts `ALICE_HERMES_TEST_PYTHON` for an isolated matching
+  test interpreter. Do not change the person's live Hermes to prepare tests.
+- iPhone installation helper: `python3 scripts/tests/test_install_iphone.py`
+  checks the workflow with fixtures; it does not install on the person's phone.
 - Notifier: `python -m unittest discover -s mac/notifier`.
 - Cross-surface changes: check both transports, profile scoping and
   `npm run slash:check`. Regenerate `ios/Alice.xcodeproj` from `ios/project.yml`;
@@ -65,12 +71,39 @@ the simulator down when done (`xcrun simctl shutdown all`). To ship a change to 
 user's iPhone:
 
 ```bash
-xcodebuild -project ios/Alice.xcodeproj -scheme Alice -configuration Debug \
-  -destination 'generic/platform=iOS' -derivedDataPath ios/.build/DeviceData \
-  -allowProvisioningUpdates build
-xcrun devicectl device install app --device A60AE407-5EC1-5B24-8A49-3F5DF1BAF70B \
-  ios/.build/DeviceData/Build/Products/Debug-iphoneos/Alice.app
+python3 scripts/install-iphone.py --repo "$PWD"
 ```
+
+Use this helper for ordinary iPhone updates; Xcode must be installed, but its GUI
+can stay closed. Run it once when an iOS change is ready to deliver, not on every
+save. Server/plugin-only changes do not need an iPhone rebuild. The helper
+builds Debug incrementally, installs directly with `devicectl`, and reads the
+installed version back from the device. It checks the source is committed and
+published and refuses to overwrite an installation that changed during its build.
+
+- Work from the intended checkout. Never silently switch to another clone just
+  because it has a build cache; first preserve all changes in the installed app.
+- Reuse `ios/.build/DeviceData` (including an existing symlink). If the previous
+  workflow used another cache, pass `--derived-data /existing/cache/path`.
+  Do not run `clean`, delete DerivedData, archive/export an IPA, open Xcode or add
+  a background watcher as part of ordinary updates. Do not change compiler
+  optimization or concurrency settings just to reduce resource use.
+- `--check` verifies the source and real device without building or installing.
+  `--build-only` builds without contacting the phone or changing its app. A cached
+  build number is never authority to install. Use `--device ID` if multiple
+  iPhones are paired; never commit a personal device identifier.
+- On this Mac, the primary checkout's cache was moved outside synced Documents
+  to `~/Library/Developer/Xcode/DerivedData/Alice-DirectDevice-ChatGPT`; its old
+  `ios/.build/DeviceData` path is a symlink. Preserve it. The helper strips only
+  FinderInfo/ResourceFork from generated products to keep signing working;
+  do not strip attributes from source or weaken code signing.
+- Keep the source/provenance checks below: the helper cannot infer which source
+  commit a previously installed app contained, nor detect another agent's
+  unpublished builds. Do not replace newer work with a stale checkout.
+- Record actual build and install times from `ios/.build/iphone-installs/`.
+  A warm build with only a version bump took 14.15 s on 2026-10-14; that does not
+  establish install speed or timing for Swift changes. Never promise identical
+  timing to Xcode without a comparison.
 
 A successful device build is the local iOS check. Report that simulator unit/UI
 tests were not run; never run UI tests on the user's real iPhone (real data).

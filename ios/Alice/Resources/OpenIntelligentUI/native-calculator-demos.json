@@ -39,27 +39,13 @@
       {
         "id": "monthly",
         "label": "Ahorro mensual",
-        "expression": [
-          "income",
-          "fixed",
-          "-",
-          "leisure",
-          "-"
-        ],
+        "expression": ["income", "fixed", "-", "leisure", "-"],
         "unit": "€"
       },
       {
         "id": "annual",
         "label": "Si mantienes este mes todo el año",
-        "expression": [
-          "income",
-          "fixed",
-          "-",
-          "leisure",
-          "-",
-          "12",
-          "*"
-        ],
+        "expression": ["income", "fixed", "-", "leisure", "-", "12", "*"],
         "unit": "€"
       }
     ]
@@ -114,23 +100,13 @@
       {
         "id": "a",
         "label": "Total del plan A",
-        "expression": [
-          "months",
-          "priceA",
-          "*",
-          "feeA",
-          "+"
-        ],
+        "expression": ["months", "priceA", "*", "feeA", "+"],
         "unit": "€"
       },
       {
         "id": "b",
         "label": "Total del plan B",
-        "expression": [
-          "months",
-          "priceB",
-          "*"
-        ],
+        "expression": ["months", "priceB", "*"],
         "unit": "€"
       },
       {
@@ -191,31 +167,13 @@
       {
         "id": "each",
         "label": "Por persona",
-        "expression": [
-          "bill",
-          "1",
-          "tip",
-          "100",
-          "/",
-          "+",
-          "*",
-          "people",
-          "/"
-        ],
+        "expression": ["bill", "1", "tip", "100", "/", "+", "*", "people", "/"],
         "unit": "€"
       },
       {
         "id": "total",
         "label": "Total con propina",
-        "expression": [
-          "bill",
-          "1",
-          "tip",
-          "100",
-          "/",
-          "+",
-          "*"
-        ],
+        "expression": ["bill", "1", "tip", "100", "/", "+", "*"],
         "unit": "€"
       }
     ]

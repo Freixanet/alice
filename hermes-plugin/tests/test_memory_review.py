@@ -247,11 +247,15 @@ class HermesReviewTests(unittest.TestCase):
         import os
         import subprocess
 
-        hermes = Path.home() / ".hermes" / "hermes-agent"
-        if not (hermes / "hermes_state.py").is_file():
-            self.skipTest("Hermes is not installed here")
+        # Use the Hermes selected by the test interpreter (including CI's
+        # pinned checkout), never an unrelated live installation in the home.
+        hermes_spec = importlib.util.find_spec("hermes_state")
+        if hermes_spec is None or hermes_spec.origin is None:
+            self.skipTest("Hermes is not installed in the test environment")
+        hermes = Path(hermes_spec.origin).resolve().parent
         with tempfile.TemporaryDirectory() as home:
-            env = dict(os.environ, HERMES_HOME=home, PYTHONPATH=str(hermes))
+            pythonpath = os.pathsep.join(filter(None, (str(hermes), os.environ.get("PYTHONPATH"))))
+            env = dict(os.environ, HERMES_HOME=home, PYTHONPATH=pythonpath)
             proc = subprocess.run([sys.executable, "-c", HERMES_TEST, str(HERE / "__init__.py")],
                                   capture_output=True, text=True, env=env, timeout=60)
             self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
