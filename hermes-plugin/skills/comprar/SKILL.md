@@ -20,3 +20,30 @@ Si falta acceso de ESTE origen, `login_request`: se pide de forma segura en el i
 Tras añadir el formato y después del login, `purchase_check_cart` comprueba precio y unidades de la cesta del recado. Antes de rellenar tarjeta o pagar, `checkout_request` con `total_selector` del importe final visible, los artículos, unidades, envío, impuestos/comisiones, dirección, tarjeta y total EXACTO del paso final. Si falta tarjeta, `card_request`. La persona aprueba ese total con «Permitir»; la confirmación de Hermes no equivale a aprobar la compra. Paga solo si el importe sigue coincidiendo, o pide una nueva aprobación por el cambio real.
 
 Justo antes de pagar comprueba que no existe un pedido igual. Después de pulsar pagar, `purchase_outcome` con pedido, total y entrega. Un clic o cargo pendiente no prueba un pedido; un error posterior es `unknown`: comprueba confirmación/correo/pedidos y nunca pagues otra vez hasta resolverlo. Nunca afirmes que no se cobró sin comprobarlo.
+
+
+## Ejecución comprobada (bucle de Open Instinct)
+
+En el recado: observar → una acción → observar el resultado → comprobar → decidir.
+Usa `purchase_browser` con action `observe` en la pestaña propia del producto elegido.
+Devuelve los controles visibles, opciones reales, campos pendientes, errores y
+`observation_id`. Para click/fill/select envía un `control_id` de ESA observación y
+el mismo `observation_id`. No se admiten selectores ni código inventados. Cada acción
+retorna la página posterior; comprueba el resultado antes de continuar.
+
+- `stale`: la página cambió; no se ejecutó nada. Usa la nueva observación.
+- `unchanged`: no hay cambio comprobado. Lee los errores, campo inválido, botón
+  desactivado, carga pendiente o variante sin seleccionar; cambia la estrategia.
+- `unknown`: se perdió la respuesta; la acción puede haberse ejecutado. Mira cesta,
+  unidades y estado antes de cualquier intento. Nunca añadas ni pagues de nuevo a ciegas.
+- Login, OTP, CAPTCHA o tarjeta: usa la tarjeta segura o toma de control; conserva
+  el recado y su contexto. No sustituyas estos pasos por preguntas de secretos.
+
+En una web con controles personalizados que no aparezcan, screenshot/zoom del
+navegador → una operación sobre el control observado → `purchase_browser observe`
+para comprobar. No agrupes añadir, continuar y pagar en un solo bloque de código.
+La misma URL puede contener varios pasos: decide por el estado real de la página.
+`purchase_check_cart`, `checkout_request` y `purchase_outcome` siguen siendo obligatorios;
+este bucle prepara la compra, nunca ejecuta pagos ni declara éxito por un clic.
+
+Si el resultado trae `fields_to_fix` y `suggested_actions`, corrige esos campos con la variante, unidades o datos guardados indicados. Son propuestas vinculadas a la observación actual, no sustituciones. Si falta un dato guardado o una opción exacta, no lo inventes.

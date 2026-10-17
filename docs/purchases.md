@@ -115,3 +115,7 @@ Los totales de línea se convierten en importes por unidad usando la cantidad co
 Regresión aislada, con Chrome y todas las peticiones de tienda interceptadas:
 `python scripts/verify-prozis-purchase.py`; `--luna` ejecuta además GPT-6 Luna contra
 esa tienda ficticia. No usa el gateway, el vault ni el navegador personal y no puede pagar.
+
+## Ejecución y recuperación
+
+El recado observa la página, realiza una acción y comprueba el resultado antes de continuar. Un error de validación se corrige en su campo; una respuesta perdida nunca provoca otro clic a ciegas. El checkout puede avanzar en la misma URL. Consulta [cómo funciona y qué se ha probado](purchase-execution.md).

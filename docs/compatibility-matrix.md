@@ -73,3 +73,7 @@ Native dictation and read-aloud use the iOS speech interfaces. They do not imply
 support for a Hermes realtime-voice service: the checked static manifest marks
 `audio_api` and `realtime_voice` false. Review new advertised features individually
 instead of treating a fixture version as a universal compatibility certificate.
+
+### Purchase preparation loop
+
+`purchase_browser` uses Alice’s pinned errand context and existing Hermes browser contracts. It adds DOM observations and serialized pre-payment actions; it preserves product, price, login, approval and receipt services. Fixture and isolated real-model evidence are recorded in [purchase execution](purchase-execution.md). Custom widgets and live merchant/payment acceptance remain separate checks.
