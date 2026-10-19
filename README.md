@@ -174,7 +174,7 @@ Decisions that shape it:
   The iPhone talks to your Hermes over your network. Background delivery is best effort,
   as iOS allows.
 
-More detail: [architecture](docs/architecture.md), [pairing protocol](docs/pairing.md),
+More detail: [architecture](docs/ARCHITECTURE.md), [engineering manual](docs/SYSTEM_MAP.md), [pairing protocol](docs/pairing.md),
 [Hermes contracts](docs/hermes-contracts.md), [security](SECURITY.md).
 
 ## Limitations

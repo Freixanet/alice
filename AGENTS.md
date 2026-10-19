@@ -22,7 +22,11 @@ Hermes as the same state. Do not commit private runtime data.
 
 ## Start here, in any coding tool
 
-1. Read `README.md`, `docs/architecture.md`, `SECURITY.md` and the nearest instructions.
+1. Read `README.md`, `docs/ARCHITECTURE.md`, `SECURITY.md` and the nearest instructions.
+   The engineering manual — `docs/SYSTEM_MAP.md`, `docs/DATA_FLOW.md`,
+   `docs/OPERATIONS.md`, `docs/DEBUGGING.md`, `docs/KNOWN_FAILURE_MODES.md`,
+   `docs/DEPENDENCIES.md`, `docs/RELEASE.md` and `docs/AI_AGENT_GUIDE.md` —
+   orients work with no prior context.
 2. Check `git status --short`, the branch and the base commit. Preserve existing
    changes. Read `docs/verification.md` and `docs/compatibility-matrix.md` before
    claiming release readiness.
