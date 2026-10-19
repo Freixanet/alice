@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+#
+# Alice — bootstrap from a clean machine
+#
+# Checks prerequisites, installs installable dependencies, and verifies
+# the setup. Fails clearly if something is missing.
+#
+# Usage: ./bootstrap
+#
+set -euo pipefail
+
+cd "$(dirname "$0")"
+
+BOLD=$'\033[1m'; RED=$'\033[31m'; GREEN=$'\033[32m'; YELLOW=$'\033[33m'; OFF=$'\033[0m'
+FAILED=()
+
+step() { printf "\n%s▸ %s%s\n" "$BOLD" "$1" "$OFF"; }
+
+check() { # check <name> <command...>
+  local name=$1; shift
+  if "$@" >/dev/null 2>&1; then
+    printf "%s  ✓ %s%s\n" "$GREEN" "$name" "$OFF"
+  else
+    printf "%s  ✗ %s%s\n" "$RED" "$name" "$OFF"
+    FAILED+=("$name")
+  fi
+}
+
+# --- Node.js ---
+step "Node.js"
+node_supported() {
+  local version major minor
+  version=$(node -p 'process.versions.node' 2>/dev/null) || return 1
+  IFS=. read -r major minor _ <<<"$version"
+  (( major >= 24 || (major == 22 && minor >= 13) ))
+}
+
+if node_supported; then
+  printf "%s  ✓ Node %s%s\n" "$GREEN" "$(node --version)" "$OFF"
+  if [[ $(node --version) == v24* ]]; then
+    printf "  (matches CI)\n"
+  else
+    printf "%s  Node %s (supported; CI verifies Node 24)%s\n" "$YELLOW" "$(node --version)" "$OFF"
+  fi
+else
+  have=$(node --version 2>/dev/null || echo "none")
+  printf "%s  ✗ Node %s — Alice requires ^22.13.0 or >=24.0.0.%s\n" "$RED" "$have" "$OFF"
+  printf "  Install via nvm: nvm install 24\n"
+  FAILED+=("Node.js")
+fi
+
+# --- npm ---
+step "npm"
+npm_version=$(npm -v 2>/dev/null || echo "none")
+npm_major=$(echo "$npm_version" | cut -d. -f1)
+if [[ "$npm_major" -ge 11 ]] 2>/dev/null; then
+  printf "%s  ✓ npm %s%s\n" "$GREEN" "$npm_version" "$OFF"
+else
+  printf "%s  ✗ npm %s — Alice requires >=11.0.0 (pinned 11.19.0)%s\n" "$RED" "$npm_version" "$OFF"
+  printf "  Install: npm install -g npm@11.19.0\n"
+  FAILED+=("npm")
+fi
+
+# --- Python ---
+step "Python"
+python_version=$(python3 --version 2>/dev/null || echo "none")
+python_major=$(echo "$python_version" | awk '{print $2}' | cut -d. -f1)
+python_minor=$(echo "$python_version" | awk '{print $2}' | cut -d. -f2)
+if [[ "$python_major" == "3" && "$python_minor" -ge 11 ]] 2>/dev/null; then
+  printf "%s  ✓ %s%s\n" "$GREEN" "$python_version" "$OFF"
+else
+  printf "%s  ✗ %s — Alice plugin tests require Python 3.11%s\n" "$RED" "$python_version" "$OFF"
+  printf "  Install via Homebrew: brew install python@3.11\n"
+  FAILED+=("Python")
+fi
+
+# --- Git ---
+step "Git"
+if command -v git >/dev/null 2>&1; then
+  printf "%s  ✓ Git %s%s\n" "$GREEN" "$(git --version)" "$OFF"
+else
+  printf "%s  ✗ Git not found%s\n" "$RED" "$OFF"
+  FAILED+=("Git")
+fi
+
+# --- XcodeGen (iOS only) ---
+step "XcodeGen (iOS development)"
+if command -v xcodegen >/dev/null 2>&1; then
+  printf "%s  ✓ XcodeGen installed%s\n" "$GREEN" "$OFF"
+else
+  printf "%s  ⚠ XcodeGen not found — install for iOS: brew install xcodegen%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- Xcode (iOS only) ---
+step "Xcode (iOS development)"
+if command -v xcodebuild >/dev/null 2>&1; then
+  xcode_version=$(xcodebuild -version 2>/dev/null | head -1 || echo "unknown")
+  if echo "$xcode_version" | grep -q "Xcode 26"; then
+    printf "%s  ✓ %s%s\n" "$GREEN" "$xcode_version" "$OFF"
+  else
+    printf "%s  ⚠ %s — Xcode 26 required for iOS development%s\n" "$YELLOW" "$xcode_version" "$OFF"
+  fi
+else
+  printf "%s  ⚠ Xcode not found — install Xcode 26 for iOS development%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- gitleaks (secret scanning) ---
+step "gitleaks (secret scanning)"
+if command -v gitleaks >/dev/null 2>&1; then
+  printf "%s  ✓ gitleaks %s%s\n" "$GREEN" "$(gitleaks version)" "$OFF"
+elif command -v docker >/dev/null 2>&1; then
+  printf "%s  ⚠ gitleaks not found, but Docker is available (fallback)%s\n" "$YELLOW" "$OFF"
+else
+  printf "%s  ⚠ gitleaks not found — install: brew install gitleaks%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- npm dependencies ---
+step "npm dependencies"
+if [[ -f package.json ]]; then
+  if [[ -d node_modules ]]; then
+    printf "%s  ✓ node_modules exists (run npm ci to update)%s\n" "$GREEN" "$OFF"
+  else
+    printf "  Installing npm dependencies...\n"
+    if npm ci; then
+      printf "%s  ✓ npm ci succeeded%s\n" "$GREEN" "$OFF"
+    else
+      printf "%s  ✗ npm ci failed%s\n" "$RED" "$OFF"
+      FAILED+=("npm ci")
+    fi
+  fi
+else
+  printf "%s  ⚠ No package.json found — not in the repository root?%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- Git hooks ---
+step "Git hooks"
+if [[ -f .githooks/pre-push ]]; then
+  if git config core.hooksPath | grep -q ".githooks" 2>/dev/null; then
+    printf "%s  ✓ Git hooks configured%s\n" "$GREEN" "$OFF"
+  else
+    printf "  Configuring git hooks...\n"
+    git config core.hooksPath .githooks && printf "%s  ✓ Git hooks configured%s\n" "$GREEN" "$OFF" || {
+      printf "%s  ✗ Could not configure git hooks%s\n" "$RED" "$OFF"
+      FAILED+=("git hooks")
+    }
+  fi
+else
+  printf "%s  ⚠ No .githooks/pre-push found%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- Format check (quick verification) ---
+step "Format check (quick verification)"
+if [[ -d node_modules ]]; then
+  if npm run format:check >/dev/null 2>&1; then
+    printf "%s  ✓ Format check passed%s\n" "$GREEN" "$OFF"
+  else
+    printf "%s  ⚠ Format check failed — run: npm run format%s\n" "$YELLOW" "$OFF"
+  fi
+else
+  printf "%s  ⚠ node_modules not installed — skipping format check%s\n" "$YELLOW" "$OFF"
+fi
+
+# --- Summary ---
+printf "\n"
+if (( ${#FAILED[@]} )); then
+  printf "%sFAILED: %s%s\n" "$RED" "${FAILED[*]}" "$OFF"
+  printf "\nFix the issues above and re-run ./bootstrap\n"
+  exit 1
+fi
+
+printf "%sAll prerequisites met. Alice is ready for development.%s\n" "$GREEN" "$OFF"
+printf "\nNext steps:\n"
+printf "  Web:  npm run dev\n"
+printf "  iOS:  cd ios && xcodegen generate && open Alice.xcodeproj\n"
+printf "  Check: npm run check:static\n"
+printf "  Full: bash scripts/ci-local.sh all\n"
