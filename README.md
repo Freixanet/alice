@@ -13,7 +13,7 @@ on your own Mac or server.
 Store; you build it with Xcode. It needs iOS 26 and a Hermes you run yourself. It is an
 independent project, not a Nous Research product.
 
-[Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Guía en español](docs/getting-connected.md)
+[Product site](https://myalice.app/) · [Get started](#get-started) · [What it does](#what-it-does) · [How it is built](#how-it-is-built) · [Limitations](#limitations) · [Guía en español](docs/getting-connected.md)
 
 ## From a thought to a task
 
@@ -211,11 +211,9 @@ What each suite does and does not prove is in [docs/verification.md](docs/verifi
 
 ## Who built it
 
-Designed and directed by Marc Freixanet. Much of the code was written with AI coding agents
-(Claude Code, Codex) working under the rules in [AGENTS.md](AGENTS.md). That file holds
-the contracts, the verification steps and a checklist that asks every change for evidence.
-The 700+ commit history shows how features were specified, reviewed and fixed, including
-the fixes that followed real-world failures.
+Built by **Marc Freixanet**. The [architecture](docs/architecture.md),
+[verification guide](docs/verification.md)
+explain the boundaries between the iPhone app, the web companion and the Hermes plugin.
 
 ## Contribute and report
 
