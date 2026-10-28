@@ -4,6 +4,7 @@ login is used silently, and ask_person inside an errand reaches the person throu
     PYTHONPATH=~/.hermes/hermes-agent ~/.hermes/hermes-agent/venv/bin/python -m unittest discover -s hermes-plugin/tests
 """
 import importlib.util
+import inspect
 import json
 import sys
 import tempfile
@@ -91,6 +92,282 @@ class ErrandHookTests(unittest.TestCase):
         self.assertEqual(self.plugin._guard_errand(tool_name="browser_get_state", args={"expression":"submit()"}, session_id=entry["session_id"])["action"], "block")
         result = self.plugin._isolate_errand_browser(tool_name="browser_exec", args={"code":"print(page_info()); click(3)"}, session_id=entry["session_id"])
         self.assertEqual(result["action"], "modify")
+
+    def test_r02_indirect_javascript_requires_a_checked_browser_action(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        code = 'print(js("globalThis[\'r\'+\'un\']()"))'
+        # The existing import/CDP blacklist permits this browser_exec script.
+        isolated = self.plugin._isolate_errand_browser(
+            tool_name="browser_exec", args={"code": code}, session_id=entry["session_id"])
+        self.assertEqual(isolated["action"], "modify")
+        verdict = self.plugin._guard_errand(
+            tool_name="browser_exec", args={"code": code}, session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
+
+    def test_r02_alias_cannot_rebind_checked_browser_helpers(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        for code in (
+            'click = js; click("globalThis[\'r\'+\'un\']()")',
+            'f = js; f("globalThis[\'r\'+\'un\']()")',
+            'def click():\n    return js("run()")\nclick()',
+            'print(page_info().get("url"))',
+        ):
+            with self.subTest(code=code):
+                verdict = self.plugin._guard_errand(
+                    "browser_exec", {"code": code}, session_id=entry["session_id"])
+                self.assertEqual(verdict["action"], "block")
+
+    def test_r02_raw_browser_write_routes_are_not_unchecked(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        for name, args in (
+            ("browser_console", {"expression": "globalThis['r'+'un']()"}),
+            ("browser_cdp", {"method": "Runtime.evaluate", "params": {"expression": "run()"}}),
+            ("browser_cdp", {"method": "Input.dispatchMouseEvent", "params": {"type": "mousePressed"}}),
+            ("browser_cdp", {"method": "Page.handleJavaScriptDialog", "params": {"accept": True}}),
+            ("browser_cdp", {"method": "DOM.getDocumentThenSet", "params": {}}),
+            ("browser_cdp", {"method": "Network.getResponseBody", "params": {"requestId": "fixture"}}),
+            ("browser_dialog", {"action": "accept"}),
+            ("shell", {"command": "python -c 'submit_order()'"}),
+        ):
+            with self.subTest(route=name, args=args):
+                verdict = self.plugin._guard_errand(
+                    tool_name=name, args=args, session_id=entry["session_id"])
+                self.assertEqual(verdict["action"], "block")
+
+    def test_r02_checkout_approval_does_not_grant_unscoped_raw_browser_access(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        # A checkout grants the checked payment path, not arbitrary JS against
+        # another tab or a different amount. No website or payment is contacted.
+        self.errands.request_checkout(self.home, entry["id"], {
+            "merchant": "HSN", "site": "https://www.hsnstore.com",
+            "items": [{"name": "Creatina"}], "total": "34,99 €", "currency": "EUR",
+        }, fetch=lambda *_: (b"", "text/html"))
+        checkout = self.errands.get(self.home, entry["id"])["checkout"]
+        self.errands.decide_checkout(self.home, entry["id"], True, checkout_id=checkout["id"])
+        for name, args in (
+            ("browser_exec", {"code": 'js("globalThis[\'r\'+\'un\']()")'}),
+            ("browser_cdp", {"method": "Runtime.evaluate", "params": {"expression": "run()"}}),
+        ):
+            with self.subTest(route=name):
+                verdict = self.plugin._guard_errand(name, args, session_id=entry["session_id"])
+                self.assertEqual(verdict["action"], "block")
+
+    def test_r02_read_only_browser_paths_remain_available(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        for name, args in (
+            ("browser_exec", {"code": "print(page_info())"}),
+            ("browser_exec", {"code": 'print(page_info()["url"])'}),
+            ("browser_exec", {"code": "print(1 + 1)"}),
+            ("browser_dialog", {"action": "dismiss"}),
+        ):
+            with self.subTest(route=name):
+                self.assertIsNone(self.plugin._guard_errand(name, args, session_id=entry["session_id"]))
+
+    def test_r02_gate_runs_before_trusted_browser_context_preamble(self):
+        source = inspect.getsource(self.plugin.register)
+        self.assertLess(
+            source.index('ctx.register_hook("pre_tool_call", _guard_errand)'),
+            source.index('ctx.register_hook("pre_tool_call", _isolate_errand_browser)'),
+        )
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        original = {"code": "print(page_info())"}
+        self.assertIsNone(self.plugin._guard_errand(
+            "browser_exec", original, session_id=entry["session_id"]))
+        enriched = self.plugin._isolate_errand_browser(
+            "browser_exec", original, session_id=entry["session_id"])
+        self.assertEqual(enriched["action"], "modify")
+        self.assertIn("_alice_own_context", enriched["args"]["code"])
+        self.assertTrue(enriched["args"]["code"].endswith(original["code"]))
+
+    def test_r02_hermes_dispatch_prefers_security_veto_over_context_modify(self):
+        from hermes_cli import lifecycle, plugins
+
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        tool_args = {"code": 'js("globalThis[\'r\'+\'un\']()")'}
+        # All Hermes pre-tool hooks see the original args and return directives;
+        # the dispatcher combines them. It must never execute an effect when
+        # another hook has also attached the trusted browser context preamble.
+        block = self.plugin._guard_errand("browser_exec", tool_args, session_id=entry["session_id"])
+        modify = self.plugin._isolate_errand_browser("browser_exec", tool_args, session_id=entry["session_id"])
+        with mock.patch.object(lifecycle, "invoke_hook", return_value=[block, modify]):
+            blocked, enriched = plugins._dispatch_pre_tool_call_hooks(
+                "browser_exec", tool_args, session_id=entry["session_id"])
+        self.assertIn("no permite scripts", blocked)
+        # An early hard block legitimately discards a following modify: no
+        # browser action can run and no preamble needs to be assembled.
+        self.assertIsNone(enriched)
+        with mock.patch.object(lifecycle, "invoke_hook", return_value=[modify, block]):
+            blocked, enriched = plugins._dispatch_pre_tool_call_hooks(
+                "browser_exec", tool_args, session_id=entry["session_id"])
+        self.assertIn("no permite scripts", blocked)
+        self.assertIn("_alice_own_context", enriched["code"])
+
+    def test_r02_normal_product_details_click_does_not_require_checkout(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://www.hsnstore.com", {"url": "https://www.hsnstore.com/creatina"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
+            for name, args in (
+                ("browser_click", {"text": "Mostrar detalles"}),
+                ("browser_exec", {"code": "click_text('Show details')"}),
+            ):
+                with self.subTest(tool=name):
+                    self.assertIsNone(self.plugin._guard_errand(name, args, session_id=entry["session_id"]))
+
+    def test_r02_opaque_presses_detect_a_payment_step_without_checkout_url_or_labels(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/order/final"}, None)
+        # Real browser_click uses only a snapshot ref (@eN); it does not carry
+        # button text. An atypical checkout URL can therefore bypass a text gate.
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=True) as probe:
+            for name, args in (
+                ("browser_click", {"ref": "@e7"}),
+                ("browser_press", {"key": "Enter"}),
+                ("browser_exec", {"code": "click_at_xy(120, 70)"}),
+            ):
+                with self.subTest(tool=name):
+                    verdict = self.plugin._guard_errand(name, args, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+            self.assertGreaterEqual(probe.call_count, 3)
+
+    def test_r02_opaque_product_click_works_when_page_is_verified_not_to_be_payment(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/products/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"]))
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", side_effect=RuntimeError("unavailable")):
+            for name, args in (
+                ("browser_click", {"ref": "@e7"}),
+                ("browser_click", {"text": "Continue"}),
+                ("browser_press", {"key": "Ctrl+Enter"}),
+                ("browser_exec", {"code": "click_text('Continue')"}),
+            ):
+                with self.subTest(name=name, args=args):
+                    verdict = self.plugin._guard_errand(name, args, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+
+    def test_r02_text_describing_an_action_is_not_itself_a_browser_press(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/products/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", side_effect=RuntimeError("offline")):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_exec", {"code": "print('click')"}, session_id=entry["session_id"]))
+        # browser_type fills an input; text mentioning Enter does not press the key.
+        self.assertFalse(self.errands.is_pay_action(
+            "browser_type", {"ref": "@e2", "text": "Please enter your address"},
+            "https://shop.example/payment", payment_step=True))
+
+    def test_r02_browser_script_cannot_navigate_or_change_tabs_then_press_without_recheck(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own_page = ("https://shop.example", {"url": "https://shop.example/item"}, None)
+        with mock.patch.object(access, "target", return_value=own_page), \
+                mock.patch.object(access, "page_evaluate", return_value=False):
+            for code in (
+                "goto_url('https://shop.example/order/final'); click(3)",
+                "click('Continue'); click(3)",
+                "switch_tab('some-tab'); click(3)",
+                "scroll('down'); click(3)",
+            ):
+                with self.subTest(code=code):
+                    verdict = self.plugin._guard_errand(
+                        "browser_exec", {"code": code}, session_id=entry["session_id"])
+                    self.assertEqual(verdict["action"], "block")
+
+    def test_r02_read_only_cdp_cannot_target_an_unverified_foreign_tab(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        for target in ({"target_id": "other-tab"}, {"frame_id": "other-frame"}, {"target_id": ""}):
+            with self.subTest(target=target):
+                verdict = self.plugin._guard_errand(
+                    "browser_cdp", {"method": "DOM.getDocument", "params": {}, **target},
+                    session_id=entry["session_id"])
+                self.assertEqual(verdict["action"], "block")
+
+    def test_r02_raw_cdp_read_needs_an_errand_pinned_executor(self):
+        entry = self.errand(offer={"option_id": "chosen", "price": "34,99 €"})
+        # Without target_id, Hermes sends DOM methods to a browser endpoint,
+        # NOT to a tab checked against the errand's pinned target/context.
+        verdict = self.plugin._guard_errand(
+            "browser_cdp", {"method": "DOM.getDocument", "params": {}},
+            session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
+
+    def test_r02_errand_dom_read_is_a_fixed_pinned_read_tool_not_arbitrary_js(self):
+        entry = self.errand(offer={"url": "https://shop.example/item", "option_id": "chosen"})
+        tools = self.tools()
+        self.assertIn("errand_dom_read", tools)
+        handler = tools["errand_dom_read"]["handler"]
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        own = ("https://shop.example", {"target": "pinned-tab", "context": "c1"}, None)
+        with mock.patch.object(self.plugin, "_session_id", return_value=entry["session_id"]), \
+                mock.patch.object(access, "target", return_value=own), \
+                mock.patch.object(access, "page_evaluate", return_value=[{
+                    "selector": ".product-title", "matches": [{"text": "Creatina 500 g"}]}]) as evaluate:
+            result = json.loads(handler({"selectors": [".product-title"]}))
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["results"][0]["matches"][0]["text"], "Creatina 500 g")
+            javascript = evaluate.call_args.args[1]
+            self.assertNotIn("eval(", javascript)
+            self.assertNotIn("Function(", javascript)
+        # The model can send selectors as inert data, never its own JS to execute.
+        with mock.patch.object(self.plugin, "_session_id", return_value=entry["session_id"]):
+            for bad in ({"selectors": [".x"], "expression": "submitOrder()"},
+                        {"selectors": [".x"], "script": "window.pay()"},
+                        {"selectors": ["input[type=password]"]},
+                        {"selectors": [".x"] * 30}):
+                with self.subTest(bad=bad):
+                    self.assertFalse(json.loads(handler(bad))["ok"])
+
+    def test_r02_approved_checkout_is_not_authority_to_pay_a_different_shop(self):
+        entry = self.errand(offer={"url": "https://shop.example/item", "option_id": "chosen"})
+        self.errands.request_checkout(self.home, entry["id"], {
+            "merchant": "Shop", "site": "https://shop.example", "total": "34,99 €",
+            "items": [{"name": "Creatina"}], "currency": "EUR",
+        }, fetch=lambda *_: (b"", "text/html"))
+        checkout = self.errands.get(self.home, entry["id"])["checkout"]
+        self.errands.decide_checkout(self.home, entry["id"], True, checkout_id=checkout["id"])
+        access = self.plugin._module("errand_access.py", "alice_errand_access")
+        with mock.patch.object(access, "target", return_value=(
+            "https://shop.example", {"url": "https://shop.example/checkout/payment"}, None)), \
+                mock.patch.object(access, "page_evaluate", return_value=True), \
+                mock.patch.object(self.plugin._module("purchase_prices.py", "alice_purchase_prices"),
+                                  "payment_ready", return_value=True):
+            self.assertIsNone(self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"]))
+        with mock.patch.object(access, "target", return_value=(
+            "https://other.example", {"url": "https://other.example/checkout/payment"}, None)), \
+                mock.patch.object(access, "page_evaluate", return_value=True), \
+                mock.patch.object(self.plugin._module("purchase_prices.py", "alice_purchase_prices"),
+                                  "payment_ready", return_value=True):
+            verdict = self.plugin._guard_errand(
+                "browser_click", {"ref": "@e7"}, session_id=entry["session_id"])
+        self.assertEqual(verdict["action"], "block")
+
+    def test_r02_purchase_selection_chat_cannot_run_opaque_browser_code(self):
+        session = "chat-9"
+        self.plugin._PURCHASE_OPEN.add(session)
+        for name, args in (
+            ("browser_exec", {"code": 'js("globalThis[\'r\'+\'un\']()")'}),
+            ("browser_console", {"expression": "globalThis['r'+'un']()"}),
+            ("browser_cdp", {"method": "Runtime.evaluate", "params": {"expression": "run()"}}),
+            ("browser_dialog", {"action": "accept"}),
+        ):
+            with self.subTest(tool=name):
+                verdict = self.plugin._guard_chat_errand(name, args, session_id=session)
+                self.assertEqual(verdict["action"], "block")
+        self.assertIsNone(self.plugin._guard_chat_errand(
+            "browser_exec", {"code": "print(page_info())"}, session_id=session))
+        self.assertIsNone(self.plugin._guard_chat_errand(
+            "browser_console", {"expression": "globalThis['r'+'un']()"}, session_id="chat-not-buying"))
 
     def test_resumed_purchase_protects_all_browser_outputs_and_fails_closed(self):
         entry = self.errand(offer={'url':'https://example.com/product'})
@@ -209,7 +486,7 @@ class ErrandHookTests(unittest.TestCase):
 
     def test_the_checkout_tool_only_works_inside_an_errand(self):
         registered = self.tools()
-        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options",
+        self.assertEqual(set(registered), {"errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read",
                                            "catalog_search", "catalog_product", "login_request", "login_fill", "purchase_check_cart", "purchase_discover", "purchase_verify"})
         handler = registered["checkout_request"]["handler"]
         with mock.patch.object(self.plugin, "_session_id", return_value="chat-1"):

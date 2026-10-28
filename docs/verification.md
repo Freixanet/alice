@@ -1,5 +1,19 @@
 # Verification and release evidence
 
+## R02 legacy-executor canary — expected NO-GO on the existing purchase path
+
+In an isolated working copy, using the Hermes Python environment for imports,
+run `scripts/verify-r02-executor-contract.py`. It uses temporary synthetic
+errands and in-memory effect callbacks; it does not open a real browser or
+submit a payment. **Exit code 2 deliberately means the installed Hermes and
+Alice's **legacy shared-browser** path do not enforce required action authority.
+This does **not** imply Alice must wait for changes to Hermes: the revised
+[ADR 0002](decisions/0002-r02-executor-authority.md) specifies a distributable
+Alice-owned runner using official Hermes planning/tool interfaces. Even if this
+limited legacy canary turns green, real isolated runner, onboarding and merchant
+payment-effect tests are independently required before R02 can close. Do not
+add this expected-negative canary as green release proof by hiding its exit code.
+
 ## Prerequisites
 
 - iOS: macOS, Xcode with iOS 26 SDK/runtime and XcodeGen.

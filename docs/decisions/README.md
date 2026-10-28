@@ -5,6 +5,7 @@ future agent may need to reconsider. They are **history and rationale**, not
 immutable instructions or a roadmap.
 
 - [0001 — Adaptable development without a fixed feature roadmap](0001-adaptive-evolution.md)
+- [0002 — Proposed R02 distributable Alice Secure Runner, without Hermes core changes (blocked)](0002-r02-executor-authority.md)
 
 For a meaningful new decision, capture:
 
