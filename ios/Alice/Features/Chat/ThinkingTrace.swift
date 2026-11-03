@@ -82,9 +82,9 @@ struct ThinkingTrace: View {
                     trace.transition(.opacity)
                 }
             }
-            .animation(.snappy(duration: 0.3), value: expanded)
-            .animation(.snappy(duration: 0.3), value: rows.count)
-            .animation(.easeInOut(duration: 0.25), value: pending)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: expanded)
+            .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: rows.count)
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: pending)
         }
     }
 

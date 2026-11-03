@@ -44,6 +44,14 @@ the web to the measurable ones.
 - Typography: preserve the current families; use serif sparingly for page identity.
   On iOS, SF is the content and chrome face. Instrument Serif is Alice's voice
   only (home empty state, sidebar wordmark).
+- Native reading hierarchy: chat H1 uses SF title2 semibold, H2 title3 semibold,
+  H3 headline, and lower levels subheadline semibold. Body text stays at the
+  system body size; serif remains reserved for Alice's voice.
+- Native prose uses a 16pt block gap, 12pt list-item gap and 4pt extra line
+  spacing at the default text size. These gaps scale with Dynamic Type, and
+  streaming text uses the same block rhythm as completed replies.
+- Native task steps use subheadline; settings labels use body medium, with
+  subheadline descriptions and values. Colour names use footnote.
 - Color: one accent at a time; neutral surfaces carry structure. Meet WCAG AA.
 - Motion: 150–300ms only to clarify continuity or state. Respect reduced motion.
 

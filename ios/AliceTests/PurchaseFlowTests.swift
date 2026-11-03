@@ -2,6 +2,26 @@ import XCTest
 @testable import Alice
 
 final class PurchaseFlowTests: XCTestCase {
+    func testPromotionDoesNotChangeTheSubmittedVerifiedPrice() throws {
+        let option = try XCTUnwrap(PurchaseOption.parse([
+            "id": "test-1", "title": "Product", "price": "34,99 €",
+            "promotional_price": "24,49 €", "promotion_code": "IMBACK",
+        ]))
+        XCTAssertEqual(option.displayPrice, "24,49 €")
+        XCTAssertEqual(option.previousPrice, "34,99 €")
+        XCTAssertEqual(option.couponLabel(.spanish), "Cupón: IMBACK")
+        XCTAssertTrue(option.choice.contains("34,99 €"))
+        XCTAssertFalse(option.choice.contains("24,49 €"))
+    }
+
+    func testAccessProblemIsRecognizedFromOlderGenericStop() throws {
+        let errand = try XCTUnwrap(Errand.parse([
+            "id": "e1", "title": "Compra", "status": "stuck",
+            "reason": "La tienda rechazó el acceso guardado.", "blocked": ["kind": "other"],
+        ]))
+        XCTAssertTrue(errand.accessBlocked)
+    }
+
     func testOptionKeyMatchesThePluginAndIgnoresRejectedRowsOnlyOnTheServer() throws {
         let detail = #"{"options":[{"url":"https://www.hsnstore.com/creatina"},{"url":"https://www.prozis.com/c"}]}"#
         XCTAssertEqual(PurchaseOptionSet.key(fromDetail: detail), "c41bf2d0")

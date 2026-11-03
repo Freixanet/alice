@@ -21,6 +21,19 @@ struct PurchaseOption: Identifiable, Hashable, Sendable {
     let why: String
     var shipping: String = ""
     var condition: String = ""
+    var promotionalPrice: String = ""
+    var promotionCode: String = ""
+    var coupon: String = ""
+
+    var hasPromotion: Bool { !promotionalPrice.isEmpty && !promotionCode.isEmpty }
+    var displayPrice: String { hasPromotion ? promotionalPrice : price }
+    var previousPrice: String? { hasPromotion ? price : nil }
+
+    func couponLabel(_ language: ChatLanguage) -> String? {
+        let code = hasPromotion ? promotionCode : coupon
+        guard !code.isEmpty else { return nil }
+        return language.pick("Coupon: \(code)", "Cupón: \(code)")
+    }
 
     /// What the person's tap sends: the plugin starts this option's errand from the id.
     var choice: String {
@@ -39,7 +52,8 @@ struct PurchaseOption: Identifiable, Hashable, Sendable {
         return PurchaseOption(
             id: id, title: title, merchant: text("merchant"), variant: text("variant"),
             qty: (row["qty"] as? Int) ?? 1, price: text("price"), image: https("image"), url: https("url"),
-            recommended: (row["recommended"] as? Bool) == true, why: text("why"), shipping: text("shipping"), condition: text("condition"))
+            recommended: (row["recommended"] as? Bool) == true, why: text("why"), shipping: text("shipping"), condition: text("condition"),
+            promotionalPrice: text("promotional_price"), promotionCode: text("promotion_code"), coupon: text("coupon"))
     }
 }
 
@@ -48,6 +62,14 @@ struct PurchaseOptionSet: Hashable, Sendable {
     let options: [PurchaseOption]
     /// The option the person chose, once they did.
     let chosen: String?
+
+    func recommendation(_ language: ChatLanguage) -> String? {
+        guard let best = options.first(where: \.recommended) else { return nil }
+        let name = best.variant.isEmpty || best.title.localizedCaseInsensitiveContains(best.variant)
+            ? best.title : "\(best.title) · \(best.variant)"
+        let recommendation = language.pick("I recommend \(name).", "Te recomiendo \(name).")
+        return recommendation + "\n" + language.pick("Open a card to choose your product.", "Abre una tarjeta para elegir el producto.")
+    }
 
     static let toolName = "purchase_options"
 

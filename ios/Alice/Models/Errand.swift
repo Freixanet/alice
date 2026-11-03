@@ -106,6 +106,14 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
     /// The price the chosen option was shown at.
     var offerPrice: String? = nil
     var access: Access? = nil
+    var blockedKind: String? = nil
+    var browserTarget: String? = nil
+
+    var accessBlocked: Bool {
+        blockedKind == "access" || (status == .stuck && reason.range(
+            of: "acceso|iniciar sesi[oó]n|log.?in|sign.?in|credentials|contrase[nñ]a",
+            options: [.regularExpression, .caseInsensitive]) != nil)
+    }
 
     var accessRequest: SecureRequest? {
         guard var request = access?.request else { return nil }
@@ -214,7 +222,9 @@ struct Errand: Identifiable, Hashable, Sendable, Codable {
             access: (row["secure_request"] as? [String: Any]).flatMap { raw in
                 guard let requestID = raw["request_id"] as? String else { return nil }
                 return Access(requestID: requestID, kind: text(raw["kind"]), origin: text(raw["origin"]), site: text(raw["site"]))
-            })
+            },
+            blockedKind: (row["blocked"] as? [String: Any])?["kind"] as? String,
+            browserTarget: row["browser_target"] as? String)
     }
 }
 

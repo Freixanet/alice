@@ -208,11 +208,10 @@ struct ErrandBrowserCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Image(systemName: errand.status == .done ? "checkmark.circle" : "globe")
-                    .font(.title3)
-                    .foregroundStyle(errand.status == .done ? Palette.success(scheme) : Color.primary)
-                    .frame(width: 44, height: 44)
-                    .background(Palette.muted(scheme), in: .rect(cornerRadius: 12))
+                BrowserStatusIcon(state: errand.status == .working ? .browsing
+                    : errand.status.needsPerson ? .needsUser
+                    : errand.status == .stuck ? .failed
+                    : errand.status == .done ? .complete : .idle)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(language.pick("Browser", "Navegador")).font(.body.weight(.medium))
                     Text("\(errand.status.label(language)) · \(errand.title)")
@@ -221,7 +220,6 @@ struct ErrandBrowserCard: View {
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                if errand.status == .working { LivePulse(color: Palette.success(scheme)) }
             }
 
             if showsPage {
@@ -229,10 +227,6 @@ struct ErrandBrowserCard: View {
                     .frame(height: 190)
                     .frame(maxWidth: .infinity)
                     .clipShape(.rect(cornerRadius: 18))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 18)
-                            .strokeBorder(Palette.border(scheme).opacity(0.5), lineWidth: 0.5)
-                    }
                 PurchaseCapsuleButton(title: language.pick("Open browser", "Abrir navegador"), action: onOpen)
             }
         }
@@ -971,6 +965,7 @@ struct ErrandConfirmCard: View {
 struct PurchaseProductSheet: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     let image: URL?
     let seller: String
@@ -983,6 +978,9 @@ struct PurchaseProductSheet: View {
     var onBuyQuantity: ((Int) -> Void)? = nil
     var shipping: String = ""
     var condition: String = ""
+    var couponLabel: String? = nil
+    var conditionalPromotion = false
+    var productURL: URL? = nil
 
     @State private var quantity = 1
     @State private var chosen = 0
@@ -993,7 +991,6 @@ struct PurchaseProductSheet: View {
         ScrollView {
             VStack(spacing: 0) {
                 CardImage(image: image, page: nil, symbol: "bag", fits: true)
-                    .background(Color.white)
                     .frame(height: 300)
                     .clipShape(.rect(cornerRadius: 28))
                     .overlay(alignment: .topTrailing) {
@@ -1016,6 +1013,13 @@ struct PurchaseProductSheet: View {
                                 .strikethrough().foregroundStyle(.secondary)
                         }
                     }
+                    if let couponLabel {
+                        Text(couponLabel).font(.body.weight(.medium))
+                        if conditionalPromotion {
+                            Text(language.pick("Subject to coupon terms", "Sujeto a las condiciones del cupón"))
+                                .font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
                     if !shipping.isEmpty {
                         Text(language.pick("Shipping: \(shipping)", "Envío: \(shipping)"))
                             .font(.footnote).foregroundStyle(.secondary)
@@ -1032,7 +1036,10 @@ struct PurchaseProductSheet: View {
                         if let onBuyQuantity { onBuyQuantity(quantity) } else { onBuy() }
                     }
                     .padding(.top, 10)
-                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) { dismiss() }
+                    PurchaseCapsuleButton(title: language.pick("Visit website", "Visitar la web")) {
+                        if let productURL { openURL(productURL) }
+                    }
+                    .disabled(productURL == nil)
                 }
                 .padding(.top, 18)
                 .frame(maxWidth: .infinity, alignment: .leading)
