@@ -185,3 +185,7 @@ Then restart the dashboard (on macOS with the launchd service:
 - The tab is `dashboard/src/index.js`, bundled into `dashboard/dist/index.js` by
   `build.sh` (see the script for the one-time `qrcode` install). Commit the rebuilt
   bundle and `dist/THIRD_PARTY_LICENSES.txt` together.
+
+## Verified purchase preparation
+
+`purchase_browser` adapts Open Instinct’s observe/act/verify loop to Alice’s existing errands. It exposes observed controls, executes one preparation action and returns the verified post-action state. Stale controls, duplicate actions, secrets and payment actions are refused. See [execution and recovery](../docs/purchase-execution.md).

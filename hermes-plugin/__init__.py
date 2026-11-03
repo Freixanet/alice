@@ -1373,7 +1373,7 @@ def _browser_ready(tool_name=None, **_):
     """Before an agent browses: the shared browser Alice keeps is running — unless the
     person has taken it over, and then the agent waits for it to be handed back."""
     name = str(tool_name or "")
-    if not (name.startswith("browser_") or name == "browser"):
+    if not (name.startswith("browser_") or name in ("browser", "purchase_browser")):
         return None
     try:
         root = _hermes_root()
@@ -1700,7 +1700,7 @@ def _keep_errand_tools_visible() -> None:
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
             for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
-                         "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart"):
+                         "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart", "purchase_browser"):
                 if name not in core:
                     core.append(name)
     except Exception:
@@ -2083,6 +2083,7 @@ def register(ctx) -> None:
     _register_feed_tools(ctx)
     # A task of several steps is kept going by Hermes' goal judge until done or it needs the person.
     _register_task_tools(ctx)
+    _register_purchase_browser(ctx)
     _register_ask_tools(ctx)
     # How a card payment ended, so the same order is never paid twice (purchases.py).
     _register_purchase_tools(ctx)
@@ -2097,3 +2098,8 @@ def register(ctx) -> None:
     _register_debug_tools(ctx)
     _register_calendar_tools(ctx)
     _register_work_tools(ctx)
+
+
+def _register_purchase_browser(ctx):
+    from types import SimpleNamespace
+    _module("purchase_browser.py", "alice_purchase_browser").register(ctx, SimpleNamespace(**globals()))
