@@ -8540,7 +8540,7 @@ final class AppStore {
         DiagnosticsLog.write("latency \(conversationID) \(phase) \(ms)")
     }
 
-    func send() {
+    func send(replyingTo selectedReply: Message.Quote? = nil) {
         guard !activeIsRecoveredHistory else { return }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let leadingWhitespace = draft.prefix(while: { $0.isWhitespace }).utf16.count
@@ -8599,7 +8599,7 @@ final class AppStore {
                                     attachments: self.draftAttachments) == intendedDraft else { return }
                 // Reconnection must not send a different chat's draft, or an
                 // edit made while waiting. It stays on screen for the person.
-                if self.isConnected { self.send() }
+                if self.isConnected { self.send(replyingTo: selectedReply) }
             }
             return
         }
@@ -8700,6 +8700,16 @@ final class AppStore {
 
         let attachments = draftAttachments
         let selectedMentionRanges = messageMentions.map(\.utf16Range)
+        let quote = selectedReply.flatMap { selected -> Message.Quote? in
+            guard let source = conversations[index].messages.first(where: { $0.id == selected.messageID }),
+                  source.role == .assistant, !source.pending, !source.awaitingRemote
+            else { return nil }
+            let excerpt = Message.quoteExcerpt(source.content)
+            guard !excerpt.isEmpty else { return nil }
+            let profile = source.fromAgent ?? source.mentionProfile ?? source.botName ?? conversations[index].botName
+            let author = profile.map { botCurrentName(for: $0) } ?? "Alice"
+            return Message.Quote(messageID: source.id, author: author, text: excerpt)
+        }
         draft = ""
         draftMentions = []
         draftAttachments = []
@@ -8711,7 +8721,7 @@ final class AppStore {
 
         let user = Message(
             id: UUID().uuidString, role: .user, content: text, createdAt: Date(),
-            attachments: attachments,
+            attachments: attachments, quote: quote,
             mentionProfile: mentionText == nil ? nil : invokedBot,
             selectedMentionRanges: selectedMentionRanges
         )

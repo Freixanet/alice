@@ -43,6 +43,12 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         case user, assistant
     }
 
+    struct Quote: Hashable, Sendable, Codable {
+        let messageID: String
+        let author: String
+        let text: String
+    }
+
     struct ToolCall: Identifiable, Hashable, Sendable, Codable {
         enum Status: String, Hashable, Sendable, Codable {
             case start, done
@@ -149,6 +155,8 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     var errorLimit: ModelLimit?
     var incomplete: Bool = false
     var attachments: [Attachment] = []
+    /// A user's local quote of the assistant turn this message answers.
+    var quote: Quote? = nil
     var botName: String? = nil
     /// Set on a routine's report shown as the bot's message (`RoutineDelivery`).
     /// Never stored with that role: the transcript keeps Hermes' own turn.
@@ -233,6 +241,14 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
     /// brought, never as words of Alice's.
     var feedContext: FeedPost? = nil
 
+    /// A compact, readable excerpt for reply previews; never changes sent text.
+    static func quoteExcerpt(_ content: String, limit: Int = 180) -> String {
+        let line = content.split(whereSeparator: \.isNewline).joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard limit > 1, line.count > limit else { return line }
+        return String(line.prefix(limit - 1)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
     enum RoutinePart: String, Hashable, Sendable, Codable {
         case opening, card, closing, quiet
     }
@@ -266,6 +282,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         errorLimit = try box.decodeIfPresent(ModelLimit.self, forKey: .errorLimit)
         incomplete = try box.decodeIfPresent(Bool.self, forKey: .incomplete) ?? false
         attachments = try box.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        quote = try box.decodeIfPresent(Quote.self, forKey: .quote)
         botName = try box.decodeIfPresent(String.self, forKey: .botName)
         runID = try box.decodeIfPresent(String.self, forKey: .runID)
         runStatus = try box.decodeIfPresent(RunStatus.self, forKey: .runStatus)
@@ -295,7 +312,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         id: String, role: Role, content: String, createdAt: Date,
         pending: Bool = false, tools: [ToolCall] = [], error: String? = nil,
         errorLimit: ModelLimit? = nil, incomplete: Bool = false,
-        attachments: [Attachment] = [], botName: String? = nil,
+        attachments: [Attachment] = [], quote: Quote? = nil, botName: String? = nil,
         runID: String? = nil, runStatus: RunStatus? = nil,
         approval: Approval? = nil, remoteID: String? = nil,
         localOnly: Bool = false, deliveryNote: String? = nil,
@@ -321,6 +338,7 @@ struct Message: Identifiable, Hashable, Sendable, Codable {
         self.errorLimit = errorLimit
         self.incomplete = incomplete
         self.attachments = attachments
+        self.quote = quote
         self.botName = botName
         self.runID = runID
         self.runStatus = runStatus

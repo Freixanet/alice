@@ -26,6 +26,7 @@ struct MessageRow: View {
     var errandRefs: [ErrandRef] = []
     /// This reply was written by another model than the reply before it (`ModelChange`).
     var modelChange: ModelChange? = nil
+    var onReply: ((Message) -> Void)? = nil
     @AppStorage(HomeInterface.storageKey) private var homeInterface: HomeInterface = .current
     @State private var selectingText = false
     @State private var showingModelPicker = false
@@ -33,6 +34,7 @@ struct MessageRow: View {
     @AppStorage("alice.modelChoices") private var modelChoices: String = "{}"
     /// Copy, share, speak, retry and developer usage stay off until the reply is tapped.
     @State private var showingExtras = false
+    @State private var replySwipeOffset: CGFloat = 0
 
     /// The agent this reply is from when it was asked by name in a chat that
     /// is not its own.
@@ -138,7 +140,8 @@ struct MessageRow: View {
         return whole
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var messageContent: some View {
         // Words said just before or after a routine are drawn inside the routine's bubble.
         if absorbedIntoRoutine {
             EmptyView()
@@ -148,6 +151,94 @@ struct MessageRow: View {
             FeedContextCard(post: post)
         } else {
             row
+        }
+    }
+
+    var body: some View {
+        ZStack(alignment: .leading) {
+            if canReply, replySwipeOffset > 4 {
+                Image(systemName: "arrowshape.turn.up.left.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(store.accent.primary(scheme))
+                    .frame(width: 42, height: 42)
+                    .glassEffect(.regular, in: .circle)
+                    .opacity(min(replySwipeOffset / 28, 1))
+                    .accessibilityHidden(true)
+            }
+            messageContent
+                .offset(x: replySwipeOffset)
+        }
+        .simultaneousGesture(replyGesture)
+        .accessibilityAction(named: Text("Reply")) {
+            if canReply { onReply?(message) }
+        }
+    }
+
+    private var canReply: Bool {
+        onReply != nil && message.role == .assistant && !message.pending && !message.awaitingRemote
+            && !message.interim && !store.activeIsRecoveredHistory
+            && !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var replyGesture: some Gesture {
+        DragGesture(minimumDistance: 12)
+            .onChanged { value in
+                guard canReply, value.translation.width > 0,
+                      value.translation.width > abs(value.translation.height) else {
+                    replySwipeOffset = 0
+                    return
+                }
+                replySwipeOffset = min(value.translation.width, 72)
+            }
+            .onEnded { value in
+                let shouldReply = canReply && value.translation.width >= 68
+                    && value.translation.width > abs(value.translation.height) * 1.25
+                withAnimation(.snappy(duration: 0.2)) { replySwipeOffset = 0 }
+                guard shouldReply else { return }
+                Haptic.tap.play()
+                onReply?(message)
+            }
+    }
+
+    @ViewBuilder
+    private func quotedReply(_ quote: Message.Quote) -> some View {
+        let card = HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(store.accent.primary(scheme))
+                .frame(width: 3)
+            VStack(alignment: .leading, spacing: 4) {
+                Label("You replied to \(quote.author)", systemImage: "arrowshape.turn.up.left.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(quote.text)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(Palette.card(scheme).opacity(0.82), in: .rect(cornerRadius: 14))
+        .contentShape(.rect(cornerRadius: 14))
+        .frame(maxWidth: .infinity, alignment: .trailing)
+
+        if let conversation = store.shownConversation,
+           let source = conversation.messages.first(where: { $0.id == quote.messageID }) {
+            Button {
+                store.focusedMessage = AppStore.FocusedMessage(
+                    conversationID: conversation.id,
+                    remoteID: source.remoteID ?? source.id
+                )
+            } label: {
+                card
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Jumps to the original reply.")
+        } else {
+            card
         }
     }
 
@@ -162,6 +253,7 @@ struct MessageRow: View {
         VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 8) {
             switch message.role {
             case .user:
+                if let quote = message.quote { quotedReply(quote) }
                 if !message.attachments.isEmpty {
                     SentAttachments(attachments: message.attachments)
                         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -326,11 +418,11 @@ struct MessageRow: View {
                         replyBody(message.content, bubbled: bubblesReplies)
                     }
                     }
-                    .accessibilityHint(
-                        canRevealExtras
-                            ? "Shows actions. Hold to select text."
-                            : (canSelectReplyText ? "Hold to select text." : "")
-                    )
+                    .accessibilityHint([
+                        canRevealExtras ? "Shows actions." : nil,
+                        canSelectReplyText ? "Hold to select text." : nil,
+                        canReply ? "Swipe right to reply." : nil
+                    ].compactMap { $0 }.joined(separator: " "))
 
                     if message.role == .assistant, message.choosesModelInAPicker {
                         if let chosen = chosenModel {

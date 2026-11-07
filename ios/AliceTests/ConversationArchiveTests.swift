@@ -21,6 +21,22 @@ final class ConversationArchiveTests: XCTestCase {
         )
     }
 
+    func testMessageQuoteMetadataRoundTripsAndOlderMessagesStillDecode() throws {
+        let older = Message(id: "old", role: .assistant, content: "Old reply", createdAt: .now)
+        let oldBytes = try JSONEncoder().encode(older)
+        XCTAssertNil(try JSONDecoder().decode(Message.self, from: oldBytes).quote)
+
+        let quote = Message.Quote(messageID: "answer", author: "Alice", text: "A short excerpt")
+        let user = Message(id: "user", role: .user, content: "Tell me more", createdAt: .now, quote: quote)
+        let bytes = try JSONEncoder().encode(user)
+        XCTAssertEqual(try JSONDecoder().decode(Message.self, from: bytes).quote, quote)
+    }
+
+    func testQuoteExcerptCollapsesLinesAndTruncatesCleanly() {
+        XCTAssertEqual(Message.quoteExcerpt("first line\nsecond line"), "first line second line")
+        XCTAssertEqual(Message.quoteExcerpt("123456789", limit: 5), "1234…")
+    }
+
     func testALegacyBlobStillLoads() throws {
         let (defaults, name) = try suite()
         defer { defaults.removePersistentDomain(forName: name) }

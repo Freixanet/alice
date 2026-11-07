@@ -53,6 +53,28 @@ private struct ChatScreenContent: View, Equatable {
     /// Whether an on-screen keyboard is taking room. Not the composer's focus:
     /// a hardware keyboard focuses it without taking any.
     @State private var keyboardShown = false
+    @State private var replyTargets: [String: Message.Quote] = [:]
+
+    private var activeReplyTarget: Binding<Message.Quote?> {
+        let conversationID = store.activeChat.id
+        return Binding(
+            get: { replyTargets[conversationID] },
+            set: { quote in
+                if let quote { replyTargets[conversationID] = quote }
+                else { replyTargets.removeValue(forKey: conversationID) }
+            }
+        )
+    }
+
+    private func selectReply(_ message: Message, in conversation: Conversation) {
+        let profile = message.fromAgent ?? message.mentionProfile ?? message.botName ?? conversation.botName
+        let author = profile.map { store.botCurrentName(for: $0) } ?? "Alice"
+        let text = Message.quoteExcerpt(message.content)
+        guard !text.isEmpty else { return }
+        replyTargets[conversation.id] = Message.Quote(
+            messageID: message.id, author: author, text: text
+        )
+    }
 
     /// Matches the disc the navigation bar drew for these two buttons.
     private let discSize: CGFloat = 44
@@ -342,7 +364,8 @@ private struct ChatScreenContent: View, Equatable {
                     focused: $composerFocused,
                     placeholder: placeholder,
                     keyboardShown: keyboardShown,
-                    compact: true
+                    compact: true,
+                    replyingToMessage: activeReplyTarget
                 )
             }
             .padding(.horizontal, 20)
@@ -356,7 +379,8 @@ private struct ChatScreenContent: View, Equatable {
         Composer(
             focused: $composerFocused,
             placeholder: placeholder,
-            keyboardShown: keyboardShown
+            keyboardShown: keyboardShown,
+            replyingToMessage: activeReplyTarget
         )
     }
 
@@ -500,7 +524,8 @@ private struct ChatScreenContent: View, Equatable {
             TranscriptView(
                 conversation: conversation,
                 quietRuns: conversation.isAgentTask ? [] : store.quietRoutineRuns[conversation.routedBotName ?? ""] ?? [],
-                keyboardShown: keyboardShown
+                keyboardShown: keyboardShown,
+                onReply: { selectReply($0, in: conversation) }
             )
                 .id(conversation.id)
         } else {
@@ -579,6 +604,7 @@ private struct TranscriptView: View {
     /// This bot's routine runs that found nothing, shown as cards.
     var quietRuns: [QuietRoutineRun] = []
     var keyboardShown = false
+    var onReply: (Message) -> Void
 
     @State private var position = ScrollPosition(edge: .bottom)
     /// Whether the transcript keeps to its live edge as it grows. Only the
@@ -625,7 +651,8 @@ private struct TranscriptView: View {
             showsAuthor: position?.isFirst ?? true,
             actionsContent: position?.text,
             errandRefs: errandRefs,
-            modelChange: modelChange
+            modelChange: modelChange,
+            onReply: onReply
         )
         .environment(\.replySuperseded, superseded)
         .environment(\.givenReaction, reaction)
