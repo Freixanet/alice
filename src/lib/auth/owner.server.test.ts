@@ -91,6 +91,17 @@ describe("isLocalHermesOwner", () => {
     ).toBe(true);
   });
 
+  it("skips an owner password Better Auth could never accept", async () => {
+    process.env.ALICE_OWNER_EMAIL = "owner@example.test";
+    process.env.ALICE_OWNER_PASSWORD = "x".repeat(129);
+    rows.user = [
+      { id: "owner", email: "owner@example.test", emailVerified: true },
+    ];
+    const { isLocalHermesOwner } = await subject();
+    expect(await isLocalHermesOwner("owner")).toBe(true);
+    expect(queries.some((q) => q.includes('"account"'))).toBe(false);
+  });
+
   it("refuses an account that merely claims the pinned address", async () => {
     process.env.ALICE_OWNER_EMAIL = "owner@example.test";
     rows.user = [
