@@ -1,4 +1,3 @@
-import { genericOAuthClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import { runSignOut } from "../../../scripts/sign-out-plan.mjs";
 import { LOGIN_SOCIAL } from "./providers";
@@ -17,7 +16,6 @@ import { LOGIN_SOCIAL } from "./providers";
  * the visitor stays signed in.
  */
 export const authClient = createAuthClient({
-  plugins: [genericOAuthClient()],
   fetchOptions: {
     credentials: "include",
     onRequest(ctx) {
