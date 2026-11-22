@@ -115,7 +115,8 @@ async function resolveOwner(): Promise<{ id: string } | null> {
 
 function ownerPassword(): string | undefined {
   const value = process.env.ALICE_OWNER_PASSWORD?.trim();
-  if (value && value.length >= 8) return value;
+  // Better Auth rejects sign-in passwords outside 8–128 characters.
+  if (value && value.length >= 8 && value.length <= 128) return value;
   return undefined;
 }
 
