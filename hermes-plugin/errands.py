@@ -21,6 +21,7 @@ asked (``ask_before_login``).
 
 from __future__ import annotations
 
+import ast
 import fcntl
 import json
 import math
@@ -83,6 +84,72 @@ PAY_PAGE = re.compile(
 # Browser actions that can press something on the page (Browser Use code or built-in tools).
 CLICKS = re.compile(r"(click|submit|press|dispatchMouseEvent|dispatchKeyEvent|Enter|\.requestSubmit)", re.I)
 BROWSER_ACTIONS = ("browser_exec", "browser_click", "browser_press", "browser_type")
+PRESSING_BROWSER_HELPERS = frozenset({"click", "click_text", "click_at_xy", "press_key"})
+# Raw DevTools and page scripting do not supply trustworthy button/merchant
+# semantics or proof that the request targets this errand's own tab.
+RAW_BROWSER = ("browser_console", "browser_cdp", "browser_dialog")
+# These are the documented high-level browser helpers (and side-effect-free
+# Python builtins). Their *actual* clicks still pass the existing pay_gate;
+# arbitrary helper aliases, custom functions or raw JavaScript do not.
+CHECKED_BROWSER_HELPERS = frozenset({
+    "page_info", "print", "capture_screenshot", "wait_for_load",
+    "goto_url", "click", "click_text", "click_at_xy", "type_text",
+    "fill", "read", "scroll", "current_tab", "switch_tab",
+    "ensure_real_tab", "new_tab", "list_tabs", "press_key",
+    "len", "str", "int", "float", "bool", "range", "min", "max",
+})
+# An agent's script is checked once before it runs. If it changes the page or
+# selected tab and then acts again, that later action sees a different state
+# from the one whose checkout/URL we checked. Require another guarded tool call.
+STATE_CHANGING_BROWSER_HELPERS = frozenset({
+    "goto_url", "click", "click_text", "click_at_xy", "type_text", "fill",
+    "switch_tab", "new_tab", "press_key", "scroll",
+})
+CHECKED_BROWSER_SYNTAX = (
+    ast.Module, ast.Expr, ast.Call, ast.Name, ast.Load, ast.Constant,
+    ast.keyword, ast.Tuple, ast.List, ast.Dict, ast.Subscript, ast.Slice,
+    ast.BinOp, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.UnaryOp, ast.USub,
+)
+
+
+def unverified_browser_effect(tool_name: str, args: Any) -> bool:
+    """Fail closed for page effects whose target cannot be checked by the checkout gate.
+
+    This is a tool-layer containment, not an OS/CDP sandbox: independently executed
+    browser requests still require a trusted browser boundary before R02 can close.
+    """
+    a = args if isinstance(args, dict) else {}
+    if tool_name == "browser_cdp":
+        # Hermes CDP without target_id uses its browser-level endpoint; a caller
+        # with a target_id can also choose a foreign tab. Neither proves the
+        # errand's context at final dispatch. Use errand_dom_read instead.
+        return True
+    if tool_name == "browser_dialog":
+        return str(a.get("action") or "").lower() != "dismiss"
+    if tool_name == "browser_console":
+        return bool(str(a.get("expression") or "").strip())
+    if tool_name != "browser_exec":
+        return False
+    source = a.get("code")
+    if not isinstance(source, str):
+        return True
+    try:
+        nodes = list(ast.walk(ast.parse(source)))
+    except (SyntaxError, ValueError, TypeError):
+        return True
+    # Reject aliases, assignments, functions, attributes, loops and dynamic
+    # expressions: otherwise `click = js; click(...)` could rebind an approved
+    # helper to an unguarded arbitrary-JavaScript primitive. This restricts
+    # *agent code* only; the trusted context preamble is injected afterwards.
+    if any(
+        not isinstance(node, CHECKED_BROWSER_SYNTAX)
+        or (isinstance(node, ast.Call) and
+            (not isinstance(node.func, ast.Name) or node.func.id not in CHECKED_BROWSER_HELPERS))
+        for node in nodes
+    ):
+        return True
+    return sum(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+               and node.func.id in STATE_CHANGING_BROWSER_HELPERS for node in nodes) > 1
 
 
 def _money():
@@ -621,6 +688,31 @@ def _text_of(args: Any) -> str:
     return str(args or "")
 
 
+def browser_presses(tool_name: str, args: Any) -> bool:
+    """Classify actual click/key helpers, not innocent words in typed text or output.
+
+    Unknown scripts retain the old conservative text test. During a purchase,
+    unverified_browser_effect separately rejects those scripts altogether.
+    """
+    if tool_name in ("browser_click", "browser_press"):
+        return True
+    if tool_name == "browser_type":
+        return False  # Hermes fills an input without submitting it.
+    if tool_name == "browser_exec" and isinstance(args, dict) and isinstance(args.get("code"), str):
+        source = args["code"]
+        try:
+            nodes = list(ast.walk(ast.parse(source)))
+            calls = [node for node in nodes if isinstance(node, ast.Call)]
+            if all(isinstance(node, CHECKED_BROWSER_SYNTAX) for node in nodes) and all(
+                isinstance(call.func, ast.Name) and call.func.id in CHECKED_BROWSER_HELPERS
+                for call in calls
+            ):
+                return any(call.func.id in PRESSING_BROWSER_HELPERS for call in calls)
+        except (SyntaxError, TypeError, ValueError):
+            pass
+    return bool(CLICKS.search(_text_of(args)))
+
+
 def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step: Optional[bool] = None) -> bool:
     """A browser action that can pay: it names the pay button, or it presses something on a pay page.
 
@@ -629,7 +721,7 @@ def is_pay_action(tool_name: str, args: Any, active_url: str = "", payment_step:
     if tool_name not in BROWSER_ACTIONS:
         return False
     text = _text_of(args)
-    presses = tool_name in ("browser_click", "browser_press") or bool(CLICKS.search(text))
+    presses = browser_presses(tool_name, args)
     if not presses:
         # Reading a page or searching for pay controls does not submit an order.
         return False
@@ -661,7 +753,13 @@ def pay_gate(home: Path, session_id: str, *, card_fill_site: Optional[str] = Non
         fresh = approved_checkout(entry, now=now)
         ok = fresh is not None and (fresh.get("site") in candidates or host in banks)
     else:
-        ok = approved_checkout(entry, now=now) is not None
+        # A checkout approval belongs to that merchant, not whichever browser
+        # tab or domain the agent happens to press after the user approved it.
+        # For purchase offers a missing/invalid page origin is never authority.
+        purchase_offer = bool((entry or {}).get("offer"))
+        page_shop = shop(active_url) if active_url else ""
+        ok = (not purchase_offer or bool(page_shop)) and approved_checkout(
+            entry, site=page_shop if purchase_offer else "", now=now) is not None
     if ok:
         return None
     return {"action": "block", "message": (
@@ -957,6 +1055,9 @@ def brief(entry: Dict[str, Any]) -> str:
         "recado). El comentario `#` con que empieza cada paso del navegador es lo que la persona ve: "
         "escríbelo en su idioma y en pocas palabras («Añadir al carrito», «Elegir envío»). "
         f"{login} {what}"
+        "Para leer nombres, precios y etiquetas del DOM durante esta compra, usa `errand_dom_read` "
+        "con selectores CSS; nunca pases JavaScript de la página como supuesto código de lectura. "
+        "Haz cada operación del navegador en un paso separado para que se verifique el contexto. "
         "Decide tú lo que tenga una opción razonable (tratamiento, envío estándar, sin extras, sin cuenta "
         "nueva si se puede comprar como invitado) y usa los datos de envío guardados. Nunca preguntes por "
         "tarjetas: si una página de pago pide una y `browser_vault_list` no tiene ninguna para ella, llama "

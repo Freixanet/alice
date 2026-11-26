@@ -5,6 +5,28 @@ does not ship. It lives in `~/.hermes/plugins/alice`, outside Hermes' own code.
 Updates do not overwrite Hermes source, but upstream API changes still need a
 compatibility check.
 
+## Browser safety in purchase errands (R02 — draft)
+
+An errand with a chosen purchase offer can inspect visible product labels and
+prices through `errand_dom_read({"selectors": [".product-title", ".price"]})`.
+The model supplies **CSS selectors only**, not JavaScript. The plugin checks the
+errand's pinned HTTPS target and chosen shop, runs a fixed read template, rejects
+form/credential selectors, and bounds/redacts its returned text. An arbitrary
+visible page element can still contain personal data, so this is **not** a
+general confidentiality boundary: select product/price labels, not account or
+message containers. Raw CDP requests
+are refused in purchase offers because Hermes does not prove they target the
+errand's own tab; existing read-only `page_info()` remains available.
+
+This **does not** certify browser effects or checkout completion. In Hermes the
+Alice `pre_tool_call` hook runs before final browser dispatch; high-level clicks,
+JavaScript inside browser-use scripts, CDP and dialogs do not all have a trusted
+per-action checkout verifier at their final executor. Ordinary DOM scripts and
+multi-action scripts can be blocked. A synthetic unlabelled final-review button
+still bypasses payment detection when the page has no recognizable payment
+controls. Until executor-level action/target authorization and full positive-flow
+browser tests exist, R02 and PR #76 remain **NO-GO for merge**.
+
 What it adds, all in the dashboard:
 
 - An **Alice** tab that shows a one-time pairing QR code ([protocol](../docs/pairing.md)).

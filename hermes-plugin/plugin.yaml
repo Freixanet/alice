@@ -37,6 +37,7 @@ provides_tools:
   - errand_start
   - checkout_request
   - card_request
+  - errand_dom_read
 provides_hooks:
   - pre_tool_call
   - post_tool_call

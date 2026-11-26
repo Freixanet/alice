@@ -26,6 +26,13 @@ checkout endpoints. The iPhone fetches accepted options by key and session, hide
 the choice token, and displays checkout facts with approval of the exact total
 in cents and currency. Errands persist `gpt-6-luna` / `openai-codex` independently
 of the chat model and pass both on every run; Hermes needs that provider's login.
+**R02 P0 / NO-GO:** the current purchase flow relies on a shared Hermes browser
+and Hermes-managed payment credentials; the existing checkout approval cannot
+be certified as an authorization for final browser effects. The proposed
+[distributable Alice Secure Runner](decisions/0002-r02-executor-authority.md)
+uses official Hermes APIs for planning while isolating shopping credentials,
+browser and payment submission in Alice. It is **not implemented**; successful
+existing fixture tests must not be described as safe autonomous purchases.
 Managed-browser startup precedes each errand run; the YAML reader supports
 Hermes' YAML facade and older PyYAML installs. Errand tabs keep their own cookie
 context, including new tabs. Explicitly recognized brand/store requests constrain

@@ -358,7 +358,7 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
     """Nothing is paid without the person's approved checkout, and a saved login is used without
     asking unless they asked to be asked (errands.py). If the check itself fails, paying is refused."""
     name = str(tool_name or "")
-    if name in ("terminal", "execute_code", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
+    if name in ("terminal", "execute_code", "shell", "bash", "run_command", "browser_eval", "browser_evaluate") or (name == "browser_get_state" and (args or {}).get("expression")):
         session = _session_id(session_id)
         if not session.startswith(_errands().SESSION_PREFIX):
             return None
@@ -369,6 +369,18 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         except Exception:
             pass
         return {"action": "block", "message": "Este recado de compra usa únicamente el navegador y las herramientas de compra comprobadas. No ejecutes pagos ni solicitudes por terminal, código o evaluación directa."}
+    # The final tool boundary, not the model's wording, must reject arbitrary
+    # JavaScript/CDP/dialog effects. A valid checkout does not authorize raw
+    # commands against another tab, shop or amount.
+    if name in (*_errands().RAW_BROWSER, "browser_exec"):
+        session = _session_id(session_id)
+        if session.startswith(_errands().SESSION_PREFIX):
+            try:
+                entry = _errands().of_session(_hermes_root(), session)
+            except Exception:
+                return {"action": "block", "message": "No se pudo verificar la autoridad del navegador de este recado."}
+            if (entry or {}).get("offer") and _errands().unverified_browser_effect(name, args):
+                return {"action": "block", "message": "Este recado no permite scripts, CDP ni diálogos con efectos sin verificar. Usa las herramientas de navegador comprobadas y solicita la aprobación del checkout antes de pagar."}
     if name != "browser_vault_fill" and name not in _errands().BROWSER_ACTIONS:
         return None
     session = _session_id(session_id)
@@ -377,7 +389,7 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
         root = _hermes_root()
         entry = errands.of_session(root,session)
         active_url = _active_url()
-        presses = name in ('browser_click','browser_press') or bool(errands.CLICKS.search(errands._text_of(args)))
+        presses = errands.browser_presses(name, args)
         payment_step = None
         if presses and (entry or {}).get('offer'):
             access = _module("errand_access.py", "alice_errand_access")
@@ -386,11 +398,25 @@ def _guard_errand(tool_name=None, args=None, session_id="", **_):
                 active_url = context.get('url') or page_origin
             except Exception:
                 return {"action":"block","message":"No se pudo verificar la página de este recado antes de pulsar un control. Abre su propia página y reintenta."}
-            if errands.STEP_WORDS.search(errands._text_of(args)):
-                try:
-                    payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
-                except Exception:
-                    payment_step = None  # unread: «Finalizar compra» stays treated as paying
+            # A browser_click usually carries only a snapshot ref ("@e7"), not
+            # the button label. Check the *own* live page even when neither the
+            # URL nor the tool arguments mention payment. This does not replace
+            # executor-level authorization for effects outside a detected step.
+            opaque_press = (
+                name == "browser_click"
+                or (name == "browser_press" and isinstance(args, dict)
+                    and str(args.get("key") or "").lower()
+                    in ("enter", "return", "numpadenter", "control+enter", "ctrl+enter",
+                        "space", "spacebar", " "))
+                or name == "browser_exec"  # executable helper scripts can hide the final control
+            )
+            try:
+                payment_step = bool(access.page_evaluate(context, errands.PAYMENT_STEP_JS))
+            except Exception:
+                payment_step = None  # unread «Finalizar compra» still counts as paying
+                if opaque_press and not (errands.PAY_WORDS.search(errands._text_of(args))
+                                         or errands.PAY_PAGE.search(active_url)):
+                    return {"action": "block", "message": "No se pudo verificar si el botón o la tecla puede confirmar un pago en este recado. Actualiza su página y vuelve a intentarlo."}
         meta = _vault_meta(name, args)
         if meta is not None and meta.kind != "payment":
             return errands.login_gate(root, session)
@@ -1686,6 +1712,10 @@ def _guard_chat_errand(tool_name=None, args=None, session_id="", **_):
         return None
     if name.startswith(("browser", "catalog_", "web_search", "web_extract")):
         _LOOKED.add(session)
+    # Before a purchase option is chosen, a chat can research shops but cannot
+    # bypass that handoff by using raw page JavaScript/CDP/dialogs instead.
+    if session in _PURCHASE_OPEN and _errands().unverified_browser_effect(name, args):
+        return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     if _purchase_flow().is_cart_action(name, args):
         return {"action": "block", "message": _purchase_flow().CART_BLOCK}
     return None
@@ -1699,7 +1729,7 @@ def _keep_errand_tools_visible() -> None:
 
         core = getattr(toolsets, "_HERMES_CORE_TOOLS", None)
         if isinstance(core, list):
-            for name in ("errand_start", "checkout_request", "card_request", "purchase_options",
+            for name in ("errand_start", "checkout_request", "card_request", "purchase_options", "errand_dom_read",
                          "catalog_search", "catalog_product", "purchase_discover", "purchase_verify", "login_request", "login_fill", "purchase_check_cart"):
                 if name not in core:
                     core.append(name)
@@ -1785,6 +1815,26 @@ def _register_task_tools(ctx) -> None:
     errands = _errands()
     errands.card_rules = _card_rules
     _keep_errand_tools_visible()
+
+    # Explicit read-only inspection on the errand's pinned Chrome target.
+    # The model supplies selectors, never JS; CDP itself stays forbidden to the
+    # agent in a purchase offer because it has no proven target binding.
+    dom = _module("errand_dom_read.py", "alice_errand_dom_read")
+
+    def dom_read(args, **_):
+        try:
+            entry = errands.of_session(_hermes_root(), _session_id())
+            access = _module("errand_access.py", "alice_errand_access")
+            return _agent_json(dom.read(entry, args, inspect=access.target,
+                                        evaluate=access.page_evaluate))
+        except ValueError as exc:
+            return _agent_json({"ok": False, "error": str(exc)})
+        except Exception:
+            return _agent_json({"ok": False, "error": "No se pudo verificar la lectura DOM ni la pestaña propia del recado."})
+
+    ctx.register_tool(name="errand_dom_read", toolset="alice_tasks", handler=dom_read,
+                      schema=dom.SCHEMA, check_fn=_always,
+                      description=dom.SCHEMA["description"], emoji="🔎")
 
     def start(args, **_):
         from hermes_constants import get_hermes_home
@@ -2033,6 +2083,9 @@ def register(ctx) -> None:
     ctx.register_hook("pre_tool_call", _pre_tool_call)
     # The shared browser the iPhone can watch is started before an agent needs it.
     ctx.register_hook("pre_tool_call", _browser_ready)
+    # Check the *agent's original code* before the trusted isolation preamble
+    # adds CDP/imports. A later guard would misread our own preamble as unsafe.
+    ctx.register_hook("pre_tool_call", _guard_errand)
     # And each errand browses in its own context of it, never another errand's basket.
     ctx.register_hook("pre_tool_call", _isolate_errand_browser)
     ctx.register_hook("pre_tool_call", _guard_errand_access)
@@ -2042,7 +2095,6 @@ def register(ctx) -> None:
     # A card is filled with the copy for the page open, or bound to the bank's payment page.
     # One payment per order, kept by the plugin rather than the model (purchases.py).
     # Nothing is paid without the person's approved checkout (errands.py).
-    ctx.register_hook("pre_tool_call", _guard_errand)
     # A chat turn that asks for an errand starts it, and neither browses nor asks itself.
     ctx.register_hook("pre_llm_call", _errand_turn)
     ctx.register_hook("pre_tool_call", _guard_chat_errand)
